@@ -1,0 +1,22 @@
+﻿# deps & build
+node_modules
+.next
+out
+
+# env & secrets
+.env
+.env.local
+.env.production
+.env.development
+
+# OS / Editeurs
+.DS_Store
+Thumbs.db
+*.log
+.vscode
+.idea
+
+# misc
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
