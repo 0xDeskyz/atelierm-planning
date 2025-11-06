@@ -222,6 +222,12 @@ const formatFR = (d: Date, withWeekday: boolean = false) =>
     : { day: '2-digit', month: 'long', year: 'numeric' }
   );
 
+  function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
+  let t: any;
+  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+
 // ==================================
 // Draggable Person Chip
 // ==================================
@@ -580,11 +586,29 @@ export default function Page() {
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
   };
 
-  // ==========================
-  // Persistance locale (auto-save)
-  // ==========================
-  const firstLoad = useRef(true);
-  useEffect(() => {
+// ==========================
+// Persistance serveur (Vercel Blob) + cache local
+// ==========================
+const firstLoad = useRef(true);
+
+// Charger depuis le serveur pour la semaine affichée (fallback localStorage)
+useEffect(() => {
+  (async () => {
+    try {
+      const wk = currentWeekKey;
+      const res = await fetch(`/api/state/${wk}`, { cache: 'no-store' });
+      const srv = await res.json();
+      if (srv && typeof srv === 'object') {
+        setPeople(srv.people || DEMO_PEOPLE);
+        setSites(srv.sites || DEMO_SITES);
+        setAssignments(srv.assignments || []);
+        setNotes(srv.notes || {});
+        setAbsencesByWeek(srv.absencesByWeek || {});
+        firstLoad.current = false;
+        return;
+      }
+    } catch {}
+    // fallback localStorage si pas de remote
     try {
       const raw = localStorage.getItem("btp-planner-state:v1");
       if (raw) {
@@ -596,12 +620,30 @@ export default function Page() {
         setAbsencesByWeek(s.absencesByWeek || {});
       }
     } catch {}
-  }, []);
-  useEffect(() => {
-    if (firstLoad.current) { firstLoad.current = false; return; }
-    const payload = { people, sites, assignments, notes, absencesByWeek };
-    try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
-  }, [people, sites, assignments, notes, absencesByWeek]);
+    firstLoad.current = false;
+  })();
+}, [currentWeekKey]);
+
+const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
+  try {
+    await fetch(`/api/state/${wk}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {}
+}, 600), []);
+
+// Sauvegarder à chaque modif
+useEffect(() => {
+  if (firstLoad.current) return;
+  const payload = { people, sites, assignments, notes, absencesByWeek };
+  // cache local (backup + rapidité)
+  try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
+  // serveur (par semaine)
+  saveRemote(currentWeekKey, payload);
+}, [people, sites, assignments, notes, absencesByWeek, currentWeekKey, saveRemote]);
+
 
   // ==========================
   // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
