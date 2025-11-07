@@ -1,6 +1,5 @@
 "use client";
 
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
@@ -215,18 +214,12 @@ function getMonthWeeks(anchor: Date) {
   });
 }
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
-// Helper format FR (jour mois année)
-const formatFR = (d: Date, withWeekday: boolean = false) =>
-  d.toLocaleDateString('fr-FR', withWeekday
-    ? { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric' }
-    : { day: '2-digit', month: 'long', year: 'numeric' }
-  );
-
-  function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
+// Helper format FR (jour mois année)$1
+// Debounce helper for throttling remote saves
+function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
   let t: any;
   return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
-
 
 // ==================================
 // Draggable Person Chip
@@ -586,7 +579,7 @@ export default function Page() {
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
   };
 
-// ==========================
+  // ==========================
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
 const firstLoad = useRef(true);
@@ -644,13 +637,12 @@ useEffect(() => {
   saveRemote(currentWeekKey, payload);
 }, [people, sites, assignments, notes, absencesByWeek, currentWeekKey, saveRemote]);
 
-
-  // ==========================
-  // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
+// ==========================
+// Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
   // ==========================
   useEffect(() => {
     // existants
-    console.assert(/\\d{4}-\\d{2}-\\d{2}/.test(toLocalKey(new Date("2025-10-02"))), "toLocalKey format");
+    console.assert(/\d{4}-\d{2}-\d{2}/.test(toLocalKey(new Date("2025-10-02"))), "toLocalKey format");
     console.assert(weekKeyOf(new Date("2021-01-04")) === "2021-W01", "weekKeyOf ISO-year");
     console.assert(getISOWeek(new Date("2020-12-31")) === 53, "ISO week 2020-12-31 = 53");
 
