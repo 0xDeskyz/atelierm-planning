@@ -931,7 +931,12 @@ useEffect(() => {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-12 gap-4">
           {/* Left column: People & Sites */}
-          <div className="col-span-12 lg:col-span-3 space-y-4">
+          <div
+            className={cx(
+              "col-span-12 lg:col-span-3 space-y-4",
+              view === "month" && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+            )}
+          >
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
