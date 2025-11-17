@@ -203,17 +203,27 @@ const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
 function getMonthWeeks(anchor: Date) {
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const gridStart = startOfISOWeekLocal(first);
-  return Array.from({ length: 6 }, (_, w) => {
-    const start = new Date(gridStart);
-    start.setDate(gridStart.getDate() + w * 7);
-    return Array.from({ length: 7 }, (_, i) => {
+  const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  const weeks: Date[][] = [];
+  let start = startOfISOWeekLocal(firstDay);
+
+  while (true) {
+    const week = Array.from({ length: 7 }, (_, i) => {
       const dd = new Date(start);
       dd.setDate(start.getDate() + i);
       return dd;
     });
-  });
+
+    const overlapsMonth = week.some((d) => d.getMonth() === firstDay.getMonth());
+    if (!overlapsMonth && start > lastDay) break;
+    if (overlapsMonth) weeks.push(week);
+
+    start = new Date(start);
+    start.setDate(start.getDate() + 7);
+  }
+
+  return weeks;
 }
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
 const mapWeekDates = (src: Date[], dest: Date[]) => {
