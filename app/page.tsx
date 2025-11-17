@@ -1013,26 +1013,35 @@ useEffect(() => {
             {/* MONTH VIEW */}
             {view === "month" && (
               <div className="space-y-4">
+
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
                   const sitesForWeek = sites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
                   return (
-                    <div key={idx} className="space-y-2">
-                      <div className="grid grid-cols-6 text-xs text-neutral-500">
-                        <div className="px-1">Sem. {getISOWeek(week[0])}</div>
-                        {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
-                      </div>
-                      {sitesForWeek.map((site) => (
-                        <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
-                          <div className="text-sm flex items-center">{site.name}</div>
-                          {week.slice(0, 5).map((d) => (
-                            <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
-                          ))}
+                    <div key={idx} className={cx("space-y-3", idx > 0 && "pt-4")}>
+                      {idx > 0 && <div className="h-px bg-neutral-300" aria-hidden />}
+                      <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 shadow-sm">
+                        <div className="grid grid-cols-6 items-center text-xs text-neutral-600">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-800 shadow-inner">
+                              Semaine {getISOWeek(week[0])}
+                            </span>
+                          </div>
+                          {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                         </div>
-                      ))}
+                        {sitesForWeek.map((site) => (
+                          <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
+                            <div className="text-sm flex items-center font-medium text-neutral-800">{site.name}</div>
+                            {week.slice(0, 5).map((d) => (
+                              <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}
+
               </div>
             )}
           </div>
