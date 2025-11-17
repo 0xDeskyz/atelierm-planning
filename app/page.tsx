@@ -568,6 +568,7 @@ export default function Page() {
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
+  const today = useMemo(() => new Date(), []);
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
@@ -588,6 +589,9 @@ export default function Page() {
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
+  const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
+  const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
+  const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
   const sitesForCurrentWeek = useMemo(
     () => sites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
     [sites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
@@ -651,6 +655,35 @@ export default function Page() {
     else d.setMonth(d.getMonth() + delta);
     setAnchor(d);
   };
+
+  const monthWeekRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pendingScrollWeek, setPendingScrollWeek] = useState<string | null>(null);
+
+  const jumpToCurrentWeek = (opts?: { forceWeek?: boolean }) => {
+    const now = new Date();
+    const wkKey = weekKeyOf(now);
+    setAnchor(now);
+    if (view === "month") {
+      setPendingScrollWeek(wkKey);
+    }
+    setView((v) => (opts?.forceWeek ? "week" : v));
+  };
+
+  useEffect(() => {
+    const keys = new Set(monthWeeks.map((w) => weekKeyOf(w[0])));
+    Object.keys(monthWeekRefs.current).forEach((key) => {
+      if (!keys.has(key)) delete monthWeekRefs.current[key];
+    });
+  }, [monthWeeks]);
+
+  useEffect(() => {
+    if (!pendingScrollWeek || view !== "month") return;
+    const el = monthWeekRefs.current[pendingScrollWeek];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingScrollWeek(null);
+    }
+  }, [pendingScrollWeek, view, monthWeeks]);
 
   // Notes / Rename dialogs state
   const [renameOpen, setRenameOpen] = useState(false);
@@ -901,11 +934,33 @@ useEffect(() => {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => shift(-1)} aria-label="Précédent"><ChevronLeft className="w-4 h-4" /></Button>
           <Button variant="outline" onClick={() => shift(1)} aria-label="Suivant"><ChevronRight className="w-4 h-4" /></Button>
-          <Button variant="outline" onClick={() => { setAnchor(new Date()); setView("week"); }} className="ml-1" aria-label="Aujourd'hui"><RotateCcw className="w-4 h-4" /></Button>
+          <Button
+            variant="outline"
+            onClick={() => jumpToCurrentWeek({ forceWeek: view === "week" })}
+            className="ml-1"
+            aria-label="Aller à la semaine actuelle"
+            title="Revenir rapidement à la semaine en cours"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
           <div className="font-semibold text-lg flex items-center gap-2">
             <CalendarRange className="w-5 h-5" />
-            {view === 'week' && `Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}
-            {view === 'month' && anchor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}
+            {view === 'week' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{`Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}</span>
+                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                  Semaine actuelle : S{pad2(todayWeekNumber)}
+                </span>
+              </div>
+            )}
+            {view === 'month' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{anchor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}</span>
+                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                  Semaine actuelle : S{pad2(todayWeekNumber)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -924,6 +979,9 @@ useEffect(() => {
               <TabsTrigger value="month">Mois</TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button variant="ghost" onClick={() => jumpToCurrentWeek({ forceWeek: view === "week" })} className="hidden md:inline-flex" aria-label="Afficher la semaine actuelle">
+            Aller à la semaine en cours
+          </Button>
         </div>
       </div>
 
@@ -999,7 +1057,12 @@ useEffect(() => {
             {view === "week" && (
               <div className="space-y-2">
                 <div className="grid grid-cols-6 text-xs text-neutral-500">
-                  <div className="px-1">Sem. {getISOWeek(weekDays[0])}</div>
+                  <div className="px-1 flex items-center gap-2">
+                    <span>Sem. {getISOWeek(weekDays[0])}</span>
+                    {isViewingCurrentWeek && (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
+                    )}
+                  </div>
                   {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                 </div>
                 <div className="space-y-2">
@@ -1021,9 +1084,17 @@ useEffect(() => {
 
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
+                  const isCurrent = wkKey === todayWeekKey;
                   const sitesForWeek = sites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
                   return (
-                    <div key={idx} className={cx("space-y-3", idx > 0 && "pt-4")}>
+                    <div
+                      key={idx}
+                      ref={(el) => {
+                        if (el) monthWeekRefs.current[wkKey] = el;
+                        else delete monthWeekRefs.current[wkKey];
+                      }}
+                      className={cx("space-y-3", idx > 0 && "pt-4")}
+                    >
                       {idx > 0 && <div className="h-px bg-neutral-300" aria-hidden />}
                       <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 shadow-sm">
                         <div className="grid grid-cols-6 items-center text-xs text-neutral-600">
@@ -1031,6 +1102,9 @@ useEffect(() => {
                             <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-800 shadow-inner">
                               Semaine {getISOWeek(week[0])}
                             </span>
+                            {isCurrent && (
+                              <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800">Semaine en cours</span>
+                            )}
                           </div>
                           {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                         </div>
