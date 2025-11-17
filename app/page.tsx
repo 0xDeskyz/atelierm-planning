@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -202,6 +202,7 @@ function getISOWeekAndYear(date: Date) {
 const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
+const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -396,16 +397,71 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
   );
 }
 
-function RenameDialog({ open, setOpen, name, onSave, title = "Renommer" }: any) {
+function RenameDialog({ open, setOpen, name, onSave, title = "Renommer", weekSelection, onWeekSelectionChange, initialYear }: any) {
   const [val, setVal] = useState<string>(name || "");
+  const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
+  const [selectedWeeks, setSelectedWeeks] = useState<string[]>(weekSelection || []);
+
   useEffect(() => setVal(name || ""), [name]);
+  useEffect(() => setSelectedWeeks(weekSelection || []), [weekSelection]);
+  useEffect(() => { if (initialYear) setPickerYear(initialYear); }, [initialYear]);
+
+  const toggleWeek = (wkKey: string) => {
+    setSelectedWeeks((prev) => {
+      const exists = prev.includes(wkKey);
+      const next = exists ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
+      onWeekSelectionChange?.(next);
+      return next;
+    });
+  };
+
+  const weeksInYear = Math.max(54, getISOWeeksInYear(pickerYear));
+  const weeksList = Array.from({ length: weeksInYear }, (_, i) => i + 1);
+  const renderWeekPicker = typeof weekSelection !== 'undefined';
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <Input value={val} onChange={(e: any) => setVal(e.target.value)} placeholder="Nouveau nom" />
+        {renderWeekPicker && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Semaines visibles</div>
+              <div className="flex items-center gap-2">
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente"><ChevronLeft className="w-4 h-4" /></Button>
+                <div className="text-sm font-semibold w-14 text-center">{pickerYear}</div>
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante"><ChevronRight className="w-4 h-4" /></Button>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-500">Sélectionnez les semaines où le chantier doit s'afficher. Sans sélection, il restera visible toute l'année.</p>
+            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
+              {weeksList.map((wk) => {
+                const wkKey = `${pickerYear}-W${pad2(wk)}`;
+                const active = selectedWeeks.includes(wkKey);
+                return (
+                  <button
+                    key={wkKey}
+                    type="button"
+                    onClick={() => toggleWeek(wkKey)}
+                    className={cx(
+                      "text-xs rounded-md border px-2 py-1 text-center transition",
+                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
+                    )}
+                  >
+                    S{pad2(wk)}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between text-xs text-neutral-600">
+              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); }}>Toutes les semaines</button>
+              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); setPickerYear(initialYear || new Date().getFullYear()); }}>Réinitialiser</button>
+            </div>
+          </div>
+        )}
         <DialogFooter>
-          <Button onClick={() => { const n = val.trim(); if (!n) return; onSave(n); }}>Enregistrer</Button>
+          <Button onClick={() => { const n = val.trim(); if (!n) return; onSave(n, selectedWeeks); }}>Enregistrer</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -511,6 +567,13 @@ export default function Page() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
+  const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
+
+  const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
+    const selection = siteWeekVisibility[siteId];
+    if (!selection || selection.length === 0) return true;
+    return selection.includes(wk);
+  }, [siteWeekVisibility]);
 
   // View / navigation
   const [view, setView] = useState<"week" | "month">("week");
@@ -525,6 +588,10 @@ export default function Page() {
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
+  const sitesForCurrentWeek = useMemo(
+    () => sites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
+    [sites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+  );
 
   // DnD sensors
   const sensors = useSensors(
@@ -588,6 +655,8 @@ export default function Page() {
   // Notes / Rename dialogs state
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<null | { type: 'person' | 'site'; id: string; name: string }>(null);
+  const [renameWeeks, setRenameWeeks] = useState<string[]>([]);
+  const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
@@ -683,6 +752,7 @@ export default function Page() {
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
+    setSiteWeekVisibility((prev) => { const { [id]: _omit, ...rest } = prev; return rest; });
   };
 
   // ==========================
@@ -703,6 +773,7 @@ useEffect(() => {
         setAssignments(srv.assignments || []);
         setNotes(srv.notes || {});
         setAbsencesByWeek(srv.absencesByWeek || {});
+        setSiteWeekVisibility(srv.siteWeekVisibility || {});
         firstLoad.current = false;
         return;
       }
@@ -717,6 +788,7 @@ useEffect(() => {
         setAssignments(s.assignments || []);
         setNotes(s.notes || {});
         setAbsencesByWeek(s.absencesByWeek || {});
+        setSiteWeekVisibility(s.siteWeekVisibility || {});
       }
     } catch {}
     firstLoad.current = false;
@@ -736,12 +808,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
 // Sauvegarder à chaque modif
 useEffect(() => {
   if (firstLoad.current) return;
-  const payload = { people, sites, assignments, notes, absencesByWeek };
+  const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility };
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, currentWeekKey, saveRemote]);
+}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -751,6 +823,7 @@ useEffect(() => {
     console.assert(/\d{4}-\d{2}-\d{2}/.test(toLocalKey(new Date("2025-10-02"))), "toLocalKey format");
     console.assert(weekKeyOf(new Date("2021-01-04")) === "2021-W01", "weekKeyOf ISO-year");
     console.assert(getISOWeek(new Date("2020-12-31")) === 53, "ISO week 2020-12-31 = 53");
+    console.assert(getISOWeeksInYear(2020) >= 52 && getISOWeeksInYear(2020) <= 54, "getISOWeeksInYear range");
 
     // palette
     console.assert(Array.isArray(COLORS) && COLORS.length >= 17, "COLORS étendu (>=17)");
@@ -781,6 +854,16 @@ useEffect(() => {
     );
     console.assert(m['2025-01-06'] === '2025-01-13' && m['2025-01-07'] === '2025-01-14', 'mapWeekDates preserves order');
 
+    // week visibility helper (default all weeks when empty)
+    console.assert(isSiteVisibleOnWeek('unknown', '2025-W10') === true, 'site visible if no selection');
+    const tmpSel = { test: ['2025-W02', '2025-W03'] } as Record<string, string[]>;
+    const tmpCheck = (id: string, wk: string) => {
+      const selection = tmpSel[id];
+      if (!selection || selection.length === 0) return true;
+      return selection.includes(wk);
+    };
+    console.assert(tmpCheck('test', '2025-W03') && !tmpCheck('test', '2025-W05'), 'manual visibility toggle works');
+
     // month grid shape$1// export blob test
 
     // formatFR
@@ -796,7 +879,7 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -804,7 +887,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -885,7 +968,17 @@ useEffect(() => {
                     <div key={s.id} className="flex items-center justify-between text-sm">
                       <span>{s.name}</span>
                       <div className="flex items-center gap-2">
-                        <Button size="icon" variant="ghost" onClick={() => { setRenameTarget({ type: 'site', id: s.id, name: s.name }); setRenameOpen(true); }} aria-label={`Renommer ${s.name}`}><Edit3 className="w-4 h-4" /></Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            setRenameTarget({ type: 'site', id: s.id, name: s.name });
+                            setRenameWeeks(siteWeekVisibility[s.id] || []);
+                            setRenamePickerYear(getISOWeekYear(anchor));
+                            setRenameOpen(true);
+                          }}
+                          aria-label={`Renommer ${s.name}`}
+                        ><Edit3 className="w-4 h-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
                       </div>
                     </div>
@@ -905,7 +998,7 @@ useEffect(() => {
                   {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                 </div>
                 <div className="space-y-2">
-                  {sites.map((site) => (
+                  {sitesForCurrentWeek.map((site) => (
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
                       <div className="text-sm flex items-center">{site.name}</div>
                       {weekDays.map((d) => (
@@ -920,22 +1013,26 @@ useEffect(() => {
             {/* MONTH VIEW */}
             {view === "month" && (
               <div className="space-y-4">
-                {monthWeeks.map((week, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="grid grid-cols-6 text-xs text-neutral-500">
-                      <div className="px-1">Sem. {getISOWeek(week[0])}</div>
-                      {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
-                    </div>
-                    {sites.map((site) => (
-                      <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
-                        <div className="text-sm flex items-center">{site.name}</div>
-                        {week.slice(0, 5).map((d) => (
-                          <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
-                        ))}
+                {monthWeeks.map((week, idx) => {
+                  const wkKey = weekKeyOf(week[0]);
+                  const sitesForWeek = sites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  return (
+                    <div key={idx} className="space-y-2">
+                      <div className="grid grid-cols-6 text-xs text-neutral-500">
+                        <div className="px-1">Sem. {getISOWeek(week[0])}</div>
+                        {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {sitesForWeek.map((site) => (
+                        <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
+                          <div className="text-sm flex items-center">{site.name}</div>
+                          {week.slice(0, 5).map((d) => (
+                            <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -945,7 +1042,36 @@ useEffect(() => {
 
       {/* Dialogs */}
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
-      <RenameDialog open={renameOpen} setOpen={setRenameOpen} name={renameTarget?.name || ''} title={renameTarget?.type === 'person' ? 'Renommer le salarié' : 'Renommer le chantier'} onSave={(newName: string) => { if (!renameTarget) return; const n = newName.trim(); if (!n) return; if (renameTarget.type === 'person') renamePerson(renameTarget.id, n); else renameSite(renameTarget.id, n); setRenameOpen(false); }} />
+      <RenameDialog
+        open={renameOpen}
+        setOpen={setRenameOpen}
+        name={renameTarget?.name || ''}
+        title={renameTarget?.type === 'person' ? 'Renommer le salarié' : 'Renommer le chantier'}
+        weekSelection={renameTarget?.type === 'site' ? renameWeeks : undefined}
+        onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
+        initialYear={renamePickerYear}
+        onSave={(newName: string, weeks?: string[]) => {
+          if (!renameTarget) return;
+          const n = newName.trim();
+          if (!n) return;
+          if (renameTarget.type === 'person') {
+            renamePerson(renameTarget.id, n);
+          } else {
+            renameSite(renameTarget.id, n);
+            if (weeks) {
+              setSiteWeekVisibility((prev) => {
+                const unique = Array.from(new Set(weeks)).filter(Boolean);
+                if (unique.length === 0) {
+                  const { [renameTarget.id]: _omit, ...rest } = prev;
+                  return rest;
+                }
+                return { ...prev, [renameTarget.id]: unique };
+              });
+            }
+          }
+          setRenameOpen(false);
+        }}
+      />
     </div>
   );
 }
