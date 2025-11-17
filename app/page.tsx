@@ -304,7 +304,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         unavailable ? "opacity-90" : ""
       )}
       ref={setNodeRef}
-      title={meta.text || meta.blText || meta?.brNote?.text || ""}
+      title={meta.text || meta?.brNote?.text || ""}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between mb-1">
@@ -331,7 +331,6 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
       {/* Bottom bar */}
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap min-h-[18px]">
-          {meta.blText && (<div className="text-[11px] text-neutral-700 max-w-[70%] truncate" title={meta.blText}>{meta.blText}</div>)}
           {meta.brNote?.text && (
             <div className={cx("text-[10px] px-1.5 py-0.5 rounded shadow border", meta.brNote.color && PASTELS[meta.brNote.color]?.bg)} title={meta.brNote.text}>
               {meta.brNote.text}
@@ -408,7 +407,6 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const [text, setText] = useState<string>(initial.text || "");
   const [holiday, setHoliday] = useState<boolean>(!!initial.holiday);
   const [blocked, setBlocked] = useState<boolean>(!!initial.blocked);
-  const [blText, setBlText] = useState<string>(initial.blText || "");
   const [brText, setBrText] = useState<string>(initial.brNote?.text || "");
   const [brColor, setBrColor] = useState<string>(initial.brNote?.color || "mint");
   const [highlight, setHighlight] = useState<string>(initial.highlight || "");
@@ -418,7 +416,6 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
     setText(i.text || "");
     setHoliday(!!i.holiday);
     setBlocked(!!i.blocked);
-    setBlText(i.blText || "");
     setBrText(i.brNote?.text || "");
     setBrColor(i.brNote?.color || "mint");
     setHighlight(i.highlight || "");
@@ -443,11 +440,6 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
             <div className="text-sm font-medium">Note principale</div>
             <Textarea className="min-h-24" value={text} onChange={(e: any) => setText(e.target.value)} placeholder="Note générale de la case" />
           </div>
-          {/* Bas-gauche */}
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Texte bas-gauche</div>
-            <Input value={blText} onChange={(e: any) => setBlText(e.target.value)} placeholder="Petit texte affiché en bas à gauche" />
-          </div>
           {/* Bas-droit (mini post-it) */}
           <div className="space-y-2">
             <div className="text-sm font-medium">Post-it bas-droit</div>
@@ -470,7 +462,7 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => { onSave({ text, holiday, blocked, blText, brNote: brText ? { text: brText, color: brColor } : undefined, highlight: highlight || undefined, }); setOpen(false); }}>Enregistrer</Button>
+          <Button onClick={() => { onSave({ text, holiday, blocked, brNote: brText ? { text: brText, color: brColor } : undefined, highlight: highlight || undefined, }); setOpen(false); }}>Enregistrer</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
