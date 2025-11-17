@@ -24,6 +24,8 @@ import {
   RotateCcw,
   Upload,
   Download,
+  Copy,
+  Eraser,
 } from "lucide-react";
 
 // ================= UI maison (Tailwind)
@@ -214,6 +216,14 @@ function getMonthWeeks(anchor: Date) {
   });
 }
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
+const mapWeekDates = (src: Date[], dest: Date[]) => {
+  const len = Math.min(src.length, dest.length);
+  const result: Record<string, string> = {};
+  for (let i = 0; i < len; i++) {
+    result[toLocalKey(src[i])] = toLocalKey(dest[i]);
+  }
+  return result;
+};
 // Helper format FR (jour mois année)
 function formatFR(d: Date, withWeekday: boolean = false): string {
   try {
@@ -505,8 +515,14 @@ export default function Page() {
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
+  const previousWeek = useMemo(() => {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() - 7);
+    return getWeekDatesLocal(d);
+  }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
+  const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
 
   // DnD sensors
   const sensors = useSensors(
@@ -575,6 +591,80 @@ export default function Page() {
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
+
+  const clearCurrentWeek = () => {
+    const confirmClear = window.confirm(
+      "Supprimer toutes les affectations, notes et absences de la semaine courante ?"
+    );
+    if (!confirmClear) return;
+    const targetDates = new Set(weekDays.map((d) => toLocalKey(d)));
+    setAssignments((prev) => prev.filter((a) => !targetDates.has(a.date)));
+    setNotes((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      sites.forEach((site) => {
+        targetDates.forEach((dateKey) => {
+          delete next[cellKey(site.id, dateKey)];
+        });
+      });
+      return next;
+    });
+    setAbsencesByWeek((prev) => {
+      if (!prev[currentWeekKey]) return prev;
+      const next = { ...prev } as typeof prev;
+      delete (next as any)[currentWeekKey];
+      return next;
+    });
+  };
+
+  const copyFromPreviousWeek = () => {
+    const ok = window.confirm("Copier la semaine précédente vers celle-ci ?");
+    if (!ok) return;
+    const prevDates = previousWeek.slice(0, 5);
+    const prevKeys = prevDates.map((d) => toLocalKey(d));
+    const currentKeys = weekDays.map((d) => toLocalKey(d));
+    const dateMap = mapWeekDates(prevDates, weekDays);
+
+    setAssignments((prev) => {
+      const existing = new Set(prev.map((a) => `${a.personId}-${a.date}`));
+      const additions = prev
+        .filter((a) => dateMap[a.date])
+        .map((a) => {
+          const newDate = dateMap[a.date];
+          if (!newDate) return null;
+          if (isAbsentOnWeek(a.personId, currentWeekKey)) return null;
+          if (existing.has(`${a.personId}-${newDate}`)) return null;
+          return {
+            ...a,
+            id:
+              typeof crypto !== "undefined" && (crypto as any).randomUUID
+                ? (crypto as any).randomUUID()
+                : `a${Date.now()}-${Math.random()}`,
+            date: newDate,
+          };
+        })
+        .filter(Boolean) as typeof prev;
+      return [...prev, ...additions];
+    });
+
+    setNotes((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      sites.forEach((site) => {
+        prevKeys.forEach((prevKey, idx) => {
+          const srcKey = cellKey(site.id, prevKey);
+          const destKey = cellKey(site.id, currentKeys[idx]);
+          if (prev[srcKey] && !next[destKey]) {
+            next[destKey] = prev[srcKey];
+          }
+        });
+      });
+      return next;
+    });
+
+    setAbsencesByWeek((prev) => {
+      if (!prev[previousWeekKey] || prev[currentWeekKey]) return prev;
+      return { ...prev, [currentWeekKey]: { ...prev[previousWeekKey] } };
+    });
+  };
 
   // CRUD helpers
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
@@ -682,6 +772,13 @@ useEffect(() => {
     const _sitesRenamed = _sites.map(x => x.id === 'ss' ? { ...x, name: 'Site B' } : x);
     console.assert(_sitesRenamed[0].name === 'Site B', 'rename site mapping works');
 
+    // mapWeekDates helper
+    const m = mapWeekDates(
+      [new Date('2025-01-06'), new Date('2025-01-07')],
+      [new Date('2025-01-13'), new Date('2025-01-14')]
+    );
+    console.assert(m['2025-01-06'] === '2025-01-13' && m['2025-01-07'] === '2025-01-14', 'mapWeekDates preserves order');
+
     // month grid shape$1// export blob test
 
     // formatFR
@@ -728,6 +825,12 @@ useEffect(() => {
         </div>
         <div className="flex items-center gap-2">
           <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
+          <Button variant="outline" onClick={copyFromPreviousWeek} aria-label="Copier semaine précédente" title="Copie les affectations, notes et absences de la semaine N-1">
+            <Copy className="w-4 h-4 mr-1" /> Copier N-1
+          </Button>
+          <Button variant="outline" onClick={clearCurrentWeek} aria-label="Vider la semaine" title="Retire toutes les données de la semaine affichée">
+            <Eraser className="w-4 h-4 mr-1" /> Vider
+          </Button>
           <Button variant="outline" onClick={() => fileRef.current?.click()} aria-label="Importer"><Upload className="w-4 h-4 mr-1" />Importer</Button>
           <Button onClick={exportJSON} aria-label="Exporter"><Download className="w-4 h-4 mr-1" />Exporter</Button>
           <Tabs value={view} onValueChange={(v: any) => setView(v)}>
