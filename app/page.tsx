@@ -148,16 +148,6 @@ const COLORS = [
   "bg-slate-500",
 ];
 
-const DEMO_PEOPLE = [
-  { id: "p1", name: "Ali", color: "bg-rose-500" },
-  { id: "p2", name: "Mina", color: "bg-amber-500" },
-  { id: "p3", name: "Rachid", color: "bg-emerald-500" },
-];
-const DEMO_SITES = [
-  { id: "s1", name: "Chantier A" },
-  { id: "s2", name: "Chantier B" },
-];
-
 // Pastels (3 options) pour mini post-it & surlignage
 const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
   mint: { bg: "bg-green-100", ring: "ring-green-200", text: "text-green-900" },
@@ -258,6 +248,23 @@ const endOfYearLocal = (year: number) => {
   dt.setHours(0, 0, 0, 0);
   return dt;
 };
+
+const todayKey = toLocalKey(new Date());
+const nextMonthKey = (() => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return toLocalKey(d);
+})();
+
+const DEMO_PEOPLE = [
+  { id: "p1", name: "Ali", color: "bg-rose-500" },
+  { id: "p2", name: "Mina", color: "bg-amber-500" },
+  { id: "p3", name: "Rachid", color: "bg-emerald-500" },
+];
+const DEMO_SITES = [
+  { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey },
+  { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey },
+];
 const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
 const mapWeekDates = (src: Date[], dest: Date[]) => {
@@ -273,6 +280,11 @@ const fromLocalKey = (key: string) => {
   const dt = new Date(y || 0, (m || 1) - 1, d || 1);
   dt.setHours(0, 0, 0, 0);
   return dt;
+};
+const normalizeSiteRecord = (site: any) => {
+  const start = site?.startDate || toLocalKey(new Date());
+  const end = site?.endDate || start;
+  return { ...site, startDate: start, endDate: end };
 };
 // Helper format FR (jour mois année)
 function formatFR(d: Date, withWeekday: boolean = false): string {
@@ -578,27 +590,72 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
 
 function AddSiteDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState<string>(() => toLocalKey(new Date()));
+  const [endDate, setEndDate] = useState<string>(() => toLocalKey(new Date()));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>Ajouter un chantier</DialogTitle></DialogHeader>
-        <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
+        <div className="space-y-3">
+          <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <label className="space-y-1">
+              <span className="text-neutral-600">Début</span>
+              <Input type="date" value={startDate} onChange={(e: any) => setStartDate(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-neutral-600">Fin</span>
+              <Input type="date" value={endDate} min={startDate} onChange={(e: any) => setEndDate(e.target.value)} />
+            </label>
+          </div>
+        </div>
         <DialogFooter>
-          <Button onClick={() => { if (name.trim()) { onAdd(name.trim()); setOpen(false); setName(""); } }}>Ajouter</Button>
+          <Button
+            onClick={() => {
+              const n = name.trim();
+              if (!n) return;
+              if (!startDate || !endDate || fromLocalKey(endDate) < fromLocalKey(startDate)) {
+                window.alert("Merci de saisir des dates de début et fin valides.");
+                return;
+              }
+              onAdd(n, startDate, endDate);
+              setOpen(false);
+              setName("");
+              setStartDate(toLocalKey(new Date()));
+              setEndDate(toLocalKey(new Date()));
+            }}
+          >
+            Ajouter
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RenameDialog({ open, setOpen, name, onSave, title = "Renommer", weekSelection, onWeekSelectionChange, initialYear }: any) {
+function RenameDialog({
+  open,
+  setOpen,
+  name,
+  onSave,
+  title = "Renommer",
+  weekSelection,
+  onWeekSelectionChange,
+  initialYear,
+  startDate,
+  endDate,
+}: any) {
   const [val, setVal] = useState<string>(name || "");
   const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>(weekSelection || []);
+  const [scheduleStart, setScheduleStart] = useState<string>(startDate || "");
+  const [scheduleEnd, setScheduleEnd] = useState<string>(endDate || "");
 
   useEffect(() => setVal(name || ""), [name]);
   useEffect(() => setSelectedWeeks(weekSelection || []), [weekSelection]);
   useEffect(() => { if (initialYear) setPickerYear(initialYear); }, [initialYear]);
+  useEffect(() => setScheduleStart(startDate || ""), [startDate]);
+  useEffect(() => setScheduleEnd(endDate || ""), [endDate]);
 
   const toggleWeek = (wkKey: string) => {
     setSelectedWeeks((prev) => {
@@ -618,6 +675,18 @@ function RenameDialog({ open, setOpen, name, onSave, title = "Renommer", weekSel
       <DialogContent>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <Input value={val} onChange={(e: any) => setVal(e.target.value)} placeholder="Nouveau nom" />
+        {typeof startDate !== "undefined" && typeof endDate !== "undefined" && (
+          <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+            <label className="space-y-1">
+              <span className="text-neutral-600">Début du chantier</span>
+              <Input type="date" value={scheduleStart} onChange={(e: any) => setScheduleStart(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-neutral-600">Fin du chantier</span>
+              <Input type="date" value={scheduleEnd} min={scheduleStart} onChange={(e: any) => setScheduleEnd(e.target.value)} />
+            </label>
+          </div>
+        )}
         {renderWeekPicker && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between">
@@ -655,7 +724,19 @@ function RenameDialog({ open, setOpen, name, onSave, title = "Renommer", weekSel
           </div>
         )}
         <DialogFooter>
-          <Button onClick={() => { const n = val.trim(); if (!n) return; onSave(n, selectedWeeks); }}>Enregistrer</Button>
+          <Button
+            onClick={() => {
+              const n = val.trim();
+              if (!n) return;
+              if (scheduleStart && scheduleEnd && fromLocalKey(scheduleEnd) < fromLocalKey(scheduleStart)) {
+                window.alert("La fin doit être postérieure ou égale au début du chantier.");
+                return;
+              }
+              onSave(n, selectedWeeks, scheduleStart && scheduleEnd ? { startDate: scheduleStart, endDate: scheduleEnd } : undefined);
+            }}
+          >
+            Enregistrer
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -772,7 +853,7 @@ function AddPerson({ onAdd }: { onAdd: (name: string, color: string) => void }) 
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string) => void }) {
+function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -788,7 +869,7 @@ function AddSite({ onAdd }: { onAdd: (name: string) => void }) {
 export default function Page() {
   // Core state
   const [people, setPeople] = useState(DEMO_PEOPLE);
-  const [sites, setSites] = useState(DEMO_SITES);
+  const [sites, setSites] = useState(() => DEMO_SITES.map(normalizeSiteRecord));
   const [assignments, setAssignments] = useState<any[]>([]);
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
@@ -983,44 +1064,44 @@ export default function Page() {
   }, [conflictMap, getAssignmentHoursInfo, peopleById, sitesById, weekAssignments]);
 
   const ganttTimeline = useMemo(() => {
-    if (!timelineWindow) return { rows: [] as { site: any; values: number[]; total: number }[], maxBucket: 0, totalAssignments: 0 };
+    if (!timelineWindow)
+      return { rows: [] as { site: any; values: { days: number; offsetPct: number; widthPct: number; bucketDays: number }[]; total: number }[], maxOverlap: 0 };
 
-    const bucketIndex: Record<string, number> = {};
-    timelineWindow.buckets.forEach((bucket, idx) => {
-      const cursor = new Date(bucket.start);
-      cursor.setHours(0, 0, 0, 0);
-      while (cursor.getTime() <= bucket.end.getTime()) {
-        bucketIndex[toLocalKey(cursor)] = idx;
-        const next = new Date(cursor);
-        next.setDate(cursor.getDate() + 1);
-        cursor.setTime(next.getTime());
-      }
-    });
+    const rows = sites
+      .map((site) => {
+        const siteStart = fromLocalKey(site.startDate || todayKey);
+        const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+        if (siteEnd < timelineWindow.start || siteStart > timelineWindow.end) return null;
 
-    const rows = sites.map((site) => {
-      const values = Array.from({ length: timelineWindow.buckets.length }, () => 0);
-      assignments.forEach((a) => {
-        if (a.siteId !== site.id) return;
-        const dt = fromLocalKey(a.date);
-        if (!isDateWithin(dt, timelineWindow.start, timelineWindow.end)) return;
-        const meta = getCellMeta(site.id, a.date);
-        if (meta.holiday || meta.blocked) return;
-        const idx = bucketIndex[toLocalKey(dt)];
-        if (idx === undefined) return;
-        values[idx] += 1;
-      });
-      const total = values.reduce((sum, v) => sum + v, 0);
-      return { site, values, total };
-    });
+        const values = timelineWindow.buckets.map((bucket) => {
+          const bucketDays = Math.max(1, Math.round((bucket.end.getTime() - bucket.start.getTime()) / (24 * 3600 * 1000)) + 1);
+          const overlapStart = new Date(Math.max(bucket.start.getTime(), siteStart.getTime()));
+          const overlapEnd = new Date(Math.min(bucket.end.getTime(), siteEnd.getTime()));
+          const hasOverlap = overlapEnd.getTime() >= overlapStart.getTime();
+          const days = hasOverlap
+            ? Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (24 * 3600 * 1000)) + 1
+            : 0;
+          const offsetDays = hasOverlap
+            ? Math.max(0, Math.round((overlapStart.getTime() - bucket.start.getTime()) / (24 * 3600 * 1000)))
+            : 0;
+          const offsetPct = bucketDays > 0 ? (offsetDays / bucketDays) * 100 : 0;
+          const widthPct = bucketDays > 0 ? Math.min(100, Math.max(6, (days / bucketDays) * 100)) : 0;
+          return { days, offsetPct, widthPct, bucketDays };
+        });
 
-    const maxBucket = rows.reduce((max, row) => {
-      if (row.values.length === 0) return max;
-      const rowMax = Math.max(...row.values);
+        const total = values.reduce((sum, v) => sum + v.days, 0);
+        if (total === 0) return null;
+        return { site, values, total };
+      })
+      .filter(Boolean) as { site: any; values: { days: number; offsetPct: number; widthPct: number; bucketDays: number }[]; total: number }[];
+
+    const maxOverlap = rows.reduce((max, row) => {
+      const rowMax = Math.max(...row.values.map((v) => v.days));
       return rowMax > max ? rowMax : max;
     }, 0);
-    const totalAssignments = rows.reduce((sum, row) => sum + row.total, 0);
-    return { rows, maxBucket, totalAssignments };
-  }, [assignments, getCellMeta, sites, timelineWindow]);
+
+    return { rows, maxOverlap };
+  }, [sites, timelineWindow]);
 
   const timelineScopeLabel = useMemo(() => {
     if (!timelineWindow) return "";
@@ -1130,7 +1211,7 @@ export default function Page() {
 
   // Notes / Rename dialogs state
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<null | { type: 'person' | 'site'; id: string; name: string }>(null);
+  const [renameTarget, setRenameTarget] = useState<null | { type: 'person' | 'site'; id: string; name: string; startDate?: string; endDate?: string }>(null);
   const [renameWeeks, setRenameWeeks] = useState<string[]>([]);
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
@@ -1216,6 +1297,8 @@ export default function Page() {
   // CRUD helpers
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
   const renameSite = (id: string, name: string) => setSites((s) => s.map((x) => (x.id === id ? { ...x, name } : x)));
+  const updateSiteSchedule = (id: string, startDate: string, endDate: string) =>
+    setSites((s) => s.map((x) => (x.id === id ? { ...x, startDate, endDate } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
   const updateAssignment = (id: string, changes: { hours?: any; portion?: any }) => {
     setAssignments((prev) =>
@@ -1243,7 +1326,16 @@ export default function Page() {
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string) => setSites((s) => [...s, { id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `s${Date.now()}`, name }]);
+  const addSite = (name: string, startDate: string, endDate: string) =>
+    setSites((s) => [
+      ...s,
+      normalizeSiteRecord({
+        id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `s${Date.now()}`,
+        name,
+        startDate,
+        endDate,
+      }),
+    ]);
   const removeSite = (id: string) => {
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
@@ -1265,7 +1357,7 @@ useEffect(() => {
       const srv = await res.json();
       if (srv && typeof srv === 'object') {
         setPeople(srv.people || DEMO_PEOPLE);
-        setSites(srv.sites || DEMO_SITES);
+        setSites((srv.sites || DEMO_SITES).map(normalizeSiteRecord));
         setAssignments(srv.assignments || []);
         setNotes(srv.notes || {});
         setAbsencesByWeek(srv.absencesByWeek || {});
@@ -1281,7 +1373,7 @@ useEffect(() => {
       if (raw) {
         const s = JSON.parse(raw);
         setPeople(s.people || DEMO_PEOPLE);
-        setSites(s.sites || DEMO_SITES);
+        setSites((s.sites || DEMO_SITES).map(normalizeSiteRecord));
         setAssignments(s.assignments || []);
         setNotes(s.notes || {});
         setAbsencesByWeek(s.absencesByWeek || {});
@@ -1432,7 +1524,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites((data.sites||[]).map(normalizeSiteRecord)); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -1576,7 +1668,7 @@ useEffect(() => {
                           size="icon"
                           variant="ghost"
                           onClick={() => {
-                            setRenameTarget({ type: 'site', id: s.id, name: s.name });
+                            setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate });
                             setRenameWeeks(siteWeekVisibility[s.id] || []);
                             setRenamePickerYear(getISOWeekYear(anchor));
                             setRenameOpen(true);
@@ -1763,7 +1855,7 @@ useEffect(() => {
                   </div>
                 </div>
                 <div className="text-xs text-neutral-600">
-                  Jauges proportionnelles au nombre d'affectations (jours-personnes) sur la période, en s'appuyant sur les données du planning.
+                  Jauges basées sur la plage planifiée de chaque chantier (dates de début/fin), pour visualiser la couverture sur la période.
                 </div>
                 <div className="overflow-x-auto">
                   <div className="min-w-full space-y-2">
@@ -1780,7 +1872,7 @@ useEffect(() => {
                     </div>
 
                     {ganttTimeline.rows.length === 0 && (
-                      <div className="text-sm text-neutral-500 px-2">Aucune affectation trouvée sur cette période.</div>
+                      <div className="text-sm text-neutral-500 px-2">Aucun chantier planifié sur cette période.</div>
                     )}
 
                     {ganttTimeline.rows.map((row) => (
@@ -1791,24 +1883,24 @@ useEffect(() => {
                       >
                         <div className="flex items-center gap-2 px-2">
                           <span className="font-medium text-neutral-800">{row.site.name}</span>
-                          <span className="text-[11px] text-neutral-500">{row.total} affect.</span>
+                          <span className="text-[11px] text-neutral-500">{row.total} j.</span>
                         </div>
-                        {row.values.map((val, idx) => {
-                          const ratio = ganttTimeline.maxBucket > 0 ? val / ganttTimeline.maxBucket : 0;
-                          const rawWidth = val === 0 ? 0 : Math.max(14, ratio * 100);
-                          const width = Math.min(rawWidth, 100);
-                          return (
-                            <div key={`${row.site.id}-${idx}`} className="relative h-8 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
+                        {row.values.map((val, idx) => (
+                          <div key={`${row.site.id}-${idx}`} className="relative h-8 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
+                            {val.days > 0 && (
                               <div
-                                className="absolute inset-y-0 left-0 bg-sky-500/70"
-                                style={{ width: `${width}%` }}
+                                className="absolute inset-y-1 left-1 rounded-md bg-sky-500/80"
+                                style={{
+                                  width: `${val.widthPct}%`,
+                                  left: `${val.offsetPct}%`,
+                                }}
                               />
-                              <div className="relative z-10 flex items-center justify-center text-xs font-semibold text-neutral-800">
-                                {val > 0 ? `${val} j.` : ""}
-                              </div>
+                            )}
+                            <div className="relative z-10 flex items-center justify-center text-xs font-semibold text-neutral-800">
+                              {val.days > 0 ? `${val.days} j.` : ""}
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -1830,7 +1922,9 @@ useEffect(() => {
         weekSelection={renameTarget?.type === 'site' ? renameWeeks : undefined}
         onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
         initialYear={renamePickerYear}
-        onSave={(newName: string, weeks?: string[]) => {
+        startDate={renameTarget?.type === 'site' ? renameTarget?.startDate : undefined}
+        endDate={renameTarget?.type === 'site' ? renameTarget?.endDate : undefined}
+        onSave={(newName: string, weeks?: string[], schedule?: { startDate: string; endDate: string }) => {
           if (!renameTarget) return;
           const n = newName.trim();
           if (!n) return;
@@ -1838,6 +1932,10 @@ useEffect(() => {
             renamePerson(renameTarget.id, n);
           } else {
             renameSite(renameTarget.id, n);
+            if (schedule?.startDate && schedule?.endDate) {
+              updateSiteSchedule(renameTarget.id, schedule.startDate, schedule.endDate);
+              setRenameTarget((prev) => (prev ? { ...prev, startDate: schedule.startDate, endDate: schedule.endDate } : prev));
+            }
             if (weeks) {
               setSiteWeekVisibility((prev) => {
                 const unique = Array.from(new Set(weeks)).filter(Boolean);
