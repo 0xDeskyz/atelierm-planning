@@ -299,6 +299,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
   const pastel = meta.highlight && PASTELS[meta.highlight] ? meta.highlight : null;
   const status = meta.holiday ? "holiday" : (meta.blocked ? "blocked" : null);
   const unavailable = Boolean(status);
+  const hoursLabel = meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" ? `${meta.hoursOverride}h` : null;
 
   return (
     <div
@@ -325,6 +326,11 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
           {meta.text && (
             <div className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
               {meta.text}
+            </div>
+          )}
+          {hoursLabel && (
+            <div className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures spécifiques pour cette case">
+              {hoursLabel}
             </div>
           )}
         </div>
@@ -476,6 +482,9 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const [brText, setBrText] = useState<string>(initial.brNote?.text || "");
   const [brColor, setBrColor] = useState<string>(initial.brNote?.color || "mint");
   const [highlight, setHighlight] = useState<string>(initial.highlight || "");
+  const [hoursOverride, setHoursOverride] = useState<string | number>(
+    initial.hoursOverride ?? ""
+  );
 
   useEffect(() => {
     const i = typeof value === "string" ? { text: value } : value || {};
@@ -485,6 +494,7 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
     setBrText(i.brNote?.text || "");
     setBrColor(i.brNote?.color || "mint");
     setHighlight(i.highlight || "");
+    setHoursOverride(i.hoursOverride ?? "");
   }, [value]);
 
   const ColorDot = ({ c, selected, onClick }: any) => (
@@ -526,9 +536,36 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
               ))}
             </div>
           </div>
+
+          {/* Heures */}
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Heures de la case (optionnel)</div>
+            <Input
+              type="number"
+              min={0}
+              step={0.5}
+              value={hoursOverride}
+              onChange={(e: any) => setHoursOverride(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="Laisser vide pour utiliser les heures/jour"
+            />
+          </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => { onSave({ text, holiday, blocked, brNote: brText ? { text: brText, color: brColor } : undefined, highlight: highlight || undefined, }); setOpen(false); }}>Enregistrer</Button>
+          <Button
+            onClick={() => {
+              onSave({
+                text,
+                holiday,
+                blocked,
+                brNote: brText ? { text: brText, color: brColor } : undefined,
+                highlight: highlight || undefined,
+                hoursOverride: hoursOverride === "" ? undefined : hoursOverride,
+              });
+              setOpen(false);
+            }}
+          >
+            Enregistrer
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -568,6 +605,7 @@ export default function Page() {
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
+  const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const today = useMemo(() => new Date(), []);
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
@@ -595,6 +633,68 @@ export default function Page() {
   const sitesForCurrentWeek = useMemo(
     () => sites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
     [sites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+  );
+
+  const getCellMeta = useCallback(
+    (siteId: string, dateKey: string) => {
+      const raw = notes[cellKey(siteId, dateKey)];
+      return (typeof raw === "string" ? { text: raw } : raw || {}) as any;
+    },
+    [notes]
+  );
+
+  const weekDateKeys = useMemo(() => weekDays.map((d) => toLocalKey(d)), [weekDays]);
+  const weekDateSet = useMemo(() => new Set(weekDateKeys), [weekDateKeys]);
+  const weekAssignments = useMemo(
+    () => assignments.filter((a) => weekDateSet.has(a.date)),
+    [assignments, weekDateSet]
+  );
+
+  const { personTotals, siteTotals, totalWeekHours, ignoredAssignments } = useMemo(() => {
+    const perPerson: Record<string, { days: number; hours: number }> = {};
+    const perSite: Record<string, { count: number; hours: number }> = {};
+    let total = 0;
+    let ignored = 0;
+
+    weekAssignments.forEach((a) => {
+      const meta = getCellMeta(a.siteId, a.date);
+      if (meta.holiday || meta.blocked) {
+        ignored += 1;
+        return;
+      }
+
+      const rawHours = meta.hoursOverride ?? hoursPerDay;
+      const hours = Number.isFinite(Number(rawHours)) ? Number(rawHours) : 0;
+
+      if (!perPerson[a.personId]) perPerson[a.personId] = { days: 0, hours: 0 };
+      perPerson[a.personId].days += 1;
+      perPerson[a.personId].hours += hours;
+
+      if (!perSite[a.siteId]) perSite[a.siteId] = { count: 0, hours: 0 };
+      perSite[a.siteId].count += 1;
+      perSite[a.siteId].hours += hours;
+
+      total += hours;
+    });
+
+    return { personTotals: perPerson, siteTotals: perSite, totalWeekHours: total, ignoredAssignments: ignored };
+  }, [getCellMeta, hoursPerDay, weekAssignments]);
+
+  const totalPersonDays = useMemo(
+    () => people.reduce((sum, p) => sum + (personTotals[p.id]?.days || 0), 0),
+    [people, personTotals]
+  );
+  const totalPersonHours = useMemo(
+    () => people.reduce((sum, p) => sum + (personTotals[p.id]?.hours || 0), 0),
+    [people, personTotals]
+  );
+  const totalSiteAssignments = useMemo(
+    () => sites.reduce((sum, s) => sum + (siteTotals[s.id]?.count || 0), 0),
+    [sites, siteTotals]
+  );
+  const totalSiteHours = useMemo(
+    () => sites.reduce((sum, s) => sum + (siteTotals[s.id]?.hours || 0), 0),
+    [sites, siteTotals]
   );
 
   // DnD sensors
@@ -807,6 +907,7 @@ useEffect(() => {
         setNotes(srv.notes || {});
         setAbsencesByWeek(srv.absencesByWeek || {});
         setSiteWeekVisibility(srv.siteWeekVisibility || {});
+        setHoursPerDay(srv.hoursPerDay ?? 8);
         firstLoad.current = false;
         return;
       }
@@ -822,6 +923,7 @@ useEffect(() => {
         setNotes(s.notes || {});
         setAbsencesByWeek(s.absencesByWeek || {});
         setSiteWeekVisibility(s.siteWeekVisibility || {});
+        setHoursPerDay(s.hoursPerDay ?? 8);
       }
     } catch {}
     firstLoad.current = false;
@@ -841,12 +943,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
 // Sauvegarder à chaque modif
 useEffect(() => {
   if (firstLoad.current) return;
-  const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility };
+  const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay };
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote]);
+}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -912,7 +1014,7 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -920,7 +1022,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -964,6 +1066,17 @@ useEffect(() => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
+            Heures/jour
+            <Input
+              type="number"
+              min={0}
+              step={0.5}
+              value={hoursPerDay}
+              onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
+              className="w-20 h-9"
+            />
+          </label>
           <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
           <Button variant="outline" onClick={copyFromPreviousWeek} aria-label="Copier semaine précédente" title="Copie les affectations, notes et absences de la semaine N-1">
             <Copy className="w-4 h-4 mr-1" /> Copier N-1
@@ -1046,6 +1159,75 @@ useEffect(() => {
                       </div>
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium flex items-center gap-2">
+                    Récap semaine
+                    {ignoredAssignments > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800" title="Férié/indispo ignorés dans le calcul">
+                        heures ignorées : {ignoredAssignments}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-neutral-500">S{pad2(getISOWeek(weekDays[0]))}</div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold">Par salarié</div>
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-3 bg-neutral-50 text-xs font-semibold text-neutral-600 px-2 py-1.5">
+                        <span>Salarié</span>
+                        <span className="text-center">Jours</span>
+                        <span className="text-right">Heures</span>
+                      </div>
+                      {people.map((p) => (
+                        <div key={p.id} className="grid grid-cols-3 text-xs px-2 py-1 border-t border-neutral-100">
+                          <span className="truncate">{p.name}</span>
+                          <span className="text-center">{personTotals[p.id]?.days || 0}</span>
+                          <span className="text-right">{(personTotals[p.id]?.hours || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                      <div className="grid grid-cols-3 bg-neutral-100 text-xs font-semibold px-2 py-1.5">
+                        <span>Total</span>
+                        <span className="text-center">{totalPersonDays}</span>
+                        <span className="text-right">{totalPersonHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold">Par chantier</div>
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-3 bg-neutral-50 text-xs font-semibold text-neutral-600 px-2 py-1.5">
+                        <span>Chantier</span>
+                        <span className="text-center">Affectations</span>
+                        <span className="text-right">Heures</span>
+                      </div>
+                      {sites.map((s) => (
+                        <div key={s.id} className="grid grid-cols-3 text-xs px-2 py-1 border-t border-neutral-100">
+                          <span className="truncate">{s.name}</span>
+                          <span className="text-center">{siteTotals[s.id]?.count || 0}</span>
+                          <span className="text-right">{(siteTotals[s.id]?.hours || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                      <div className="grid grid-cols-3 bg-neutral-100 text-xs font-semibold px-2 py-1.5">
+                        <span>Total</span>
+                        <span className="text-center">{totalSiteAssignments}</span>
+                        <span className="text-right">{totalSiteHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm font-semibold border-t pt-2">
+                    <span>Total global semaine</span>
+                    <span>{totalWeekHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
