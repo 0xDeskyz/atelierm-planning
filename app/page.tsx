@@ -226,6 +226,39 @@ function getMonthWeeks(anchor: Date) {
 
   return weeks;
 }
+const startOfMonthLocal = (d: Date) => {
+  const dt = new Date(d.getFullYear(), d.getMonth(), 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfMonthLocal = (d: Date) => {
+  const dt = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const startOfQuarterLocal = (d: Date) => {
+  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+  const dt = new Date(d.getFullYear(), quarterStartMonth, 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfQuarterLocal = (d: Date) => {
+  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+  const dt = new Date(d.getFullYear(), quarterStartMonth + 3, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const startOfYearLocal = (year: number) => {
+  const dt = new Date(year, 0, 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfYearLocal = (year: number) => {
+  const dt = new Date(year, 12, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
 const mapWeekDates = (src: Date[], dest: Date[]) => {
   const len = Math.min(src.length, dest.length);
@@ -770,7 +803,8 @@ export default function Page() {
   }, [siteWeekVisibility]);
 
   // View / navigation
-  const [view, setView] = useState<"week" | "month" | "hours">("week");
+  const [view, setView] = useState<"week" | "month" | "hours" | "timeline">("week");
+  const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -780,6 +814,45 @@ export default function Page() {
     return getWeekDatesLocal(d);
   }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const timelineWindow = useMemo(() => {
+    const base = new Date(anchor);
+    base.setHours(0, 0, 0, 0);
+
+    if (timelineScope === "month") {
+      const start = startOfMonthLocal(base);
+      const end = endOfMonthLocal(base);
+      const buckets = getMonthWeeks(base).map((week) => {
+        const startDay = new Date(week[0]);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(week[6]);
+        endDay.setHours(0, 0, 0, 0);
+        return { label: `S${pad2(getISOWeek(week[0]))}`, start: startDay, end: endDay };
+      });
+      return { start, end, buckets, label: base.toLocaleString("fr-FR", { month: "long", year: "numeric" }) };
+    }
+
+    if (timelineScope === "quarter") {
+      const start = startOfQuarterLocal(base);
+      const end = endOfQuarterLocal(base);
+      const startMonth = start.getMonth();
+      const buckets = Array.from({ length: 3 }, (_, idx) => {
+        const s = new Date(start.getFullYear(), startMonth + idx, 1);
+        const e = endOfMonthLocal(s);
+        return { label: s.toLocaleString("fr-FR", { month: "short" }), start: s, end: e };
+      });
+      const quarterIndex = Math.floor(base.getMonth() / 3) + 1;
+      return { start, end, buckets, label: `T${quarterIndex} ${base.getFullYear()}` };
+    }
+
+    const start = startOfYearLocal(base.getFullYear());
+    const end = endOfYearLocal(base.getFullYear());
+    const buckets = Array.from({ length: 12 }, (_, idx) => {
+      const s = new Date(base.getFullYear(), idx, 1);
+      const e = endOfMonthLocal(s);
+      return { label: s.toLocaleString("fr-FR", { month: "short" }), start: s, end: e };
+    });
+    return { start, end, buckets, label: `${base.getFullYear()}` };
+  }, [anchor, timelineScope]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -909,6 +982,53 @@ export default function Page() {
     return rows;
   }, [conflictMap, getAssignmentHoursInfo, peopleById, sitesById, weekAssignments]);
 
+  const ganttTimeline = useMemo(() => {
+    if (!timelineWindow) return { rows: [] as { site: any; values: number[]; total: number }[], maxBucket: 0, totalAssignments: 0 };
+
+    const bucketIndex: Record<string, number> = {};
+    timelineWindow.buckets.forEach((bucket, idx) => {
+      const cursor = new Date(bucket.start);
+      cursor.setHours(0, 0, 0, 0);
+      while (cursor.getTime() <= bucket.end.getTime()) {
+        bucketIndex[toLocalKey(cursor)] = idx;
+        const next = new Date(cursor);
+        next.setDate(cursor.getDate() + 1);
+        cursor.setTime(next.getTime());
+      }
+    });
+
+    const rows = sites.map((site) => {
+      const values = Array.from({ length: timelineWindow.buckets.length }, () => 0);
+      assignments.forEach((a) => {
+        if (a.siteId !== site.id) return;
+        const dt = fromLocalKey(a.date);
+        if (!isDateWithin(dt, timelineWindow.start, timelineWindow.end)) return;
+        const meta = getCellMeta(site.id, a.date);
+        if (meta.holiday || meta.blocked) return;
+        const idx = bucketIndex[toLocalKey(dt)];
+        if (idx === undefined) return;
+        values[idx] += 1;
+      });
+      const total = values.reduce((sum, v) => sum + v, 0);
+      return { site, values, total };
+    });
+
+    const maxBucket = rows.reduce((max, row) => {
+      if (row.values.length === 0) return max;
+      const rowMax = Math.max(...row.values);
+      return rowMax > max ? rowMax : max;
+    }, 0);
+    const totalAssignments = rows.reduce((sum, row) => sum + row.total, 0);
+    return { rows, maxBucket, totalAssignments };
+  }, [assignments, getCellMeta, sites, timelineWindow]);
+
+  const timelineScopeLabel = useMemo(() => {
+    if (!timelineWindow) return "";
+    if (timelineScope === "month") return `Vue mensuelle • ${timelineWindow.label}`;
+    if (timelineScope === "quarter") return `Vue trimestrielle • ${timelineWindow.label}`;
+    return `Vue annuelle • ${timelineWindow.label}`;
+  }, [timelineScope, timelineWindow]);
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
@@ -967,8 +1087,15 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (view === "month") d.setMonth(d.getMonth() + delta);
-    else d.setDate(d.getDate() + delta * 7);
+    if (view === "month") {
+      d.setMonth(d.getMonth() + delta);
+    } else if (view === "timeline") {
+      if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
+      else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
+      else d.setFullYear(d.getFullYear() + delta);
+    } else {
+      d.setDate(d.getDate() + delta * 7);
+    }
     setAnchor(d);
   };
 
@@ -1241,6 +1368,12 @@ useEffect(() => {
     const frs = formatFR(new Date('2025-11-07'), true);
     console.assert(typeof frs === 'string' && /novembre|11\/?2025/i.test(frs), 'formatFR fr locale string');
 
+    // timeline helpers
+    const quarterStart = startOfQuarterLocal(new Date('2025-07-15'));
+    console.assert(quarterStart.getMonth() === 6 && quarterStart.getDate() === 1, 'quarter start aligns to July 1');
+    const yearEnd = endOfYearLocal(2025);
+    console.assert(yearEnd.getMonth() === 11 && yearEnd.getDate() === 31, 'year end aligns to Dec 31');
+
     const b = new Blob([JSON.stringify({ a: 1 })], { type: 'application/json' });
     console.assert(b.type === 'application/json', 'export blob type ok');
   }, []);
@@ -1340,6 +1473,14 @@ useEffect(() => {
                 </span>
               </div>
             )}
+            {view === 'timeline' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{timelineScopeLabel}</span>
+                <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                  Jauge par affectations existantes
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1371,6 +1512,7 @@ useEffect(() => {
               <TabsTrigger value="week">Semaine</TabsTrigger>
               <TabsTrigger value="month">Mois</TabsTrigger>
               <TabsTrigger value="hours">Heures</TabsTrigger>
+              <TabsTrigger value="timeline">Calendrier</TabsTrigger>
             </TabsList>
           </Tabs>
           <Button
@@ -1585,6 +1727,92 @@ useEffect(() => {
                   );
                 })}
 
+              </div>
+            )}
+
+            {/* TIMELINE / CALENDRIER GANTT */}
+            {view === "timeline" && timelineWindow && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Calendrier Gantt</span>
+                    <span className="text-xs text-neutral-600">{formatFR(timelineWindow.start)} → {formatFR(timelineWindow.end)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={timelineScope === "month" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setTimelineScope("month")}
+                    >
+                      Mensuel
+                    </Button>
+                    <Button
+                      variant={timelineScope === "quarter" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setTimelineScope("quarter")}
+                    >
+                      Trimestre
+                    </Button>
+                    <Button
+                      variant={timelineScope === "year" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setTimelineScope("year")}
+                    >
+                      Année
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-600">
+                  Jauges proportionnelles au nombre d'affectations (jours-personnes) sur la période, en s'appuyant sur les données du planning.
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-full space-y-2">
+                    <div
+                      className="grid items-center text-[11px] font-semibold text-neutral-600 gap-2"
+                      style={{ gridTemplateColumns: `180px repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}
+                    >
+                      <div className="px-2">Chantier</div>
+                      {timelineWindow.buckets.map((bucket, idx) => (
+                        <div key={`${bucket.label}-${idx}`} className="text-center">
+                          {bucket.label}
+                        </div>
+                      ))}
+                    </div>
+
+                    {ganttTimeline.rows.length === 0 && (
+                      <div className="text-sm text-neutral-500 px-2">Aucune affectation trouvée sur cette période.</div>
+                    )}
+
+                    {ganttTimeline.rows.map((row) => (
+                      <div
+                        key={row.site.id}
+                        className="grid items-center gap-2 text-sm"
+                        style={{ gridTemplateColumns: `180px repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}
+                      >
+                        <div className="flex items-center gap-2 px-2">
+                          <span className="font-medium text-neutral-800">{row.site.name}</span>
+                          <span className="text-[11px] text-neutral-500">{row.total} affect.</span>
+                        </div>
+                        {row.values.map((val, idx) => {
+                          const ratio = ganttTimeline.maxBucket > 0 ? val / ganttTimeline.maxBucket : 0;
+                          const rawWidth = val === 0 ? 0 : Math.max(14, ratio * 100);
+                          const width = Math.min(rawWidth, 100);
+                          return (
+                            <div key={`${row.site.id}-${idx}`} className="relative h-8 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
+                              <div
+                                className="absolute inset-y-0 left-0 bg-sky-500/70"
+                                style={{ width: `${width}%` }}
+                              />
+                              <div className="relative z-10 flex items-center justify-center text-xs font-semibold text-neutral-800">
+                                {val > 0 ? `${val} j.` : ""}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
