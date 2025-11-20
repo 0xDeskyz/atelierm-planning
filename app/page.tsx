@@ -955,6 +955,46 @@ export default function Page() {
     return getWeekDatesLocal(d);
   }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const isWeekend = useCallback((d: Date) => {
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  }, []);
+  const countWorkingDaysInclusive = useCallback(
+    (start: Date, end: Date) => {
+      if (end.getTime() < start.getTime()) return 0;
+      let count = 0;
+      const cursor = new Date(start);
+      while (cursor.getTime() <= end.getTime()) {
+        if (!isWeekend(cursor)) count++;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    },
+    [isWeekend]
+  );
+  const workingDaysUntil = useCallback(
+    (start: Date, target: Date) => {
+      if (target.getTime() <= start.getTime()) return 0;
+      let count = 0;
+      const cursor = new Date(start);
+      while (cursor.getTime() < target.getTime()) {
+        if (!isWeekend(cursor)) count++;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    },
+    [isWeekend]
+  );
+  const firstWorkingDayOnOrAfter = useCallback(
+    (d: Date) => {
+      const cursor = new Date(d);
+      while (isWeekend(cursor)) {
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return cursor;
+    },
+    [isWeekend]
+  );
   const timelineWindow = useMemo(() => {
     const base = new Date(anchor);
     base.setHours(0, 0, 0, 0);
@@ -994,6 +1034,21 @@ export default function Page() {
     });
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
+  const timelineView = useMemo(() => {
+    if (!timelineWindow) return null;
+    const earliestStart = sites.reduce<Date | null>((min, site) => {
+      const s = fromLocalKey(site.startDate || todayKey);
+      return !min || s.getTime() < min.getTime() ? s : min;
+    }, null);
+    const startCandidate = earliestStart && earliestStart.getTime() > timelineWindow.start.getTime()
+      ? earliestStart
+      : timelineWindow.start;
+    const start = startCandidate.getTime() > timelineWindow.end.getTime() ? timelineWindow.end : startCandidate;
+    const buckets = timelineWindow.buckets
+      .filter((b) => b.end.getTime() >= start.getTime())
+      .map((b) => ({ ...b, start: b.start.getTime() < start.getTime() ? start : b.start }));
+    return { ...timelineWindow, start, buckets };
+  }, [sites, timelineWindow, todayKey]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -1124,32 +1179,31 @@ export default function Page() {
   }, [conflictMap, getAssignmentHoursInfo, peopleById, sitesById, weekAssignments]);
 
   const ganttTimeline = useMemo(() => {
-    if (!timelineWindow)
+    if (!timelineView)
       return { rows: [] as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[], totalDays: 0 };
 
-    const dayMs = 24 * 3600 * 1000;
-    const totalDays = Math.max(1, Math.round((timelineWindow.end.getTime() - timelineWindow.start.getTime()) / dayMs) + 1);
+    const totalDays = Math.max(1, countWorkingDaysInclusive(timelineView.start, timelineView.end));
 
     const rows = sites
       .map((site) => {
         const siteStart = fromLocalKey(site.startDate || todayKey);
         const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
-        if (siteEnd < timelineWindow.start || siteStart > timelineWindow.end) return null;
+        if (siteEnd < timelineView.start || siteStart > timelineView.end) return null;
 
-        const start = siteStart.getTime() < timelineWindow.start.getTime() ? new Date(timelineWindow.start) : siteStart;
-        const end = siteEnd.getTime() > timelineWindow.end.getTime() ? new Date(timelineWindow.end) : siteEnd;
-        const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs) + 1);
-        const offsetDays = Math.max(0, Math.round((start.getTime() - timelineWindow.start.getTime()) / dayMs));
+        const start = siteStart.getTime() < timelineView.start.getTime() ? new Date(timelineView.start) : siteStart;
+        const end = siteEnd.getTime() > timelineView.end.getTime() ? new Date(timelineView.end) : siteEnd;
+        const spanDays = Math.max(1, countWorkingDaysInclusive(start, end));
+        const offsetDays = Math.max(0, workingDaysUntil(timelineView.start, start));
         const offsetPct = (offsetDays / totalDays) * 100;
         const widthPct = Math.max(2, (spanDays / totalDays) * 100);
 
-        const bucketOverlap = timelineWindow.buckets.map((bucket) => {
-          const overlapStart = new Date(Math.max(bucket.start.getTime(), start.getTime()));
+        const bucketOverlap = timelineView.buckets.map((bucket) => {
+          const overlapStart = firstWorkingDayOnOrAfter(new Date(Math.max(bucket.start.getTime(), start.getTime())));
           const overlapEnd = new Date(Math.min(bucket.end.getTime(), end.getTime()));
           const hasOverlap = overlapEnd.getTime() >= overlapStart.getTime();
-          const days = hasOverlap ? Math.round((overlapEnd.getTime() - overlapStart.getTime()) / dayMs) + 1 : 0;
-          const bucketDays = Math.max(1, Math.round((bucket.end.getTime() - bucket.start.getTime()) / dayMs) + 1);
-          const pct = Math.min(100, (days / bucketDays) * 100);
+          const days = hasOverlap ? countWorkingDaysInclusive(overlapStart, overlapEnd) : 0;
+          const bucketDays = Math.max(1, countWorkingDaysInclusive(bucket.start, bucket.end));
+          const pct = Math.min(100, bucketDays > 0 ? (days / bucketDays) * 100 : 0);
           return { label: bucket.label, days, pct };
         });
 
@@ -1162,37 +1216,37 @@ export default function Page() {
       .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
 
     return { rows, totalDays };
-  }, [sites, timelineWindow]);
+  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, sites, timelineView, todayKey, workingDaysUntil]);
 
   const timelineScopeLabel = useMemo(() => {
-    if (!timelineWindow) return "";
-    if (timelineScope === "month") return `Vue mensuelle • ${timelineWindow.label}`;
-    if (timelineScope === "quarter") return `Vue trimestrielle • ${timelineWindow.label}`;
-    return `Vue annuelle • ${timelineWindow.label}`;
-  }, [timelineScope, timelineWindow]);
+    if (!timelineView) return "";
+    if (timelineScope === "month") return `Vue mensuelle • ${timelineView.label}`;
+    if (timelineScope === "quarter") return `Vue trimestrielle • ${timelineView.label}`;
+    return `Vue annuelle • ${timelineView.label}`;
+  }, [timelineScope, timelineView]);
 
   const timelineLoad = useMemo(() => {
-    if (!timelineWindow) return { counts: [] as number[], labels: [] as string[], gaps: [] as any[], peaks: [] as any[], bucketStats: [] as any[], max: 0, zeroDays: 0, totalDays: 0 };
-    const dayMs = 24 * 3600 * 1000;
-    const totalDays = Math.max(1, Math.round((timelineWindow.end.getTime() - timelineWindow.start.getTime()) / dayMs) + 1);
-    const counts: number[] = [];
-    const labels: string[] = [];
-
-    for (let i = 0; i < totalDays; i++) {
-      const d = new Date(timelineWindow.start);
-      d.setDate(d.getDate() + i);
-      labels.push(toLocalKey(d));
-      const active = sites.reduce((acc, site) => {
-        const siteStart = fromLocalKey(site.startDate || todayKey);
-        const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
-        if (siteStart.getTime() <= d.getTime() && siteEnd.getTime() >= d.getTime()) {
-          return acc + 1;
-        }
-        return acc;
-      }, 0);
-      counts.push(active);
+    if (!timelineView) return { counts: [] as number[], labels: [] as string[], gaps: [] as any[], peaks: [] as any[], bucketStats: [] as any[], max: 0, zeroDays: 0, totalDays: 0 };
+    const days: { date: Date; count: number }[] = [];
+    const cursor = new Date(timelineView.start);
+    while (cursor.getTime() <= timelineView.end.getTime()) {
+      if (!isWeekend(cursor)) {
+        const dateKey = toLocalKey(cursor);
+        const count = sites.reduce((acc, site) => {
+          const siteStart = fromLocalKey(site.startDate || todayKey);
+          const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+          if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+        days.push({ date: new Date(cursor), count });
+      }
+      cursor.setDate(cursor.getDate() + 1);
     }
 
+    const counts = days.map((d) => d.count);
+    const labels = days.map((d) => toLocalKey(d.date));
     const max = counts.length ? Math.max(...counts) : 0;
     const zeroDays = counts.filter((c) => c === 0).length;
 
@@ -1213,42 +1267,29 @@ export default function Page() {
     };
 
     const gaps = findRanges((v) => v === 0).map((r) => {
-      const start = new Date(timelineWindow.start);
-      start.setDate(start.getDate() + r.startIdx);
-      const end = new Date(timelineWindow.start);
-      end.setDate(end.getDate() + r.endIdx);
+      const start = new Date(days[r.startIdx].date);
+      const end = new Date(days[r.endIdx].date);
       return { start, end, days: r.endIdx - r.startIdx + 1 };
     });
 
     const peaks = max > 0
       ? findRanges((v) => v === max).map((r) => {
-          const start = new Date(timelineWindow.start);
-          start.setDate(start.getDate() + r.startIdx);
-          const end = new Date(timelineWindow.start);
-          end.setDate(end.getDate() + r.endIdx);
+          const start = new Date(days[r.startIdx].date);
+          const end = new Date(days[r.endIdx].date);
           return { start, end, days: r.endIdx - r.startIdx + 1, count: max };
         })
       : [];
 
-    const bucketStats = timelineWindow.buckets.map((bucket) => {
-      const startOffset = Math.max(0, Math.round((bucket.start.getTime() - timelineWindow.start.getTime()) / dayMs));
-      const endOffset = Math.min(
-        totalDays - 1,
-        Math.round((bucket.end.getTime() - timelineWindow.start.getTime()) / dayMs)
-      );
-      let sum = 0;
-      let idle = 0;
-      for (let i = startOffset; i <= endOffset; i++) {
-        sum += counts[i] ?? 0;
-        if ((counts[i] ?? 0) === 0) idle++;
-      }
-      const span = endOffset - startOffset + 1;
-      const avg = span > 0 ? sum / span : 0;
-      return { label: bucket.label, avg, idle, span };
+    const bucketStats = timelineView.buckets.map((bucket) => {
+      const spanDays = days.filter((d) => d.date.getTime() >= bucket.start.getTime() && d.date.getTime() <= bucket.end.getTime());
+      const sum = spanDays.reduce((acc, d) => acc + d.count, 0);
+      const idle = spanDays.filter((d) => d.count === 0).length;
+      const avg = spanDays.length > 0 ? sum / spanDays.length : 0;
+      return { label: bucket.label, avg, idle, span: spanDays.length };
     });
 
-    return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays };
-  }, [sites, timelineWindow, todayKey]);
+    return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
+  }, [isWeekend, sites, timelineView, todayKey]);
 
   // DnD sensors
   const sensors = useSensors(
@@ -1971,12 +2012,12 @@ useEffect(() => {
             )}
 
             {/* TIMELINE / CALENDRIER GANTT */}
-            {view === "timeline" && timelineWindow && (
+            {view === "timeline" && timelineView && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold">Calendrier Gantt</span>
-                    <span className="text-xs text-neutral-600">{formatFR(timelineWindow.start)} → {formatFR(timelineWindow.end)}</span>
+                    <span className="text-xs text-neutral-600">{formatFR(timelineView.start)} → {formatFR(timelineView.end)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant={timelineScope === "month" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("month")}>
@@ -1998,8 +2039,8 @@ useEffect(() => {
                     <div className="grid" style={{ gridTemplateColumns: `220px 1fr` }}>
                       <div className="px-2 text-[11px] font-semibold text-neutral-600">Chantier</div>
                       <div className="relative pl-2">
-                        <div className="grid text-[11px] font-semibold text-neutral-600" style={{ gridTemplateColumns: `repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}>
-                          {timelineWindow.buckets.map((bucket, idx) => (
+                        <div className="grid text-[11px] font-semibold text-neutral-600" style={{ gridTemplateColumns: `repeat(${timelineView.buckets.length}, minmax(140px, 1fr))` }}>
+                          {timelineView.buckets.map((bucket, idx) => (
                             <div key={`${bucket.label}-${idx}`} className="text-center pb-1 border-l first:border-l-0 border-neutral-200">
                               {bucket.label}
                             </div>
@@ -2019,15 +2060,14 @@ useEffect(() => {
                           <div className="flex items-center gap-2">
                             <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
-                            <span className="text-[11px] text-neutral-500">{row.bar.days} j.</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
                             {formatFR(row.bar.start)} → {formatFR(row.bar.end)}
                           </div>
                         </div>
                         <div className="relative h-12 rounded-xl bg-gradient-to-b from-neutral-50 to-white border border-neutral-200 shadow-[inset_0_1px_0_rgba(0,0,0,0.03)]">
-                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}>
-                            {timelineWindow.buckets.map((_, idx) => (
+                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timelineView.buckets.length}, minmax(140px, 1fr))` }}>
+                            {timelineView.buckets.map((_, idx) => (
                               <div key={idx} className="border-l last:border-r border-neutral-200/80" />
                             ))}
                           </div>
@@ -2036,9 +2076,6 @@ useEffect(() => {
                             style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
                           >
                             <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
-                          </div>
-                          <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-neutral-800 drop-shadow-sm">
-                            {row.bar.days} j.
                           </div>
                         </div>
                       </div>
