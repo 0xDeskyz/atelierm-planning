@@ -272,15 +272,38 @@ function PersonChip({ person }: any) {
 // ==================================
 // Assignment chip (draggable)
 // ==================================
-function AssignmentChip({ a, person, onRemove }: any) {
+const getPortion = (val: any) => {
+  const portion = Number(val ?? 1);
+  return Number.isFinite(portion) && portion > 0 ? portion : 1;
+};
+
+function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `assign-${a.id}`,
     data: { type: "assignment", assignmentId: a.id, personId: a.personId, from: { siteId: a.siteId, dateKey: a.date } },
   });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5 } : undefined;
+  const portion = getPortion(a.portion);
+  const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
+  const parsedHours = Number(a.hours);
+  const hours = hasCustomHours && Number.isFinite(parsedHours) ? parsedHours : baseHours * portion;
+  const extraLabel = (() => {
+    if (hasCustomHours) return `${hours || 0}h`;
+    if (portion !== 1) return portion === 0.5 ? "½j" : `${portion}j`;
+    return null;
+  })();
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""}`}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
+      title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
+    >
       <span>{person.name}</span>
+      {extraLabel && <span className="text-[10px] px-1 py-0.5 rounded-full bg-black/30">{extraLabel}</span>}
+      {conflict && <span className="text-[10px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-900">Conflit</span>}
       <button className="ml-1 w-4 h-4 leading-none rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center" title="Retirer du jour" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
     </div>
   );
@@ -289,7 +312,7 @@ function AssignmentChip({ a, person, onRemove }: any) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment }: any) {
+function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -300,6 +323,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
   const status = meta.holiday ? "holiday" : (meta.blocked ? "blocked" : null);
   const unavailable = Boolean(status);
   const hoursLabel = meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" ? `${meta.hoursOverride}h` : null;
+  const baseHours = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
 
   return (
     <div
@@ -341,7 +365,18 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
       <div className="flex flex-wrap gap-1">
         {todays.map((a: any) => {
           const p = people.find((pp: any) => pp.id === a.personId);
-          return p ? <AssignmentChip key={a.id} a={a} person={p} onRemove={() => onRemoveAssignment(a.id)} /> : null;
+          const conflictKey = `${a.personId}|${a.date}`;
+          const conflict = (conflictMap?.[conflictKey] || 0) > 1;
+          return p ? (
+            <AssignmentChip
+              key={a.id}
+              a={a}
+              person={p}
+              onRemove={() => onRemoveAssignment(a.id)}
+              baseHours={baseHours}
+              conflict={conflict}
+            />
+          ) : null;
         })}
       </div>
 
@@ -357,6 +392,117 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
           <Edit3 className="w-4 h-4" />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, getInfo }: any) {
+  const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
+  const key = cellKey(site.id, toLocalKey(date));
+  const raw = notes[key];
+  const meta = typeof raw === "string" ? { text: raw } : (raw || {});
+  const status = meta.holiday ? "holiday" : meta.blocked ? "blocked" : null;
+  const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
+  const unavailable = Boolean(status);
+
+  return (
+    <div
+      className={cx(
+        "border min-h-[6rem] p-3 rounded-xl bg-white",
+        status === "holiday"
+          ? "bg-red-50 ring-2 ring-red-300 border-red-200"
+          : status === "blocked"
+          ? "bg-sky-50 ring-2 ring-sky-300 border-sky-200"
+          : "border-neutral-200"
+      )}
+      title={meta.text || meta?.brNote?.text || ""}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{toLocalKey(date)}</span>
+          {meta.holiday && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</span>
+          )}
+          {meta.blocked && !meta.holiday && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200">Indispo</span>
+          )}
+          {meta.text && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
+              {meta.text}
+            </span>
+          )}
+          {meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures propres à la case">
+              {meta.hoursOverride}h / jour
+            </span>
+          )}
+        </div>
+        <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
+          <Edit3 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {todays.map((a: any) => {
+          const p = people.find((pp: any) => pp.id === a.personId);
+          if (!p) return null;
+          const info = getInfo(a, meta);
+          const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
+          const portionLabel = info.portion === 1 ? "journée" : info.portion === 0.5 ? "½ journée" : `${info.portion} j`;
+          const displayHours = Number.isFinite(info.hours) ? info.hours : 0;
+          return (
+            <div key={a.id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-2">
+                    {p.name}
+                    <span className="text-[11px] rounded-full bg-white px-2 py-0.5 border border-neutral-200">{portionLabel}</span>
+                  </span>
+                  {conflict && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">Conflit possible</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-neutral-600">{displayHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Button size="sm" variant={info.portion === 1 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 1 })}>
+                  Journée
+                </Button>
+                <Button size="sm" variant={info.portion === 0.5 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 0.5 })}>
+                  ½ journée
+                </Button>
+                <Input
+                  type="number"
+                  step={0.25}
+                  min={0}
+                  className="w-24 h-8"
+                  disabled={unavailable}
+                  value={info.hasCustomHours ? info.hours : ""}
+                  placeholder={info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
+                  onChange={(e: any) => onUpdateAssignment(a.id, { hours: e.target.value === "" ? "" : Number(e.target.value) })}
+                />
+                <Button size="sm" variant="ghost" disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { hours: "" })}>
+                  Défaut
+                </Button>
+              </div>
+
+              <div className="text-[11px] text-neutral-500 leading-snug">
+                Base {baseValue}h × {info.portion} = {info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h
+                {info.hasCustomHours
+                  ? " (override manuel)"
+                  : meta.hoursOverride
+                  ? " (heures de la case)"
+                  : ` (heure/jour globale ${hoursPerDay}h)`}
+              </div>
+            </div>
+          );
+        })}
+
+        {todays.length === 0 && (
+          <div className="text-[11px] text-neutral-500">Aucune affectation sur ce jour.</div>
+        )}
       </div>
     </div>
   );
@@ -595,7 +741,7 @@ function AddSite({ onAdd }: { onAdd: (name: string) => void }) {
 }
 
 // ==================================
-// Main Component (Page) – Semaine & Mois seulement
+// Main Component (Page) – Semaine / Mois / Heures
 // ==================================
 export default function Page() {
   // Core state
@@ -615,7 +761,7 @@ export default function Page() {
   }, [siteWeekVisibility]);
 
   // View / navigation
-  const [view, setView] = useState<"week" | "month">("week");
+  const [view, setView] = useState<"week" | "month" | "hours">("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -643,12 +789,46 @@ export default function Page() {
     [notes]
   );
 
+  const getAssignmentHoursInfo = useCallback(
+    (a: any, metaFromCell?: any) => {
+      const meta = metaFromCell || getCellMeta(a.siteId, a.date);
+      const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay))
+        ? Number(meta.hoursOverride ?? hoursPerDay)
+        : 0;
+      const portion = getPortion(a.portion);
+      const suggestedHours = baseValue * portion;
+      const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
+      const parsedCustom = Number(a.hours);
+      const hours = hasCustomHours && Number.isFinite(parsedCustom) ? parsedCustom : suggestedHours;
+      return { meta, portion, hours, suggestedHours, hasCustomHours, baseValue };
+    },
+    [getCellMeta, hoursPerDay]
+  );
+
   const weekDateKeys = useMemo(() => weekDays.map((d) => toLocalKey(d)), [weekDays]);
   const weekDateSet = useMemo(() => new Set(weekDateKeys), [weekDateKeys]);
   const weekAssignments = useMemo(
     () => assignments.filter((a) => weekDateSet.has(a.date)),
     [assignments, weekDateSet]
   );
+
+  const conflictMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    assignments.forEach((a) => {
+      const key = `${a.personId}|${a.date}`;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [assignments]);
+
+  const weekConflictCount = useMemo(() => {
+    const dateSet = new Set(weekDateKeys);
+    return Object.entries(conflictMap).reduce((sum, [key, count]) => {
+      if (count <= 1) return sum;
+      const [, date] = key.split("|");
+      return dateSet.has(date) ? sum + count : sum;
+    }, 0);
+  }, [conflictMap, weekDateKeys]);
 
   const { personTotals, siteTotals, totalWeekHours, ignoredAssignments } = useMemo(() => {
     const perPerson: Record<string, { days: number; hours: number }> = {};
@@ -657,28 +837,25 @@ export default function Page() {
     let ignored = 0;
 
     weekAssignments.forEach((a) => {
-      const meta = getCellMeta(a.siteId, a.date);
-      if (meta.holiday || meta.blocked) {
+      const info = getAssignmentHoursInfo(a);
+      if (info.meta.holiday || info.meta.blocked) {
         ignored += 1;
         return;
       }
 
-      const rawHours = meta.hoursOverride ?? hoursPerDay;
-      const hours = Number.isFinite(Number(rawHours)) ? Number(rawHours) : 0;
-
       if (!perPerson[a.personId]) perPerson[a.personId] = { days: 0, hours: 0 };
-      perPerson[a.personId].days += 1;
-      perPerson[a.personId].hours += hours;
+      perPerson[a.personId].days += info.portion;
+      perPerson[a.personId].hours += info.hours;
 
       if (!perSite[a.siteId]) perSite[a.siteId] = { count: 0, hours: 0 };
       perSite[a.siteId].count += 1;
-      perSite[a.siteId].hours += hours;
+      perSite[a.siteId].hours += info.hours;
 
-      total += hours;
+      total += info.hours;
     });
 
     return { personTotals: perPerson, siteTotals: perSite, totalWeekHours: total, ignoredAssignments: ignored };
-  }, [getCellMeta, hoursPerDay, weekAssignments]);
+  }, [getAssignmentHoursInfo, weekAssignments]);
 
   const totalPersonDays = useMemo(
     () => people.reduce((sum, p) => sum + (personTotals[p.id]?.days || 0), 0),
@@ -729,8 +906,10 @@ export default function Page() {
     if (data.type === "person" && data.person) {
       const person = data.person;
       if (isAbsentOnWeek(person.id, wkKey)) return;
-      const hasSameDay = assignments.some((a) => a.personId === person.id && a.date === targetDateKey);
-      if (hasSameDay) return;
+      const duplicate = assignments.some(
+        (a) => a.personId === person.id && a.date === targetDateKey && a.siteId === targetSite.id
+      );
+      if (duplicate) return;
       const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${person.id}-${targetSite.id}-${targetDateKey}-${Date.now()}`;
       setAssignments((prev) => [...prev, { id, personId: person.id, siteId: targetSite.id, date: targetDateKey }]);
       return;
@@ -741,8 +920,10 @@ export default function Page() {
       const ass = assignments.find((a) => a.id === assId);
       if (!ass) return;
       if (isAbsentOnWeek(ass.personId, wkKey)) return;
-      const conflict = assignments.some((a) => a.personId === ass.personId && a.date === targetDateKey && a.id !== assId);
-      if (conflict) return;
+      const duplicate = assignments.some(
+        (a) => a.personId === ass.personId && a.date === targetDateKey && a.siteId === targetSite.id && a.id !== assId
+      );
+      if (duplicate) return;
       if (ass.date === targetDateKey && ass.siteId === targetSite.id) return;
       setAssignments((prev) => prev.map((a) => (a.id === assId ? { ...a, date: targetDateKey, siteId: targetSite.id } : a)));
       return;
@@ -751,22 +932,22 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (view === "week") d.setDate(d.getDate() + delta * 7);
-    else d.setMonth(d.getMonth() + delta);
+    if (view === "month") d.setMonth(d.getMonth() + delta);
+    else d.setDate(d.getDate() + delta * 7);
     setAnchor(d);
   };
 
   const monthWeekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [pendingScrollWeek, setPendingScrollWeek] = useState<string | null>(null);
 
-  const jumpToCurrentWeek = (opts?: { forceWeek?: boolean }) => {
+  const jumpToCurrentWeek = (opts?: { forceView?: "week" | "hours" }) => {
     const now = new Date();
     const wkKey = weekKeyOf(now);
     setAnchor(now);
     if (view === "month") {
       setPendingScrollWeek(wkKey);
     }
-    setView((v) => (opts?.forceWeek ? "week" : v));
+    if (opts?.forceView) setView(opts.forceView);
   };
 
   useEffect(() => {
@@ -829,14 +1010,14 @@ export default function Page() {
     const dateMap = mapWeekDates(prevDates, weekDays);
 
     setAssignments((prev) => {
-      const existing = new Set(prev.map((a) => `${a.personId}-${a.date}`));
+      const existing = new Set(prev.map((a) => `${a.personId}-${a.date}-${a.siteId}`));
       const additions = prev
         .filter((a) => dateMap[a.date])
         .map((a) => {
           const newDate = dateMap[a.date];
           if (!newDate) return null;
           if (isAbsentOnWeek(a.personId, currentWeekKey)) return null;
-          if (existing.has(`${a.personId}-${newDate}`)) return null;
+          if (existing.has(`${a.personId}-${newDate}-${a.siteId}`)) return null;
           return {
             ...a,
             id:
@@ -874,6 +1055,26 @@ export default function Page() {
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
   const renameSite = (id: string, name: string) => setSites((s) => s.map((x) => (x.id === id ? { ...x, name } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
+  const updateAssignment = (id: string, changes: { hours?: any; portion?: any }) => {
+    setAssignments((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const next: any = { ...a };
+        if (Object.prototype.hasOwnProperty.call(changes, "portion")) {
+          next.portion = getPortion(changes.portion);
+        }
+        if (Object.prototype.hasOwnProperty.call(changes, "hours")) {
+          const raw = changes.hours;
+          if (raw === undefined || raw === null || raw === "") {
+            delete next.hours;
+          } else if (Number.isFinite(Number(raw))) {
+            next.hours = Number(raw);
+          }
+        }
+        return next;
+      })
+    );
+  };
   const addPerson = (name: string, color: string) => setPeople((p) => [...p, { id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `p${Date.now()}`, name, color }]);
   const removePerson = (id: string) => {
     setPeople((p) => p.filter((x) => x.id !== id));
@@ -1027,7 +1228,7 @@ useEffect(() => {
   };
 
   // ==========================
-  // UI (Semaine & Mois)
+  // UI (Semaine / Mois / Heures)
   // ==========================
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -1038,7 +1239,7 @@ useEffect(() => {
           <Button variant="outline" onClick={() => shift(1)} aria-label="Suivant"><ChevronRight className="w-4 h-4" /></Button>
           <Button
             variant="outline"
-            onClick={() => jumpToCurrentWeek({ forceWeek: view === "week" })}
+            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
             className="ml-1"
             aria-label="Aller à la semaine actuelle"
             title="Revenir rapidement à la semaine en cours"
@@ -1047,7 +1248,7 @@ useEffect(() => {
           </Button>
           <div className="font-semibold text-lg flex items-center gap-2">
             <CalendarRange className="w-5 h-5" />
-            {view === 'week' && (
+            {(view === 'week' || view === 'hours') && (
               <div className="flex items-center gap-2 flex-wrap">
                 <span>{`Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}</span>
                 <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
@@ -1090,9 +1291,15 @@ useEffect(() => {
             <TabsList>
               <TabsTrigger value="week">Semaine</TabsTrigger>
               <TabsTrigger value="month">Mois</TabsTrigger>
+              <TabsTrigger value="hours">Heures</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button variant="ghost" onClick={() => jumpToCurrentWeek({ forceWeek: view === "week" })} className="hidden md:inline-flex" aria-label="Afficher la semaine actuelle">
+          <Button
+            variant="ghost"
+            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
+            className="hidden md:inline-flex"
+            aria-label="Afficher la semaine actuelle"
+          >
             Aller à la semaine en cours
           </Button>
         </div>
@@ -1171,6 +1378,11 @@ useEffect(() => {
                     {ignoredAssignments > 0 && (
                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800" title="Férié/indispo ignorés dans le calcul">
                         heures ignorées : {ignoredAssignments}
+                      </span>
+                    )}
+                    {weekConflictCount > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900" title="Salariés placés sur plusieurs chantiers le même jour">
+                        conflits : {weekConflictCount}
                       </span>
                     )}
                   </div>
@@ -1252,7 +1464,61 @@ useEffect(() => {
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
                       <div className="text-sm flex items-center">{site.name}</div>
                       {weekDays.map((d) => (
-                        <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+                        <DayCell
+                          key={`${site.id}-${toLocalKey(d)}`}
+                          date={d}
+                          site={site}
+                          people={people}
+                          assignments={assignments}
+                          onEditNote={openNote}
+                          notes={notes}
+                          hoursPerDay={hoursPerDay}
+                          conflictMap={conflictMap}
+                          onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* HOURS VIEW */}
+            {view === "hours" && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-6 text-xs text-neutral-500">
+                  <div className="px-1 flex items-center gap-2">
+                    <span>Sem. {getISOWeek(weekDays[0])}</span>
+                    {isViewingCurrentWeek && (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
+                    )}
+                    {weekConflictCount > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{weekConflictCount} conflits potentiels</span>
+                    )}
+                  </div>
+                  {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                </div>
+                <div className="space-y-2">
+                  {sitesForCurrentWeek.map((site) => (
+                    <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
+                      <div className="text-sm flex items-center font-semibold justify-between">
+                        <span>{site.name}</span>
+                        <span className="text-[11px] text-neutral-500">Heures & portions</span>
+                      </div>
+                      {weekDays.map((d) => (
+                        <HoursCell
+                          key={`${site.id}-${toLocalKey(d)}`}
+                          date={d}
+                          site={site}
+                          people={people}
+                          assignments={assignments}
+                          notes={notes}
+                          hoursPerDay={hoursPerDay}
+                          conflictMap={conflictMap}
+                          onEditNote={openNote}
+                          onUpdateAssignment={updateAssignment}
+                          getInfo={getAssignmentHoursInfo}
+                        />
                       ))}
                     </div>
                   ))}
@@ -1294,7 +1560,18 @@ useEffect(() => {
                           <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
                             <div className="text-sm flex items-center font-medium text-neutral-800">{site.name}</div>
                             {week.slice(0, 5).map((d) => (
-                              <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+                              <DayCell
+                                key={`${site.id}-${toLocalKey(d)}`}
+                                date={d}
+                                site={site}
+                                people={people}
+                                assignments={assignments}
+                                onEditNote={openNote}
+                                notes={notes}
+                                hoursPerDay={hoursPerDay}
+                                conflictMap={conflictMap}
+                                onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                              />
                             ))}
                           </div>
                         ))}
