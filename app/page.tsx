@@ -1295,6 +1295,16 @@ export default function Page() {
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
   }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, sites, timelineView, todayKey]);
 
+  const getLoadTone = useCallback((ratio: number) => {
+    if (ratio >= 0.7) {
+      return { color: "#ef4444", softBg: "bg-rose-50", softText: "text-rose-700", border: "border-rose-100" };
+    }
+    if (ratio >= 0.35) {
+      return { color: "#f59e0b", softBg: "bg-amber-50", softText: "text-amber-700", border: "border-amber-100" };
+    }
+    return { color: "#10b981", softBg: "bg-emerald-50", softText: "text-emerald-700", border: "border-emerald-100" };
+  }, []);
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
@@ -2106,14 +2116,14 @@ useEffect(() => {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-neutral-500 text-xs">Charge max</span>
-                          <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold">
+                          <span className="px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-semibold">
                             {timelineLoad.max} chantier{timelineLoad.max > 1 ? "s" : ""}
                           </span>
                         </div>
                       </div>
 
                       <div className="space-y-1">
-                        <div className="text-xs font-medium text-neutral-700">Périodes sans chantier</div>
+                        <div className="text-xs font-medium text-neutral-700">Périodes sans chantier (jours exacts)</div>
                         {timelineLoad.gaps.length === 0 && <div className="text-xs text-neutral-500">Aucune période vide.</div>}
                         {timelineLoad.gaps.map((gap, idx) => (
                           <div key={idx} className="text-xs flex items-center justify-between bg-amber-50 text-amber-800 px-2 py-1 rounded-lg border border-amber-100">
@@ -2127,7 +2137,7 @@ useEffect(() => {
                         <div className="text-xs font-medium text-neutral-700">Périodes très chargées</div>
                         {timelineLoad.peaks.length === 0 && <div className="text-xs text-neutral-500">Aucune période dense.</div>}
                         {timelineLoad.peaks.map((peak, idx) => (
-                          <div key={idx} className="text-xs flex items-center justify-between bg-emerald-50 text-emerald-800 px-2 py-1 rounded-lg border border-emerald-100">
+                          <div key={idx} className="text-xs flex items-center justify-between bg-rose-50 text-rose-800 px-2 py-1 rounded-lg border border-rose-100">
                             <span>{formatFR(peak.start)} → {formatFR(peak.end)}</span>
                             <span className="font-semibold">{peak.count} ch. / {peak.days} j.</span>
                           </div>
@@ -2138,23 +2148,36 @@ useEffect(() => {
                     <div className="space-y-2">
                       <div className="text-xs font-medium text-neutral-700">Charge par bucket</div>
                       <div className="grid md:grid-cols-3 gap-2">
-                        {timelineLoad.bucketStats.map((b) => (
-                          <div key={b.label} className="p-2 rounded-lg border border-neutral-200 bg-neutral-50">
-                            <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-700 mb-1">
-                              <span>{b.label}</span>
-                              <span className="text-neutral-500">{b.avg.toFixed(1)} ch.</span>
+                        {timelineLoad.bucketStats.map((b) => {
+                          const ratio = timelineLoad.max > 0 ? b.avg / Math.max(1, timelineLoad.max || 1) : 0;
+                          const pct = Math.min(100, ratio * 100);
+                          const tone = getLoadTone(ratio);
+                          return (
+                            <div key={b.label} className={cx("p-3 rounded-lg border", tone.border, tone.softBg)}>
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-700 mb-2">
+                                <span>{b.label}</span>
+                                <span className={cx("text-xs font-semibold", tone.softText)}>{b.avg.toFixed(1)} ch.</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-16 h-16 rounded-full border border-white shadow-inner relative"
+                                  style={{ background: `conic-gradient(${tone.color} ${pct}%, #e5e7eb ${pct}% 100%)` }}
+                                >
+                                  <div className="absolute inset-2 rounded-full bg-white flex items-center justify-center text-xs font-semibold text-neutral-700">
+                                    {Math.round(pct)}%
+                                  </div>
+                                </div>
+                                <div className="text-[11px] text-neutral-600 space-y-1">
+                                  <div>Charge moyenne</div>
+                                  <div className="font-semibold text-neutral-800">
+                                    {b.avg.toFixed(1)} chantier{b.avg >= 2 ? "s" : ""}
+                                  </div>
+                                  {b.idle > 0 && <div className="text-amber-700">{b.idle} j. sans chantier</div>}
+                                </div>
+                              </div>
                             </div>
-                            <div className="w-full h-2 rounded-full bg-white border border-neutral-200 overflow-hidden">
-                              <div
-                                className="h-full bg-sky-500"
-                                style={{ width: `${Math.min(100, (b.avg / Math.max(1, timelineLoad.max || 1)) * 100)}%` }}
-                              />
-                            </div>
-                            {b.idle > 0 && (
-                              <div className="text-[11px] text-amber-700 mt-1">{b.idle} j. sans chantier</div>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </CardContent>
