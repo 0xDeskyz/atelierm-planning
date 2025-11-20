@@ -147,6 +147,7 @@ const COLORS = [
   "bg-purple-400",
   "bg-slate-500",
 ];
+const SITE_COLORS = COLORS;
 
 // Pastels (3 options) pour mini post-it & surlignage
 const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
@@ -262,8 +263,8 @@ const DEMO_PEOPLE = [
   { id: "p3", name: "Rachid", color: "bg-emerald-500" },
 ];
 const DEMO_SITES = [
-  { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey },
-  { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey },
+  { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
+  { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
 ];
 const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
@@ -281,10 +282,19 @@ const fromLocalKey = (key: string) => {
   dt.setHours(0, 0, 0, 0);
   return dt;
 };
+const hashString = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return h;
+};
 const normalizeSiteRecord = (site: any) => {
   const start = site?.startDate || toLocalKey(new Date());
   const end = site?.endDate || start;
-  return { ...site, startDate: start, endDate: end };
+  const colorIndex = hashString(String(site?.id || site?.name || start)) % SITE_COLORS.length;
+  const color = site?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
+  return { ...site, startDate: start, endDate: end, color };
 };
 // Helper format FR (jour mois année)
 function formatFR(d: Date, withWeekday: boolean = false): string {
@@ -592,12 +602,32 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState<string>(() => toLocalKey(new Date()));
   const [endDate, setEndDate] = useState<string>(() => toLocalKey(new Date()));
+  const [color, setColor] = useState<string>(SITE_COLORS[6]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>Ajouter un chantier</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Couleur</div>
+            <div className="flex flex-wrap gap-2">
+              {SITE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={cx(
+                    "w-7 h-7 rounded-full border transition",
+                    c,
+                    color === c ? "ring-2 ring-black border-black" : "border-transparent"
+                  )}
+                  aria-label={`Choisir la couleur ${c}`}
+                  title={c}
+                />
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <label className="space-y-1">
               <span className="text-neutral-600">Début</span>
@@ -618,11 +648,12 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
                 window.alert("Merci de saisir des dates de début et fin valides.");
                 return;
               }
-              onAdd(n, startDate, endDate);
+              onAdd(n, startDate, endDate, color);
               setOpen(false);
               setName("");
               setStartDate(toLocalKey(new Date()));
               setEndDate(toLocalKey(new Date()));
+              setColor(SITE_COLORS[6]);
             }}
           >
             Ajouter
@@ -644,18 +675,21 @@ function RenameDialog({
   initialYear,
   startDate,
   endDate,
+  color,
 }: any) {
   const [val, setVal] = useState<string>(name || "");
   const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>(weekSelection || []);
   const [scheduleStart, setScheduleStart] = useState<string>(startDate || "");
   const [scheduleEnd, setScheduleEnd] = useState<string>(endDate || "");
+  const [siteColor, setSiteColor] = useState<string>(color || SITE_COLORS[0]);
 
   useEffect(() => setVal(name || ""), [name]);
   useEffect(() => setSelectedWeeks(weekSelection || []), [weekSelection]);
   useEffect(() => { if (initialYear) setPickerYear(initialYear); }, [initialYear]);
   useEffect(() => setScheduleStart(startDate || ""), [startDate]);
   useEffect(() => setScheduleEnd(endDate || ""), [endDate]);
+  useEffect(() => setSiteColor(color || SITE_COLORS[0]), [color]);
 
   const toggleWeek = (wkKey: string) => {
     setSelectedWeeks((prev) => {
@@ -685,6 +719,27 @@ function RenameDialog({
               <span className="text-neutral-600">Fin du chantier</span>
               <Input type="date" value={scheduleEnd} min={scheduleStart} onChange={(e: any) => setScheduleEnd(e.target.value)} />
             </label>
+          </div>
+        )}
+        {typeof color !== "undefined" && (
+          <div className="mt-3 space-y-1">
+            <div className="text-neutral-600 text-sm">Couleur du chantier</div>
+            <div className="flex flex-wrap gap-2">
+              {SITE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setSiteColor(c)}
+                  className={cx(
+                    "w-7 h-7 rounded-full border transition",
+                    c,
+                    siteColor === c ? "ring-2 ring-black border-black" : "border-transparent"
+                  )}
+                  aria-label={`Couleur ${c}`}
+                  title={c}
+                />
+              ))}
+            </div>
           </div>
         )}
         {renderWeekPicker && (
@@ -732,7 +787,12 @@ function RenameDialog({
                 window.alert("La fin doit être postérieure ou égale au début du chantier.");
                 return;
               }
-              onSave(n, selectedWeeks, scheduleStart && scheduleEnd ? { startDate: scheduleStart, endDate: scheduleEnd } : undefined);
+              onSave(
+                n,
+                selectedWeeks,
+                scheduleStart && scheduleEnd ? { startDate: scheduleStart, endDate: scheduleEnd } : undefined,
+                siteColor
+              );
             }}
           >
             Enregistrer
@@ -853,7 +913,7 @@ function AddPerson({ onAdd }: { onAdd: (name: string, color: string) => void }) 
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string) => void }) {
+function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string, color: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1065,7 +1125,10 @@ export default function Page() {
 
   const ganttTimeline = useMemo(() => {
     if (!timelineWindow)
-      return { rows: [] as { site: any; values: { days: number; offsetPct: number; widthPct: number; bucketDays: number }[]; total: number }[], maxOverlap: 0 };
+      return { rows: [] as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[], totalDays: 0 };
+
+    const dayMs = 24 * 3600 * 1000;
+    const totalDays = Math.max(1, Math.round((timelineWindow.end.getTime() - timelineWindow.start.getTime()) / dayMs) + 1);
 
     const rows = sites
       .map((site) => {
@@ -1073,34 +1136,32 @@ export default function Page() {
         const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
         if (siteEnd < timelineWindow.start || siteStart > timelineWindow.end) return null;
 
-        const values = timelineWindow.buckets.map((bucket) => {
-          const bucketDays = Math.max(1, Math.round((bucket.end.getTime() - bucket.start.getTime()) / (24 * 3600 * 1000)) + 1);
-          const overlapStart = new Date(Math.max(bucket.start.getTime(), siteStart.getTime()));
-          const overlapEnd = new Date(Math.min(bucket.end.getTime(), siteEnd.getTime()));
+        const start = siteStart.getTime() < timelineWindow.start.getTime() ? new Date(timelineWindow.start) : siteStart;
+        const end = siteEnd.getTime() > timelineWindow.end.getTime() ? new Date(timelineWindow.end) : siteEnd;
+        const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs) + 1);
+        const offsetDays = Math.max(0, Math.round((start.getTime() - timelineWindow.start.getTime()) / dayMs));
+        const offsetPct = (offsetDays / totalDays) * 100;
+        const widthPct = Math.max(2, (spanDays / totalDays) * 100);
+
+        const bucketOverlap = timelineWindow.buckets.map((bucket) => {
+          const overlapStart = new Date(Math.max(bucket.start.getTime(), start.getTime()));
+          const overlapEnd = new Date(Math.min(bucket.end.getTime(), end.getTime()));
           const hasOverlap = overlapEnd.getTime() >= overlapStart.getTime();
-          const days = hasOverlap
-            ? Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (24 * 3600 * 1000)) + 1
-            : 0;
-          const offsetDays = hasOverlap
-            ? Math.max(0, Math.round((overlapStart.getTime() - bucket.start.getTime()) / (24 * 3600 * 1000)))
-            : 0;
-          const offsetPct = bucketDays > 0 ? (offsetDays / bucketDays) * 100 : 0;
-          const widthPct = bucketDays > 0 ? Math.min(100, Math.max(6, (days / bucketDays) * 100)) : 0;
-          return { days, offsetPct, widthPct, bucketDays };
+          const days = hasOverlap ? Math.round((overlapEnd.getTime() - overlapStart.getTime()) / dayMs) + 1 : 0;
+          const bucketDays = Math.max(1, Math.round((bucket.end.getTime() - bucket.start.getTime()) / dayMs) + 1);
+          const pct = Math.min(100, (days / bucketDays) * 100);
+          return { label: bucket.label, days, pct };
         });
 
-        const total = values.reduce((sum, v) => sum + v.days, 0);
-        if (total === 0) return null;
-        return { site, values, total };
+        return {
+          site,
+          bar: { days: spanDays, offsetPct, widthPct, start, end },
+          bucketOverlap,
+        };
       })
-      .filter(Boolean) as { site: any; values: { days: number; offsetPct: number; widthPct: number; bucketDays: number }[]; total: number }[];
+      .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
 
-    const maxOverlap = rows.reduce((max, row) => {
-      const rowMax = Math.max(...row.values.map((v) => v.days));
-      return rowMax > max ? rowMax : max;
-    }, 0);
-
-    return { rows, maxOverlap };
+    return { rows, totalDays };
   }, [sites, timelineWindow]);
 
   const timelineScopeLabel = useMemo(() => {
@@ -1109,6 +1170,85 @@ export default function Page() {
     if (timelineScope === "quarter") return `Vue trimestrielle • ${timelineWindow.label}`;
     return `Vue annuelle • ${timelineWindow.label}`;
   }, [timelineScope, timelineWindow]);
+
+  const timelineLoad = useMemo(() => {
+    if (!timelineWindow) return { counts: [] as number[], labels: [] as string[], gaps: [] as any[], peaks: [] as any[], bucketStats: [] as any[], max: 0, zeroDays: 0, totalDays: 0 };
+    const dayMs = 24 * 3600 * 1000;
+    const totalDays = Math.max(1, Math.round((timelineWindow.end.getTime() - timelineWindow.start.getTime()) / dayMs) + 1);
+    const counts: number[] = [];
+    const labels: string[] = [];
+
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(timelineWindow.start);
+      d.setDate(d.getDate() + i);
+      labels.push(toLocalKey(d));
+      const active = sites.reduce((acc, site) => {
+        const siteStart = fromLocalKey(site.startDate || todayKey);
+        const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+        if (siteStart.getTime() <= d.getTime() && siteEnd.getTime() >= d.getTime()) {
+          return acc + 1;
+        }
+        return acc;
+      }, 0);
+      counts.push(active);
+    }
+
+    const max = counts.length ? Math.max(...counts) : 0;
+    const zeroDays = counts.filter((c) => c === 0).length;
+
+    const findRanges = (predicate: (v: number) => boolean) => {
+      const ranges: { startIdx: number; endIdx: number }[] = [];
+      let i = 0;
+      while (i < counts.length) {
+        if (predicate(counts[i])) {
+          const startIdx = i;
+          while (i < counts.length && predicate(counts[i])) i++;
+          const endIdx = i - 1;
+          ranges.push({ startIdx, endIdx });
+        } else {
+          i++;
+        }
+      }
+      return ranges;
+    };
+
+    const gaps = findRanges((v) => v === 0).map((r) => {
+      const start = new Date(timelineWindow.start);
+      start.setDate(start.getDate() + r.startIdx);
+      const end = new Date(timelineWindow.start);
+      end.setDate(end.getDate() + r.endIdx);
+      return { start, end, days: r.endIdx - r.startIdx + 1 };
+    });
+
+    const peaks = max > 0
+      ? findRanges((v) => v === max).map((r) => {
+          const start = new Date(timelineWindow.start);
+          start.setDate(start.getDate() + r.startIdx);
+          const end = new Date(timelineWindow.start);
+          end.setDate(end.getDate() + r.endIdx);
+          return { start, end, days: r.endIdx - r.startIdx + 1, count: max };
+        })
+      : [];
+
+    const bucketStats = timelineWindow.buckets.map((bucket) => {
+      const startOffset = Math.max(0, Math.round((bucket.start.getTime() - timelineWindow.start.getTime()) / dayMs));
+      const endOffset = Math.min(
+        totalDays - 1,
+        Math.round((bucket.end.getTime() - timelineWindow.start.getTime()) / dayMs)
+      );
+      let sum = 0;
+      let idle = 0;
+      for (let i = startOffset; i <= endOffset; i++) {
+        sum += counts[i] ?? 0;
+        if ((counts[i] ?? 0) === 0) idle++;
+      }
+      const span = endOffset - startOffset + 1;
+      const avg = span > 0 ? sum / span : 0;
+      return { label: bucket.label, avg, idle, span };
+    });
+
+    return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays };
+  }, [sites, timelineWindow, todayKey]);
 
   // DnD sensors
   const sensors = useSensors(
@@ -1211,7 +1351,10 @@ export default function Page() {
 
   // Notes / Rename dialogs state
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<null | { type: 'person' | 'site'; id: string; name: string; startDate?: string; endDate?: string }>(null);
+  const [renameTarget, setRenameTarget] = useState<
+    | null
+    | { type: 'person' | 'site'; id: string; name: string; startDate?: string; endDate?: string; color?: string }
+  >(null);
   const [renameWeeks, setRenameWeeks] = useState<string[]>([]);
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
@@ -1296,7 +1439,8 @@ export default function Page() {
 
   // CRUD helpers
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
-  const renameSite = (id: string, name: string) => setSites((s) => s.map((x) => (x.id === id ? { ...x, name } : x)));
+  const renameSite = (id: string, name: string, color?: string) =>
+    setSites((s) => s.map((x) => (x.id === id ? { ...x, name, color: color || x.color } : x)));
   const updateSiteSchedule = (id: string, startDate: string, endDate: string) =>
     setSites((s) => s.map((x) => (x.id === id ? { ...x, startDate, endDate } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
@@ -1326,7 +1470,7 @@ export default function Page() {
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string, startDate: string, endDate: string) =>
+  const addSite = (name: string, startDate: string, endDate: string, color: string) =>
     setSites((s) => [
       ...s,
       normalizeSiteRecord({
@@ -1334,6 +1478,7 @@ export default function Page() {
         name,
         startDate,
         endDate,
+        color,
       }),
     ]);
   const removeSite = (id: string) => {
@@ -1569,7 +1714,7 @@ useEffect(() => {
               <div className="flex items-center gap-2 flex-wrap">
                 <span>{timelineScopeLabel}</span>
                 <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                  Jauge par affectations existantes
+                  Barres basées sur les dates prévues des chantiers
                 </span>
               </div>
             )}
@@ -1662,13 +1807,16 @@ useEffect(() => {
                 <div className="space-y-2">
                   {sites.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-sm">
-                      <span>{s.name}</span>
+                      <span className="flex items-center gap-2">
+                        <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
+                        {s.name}
+                      </span>
                       <div className="flex items-center gap-2">
                         <Button
                           size="icon"
                           variant="ghost"
                           onClick={() => {
-                            setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate });
+                            setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, color: s.color });
                             setRenameWeeks(siteWeekVisibility[s.id] || []);
                             setRenamePickerYear(getISOWeekYear(anchor));
                             setRenameOpen(true);
@@ -1831,44 +1979,34 @@ useEffect(() => {
                     <span className="text-xs text-neutral-600">{formatFR(timelineWindow.start)} → {formatFR(timelineWindow.end)}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant={timelineScope === "month" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setTimelineScope("month")}
-                    >
+                    <Button variant={timelineScope === "month" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("month")}>
                       Mensuel
                     </Button>
-                    <Button
-                      variant={timelineScope === "quarter" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setTimelineScope("quarter")}
-                    >
+                    <Button variant={timelineScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("quarter")}>
                       Trimestre
                     </Button>
-                    <Button
-                      variant={timelineScope === "year" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setTimelineScope("year")}
-                    >
+                    <Button variant={timelineScope === "year" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("year")}>
                       Année
                     </Button>
                   </div>
                 </div>
                 <div className="text-xs text-neutral-600">
-                  Jauges basées sur la plage planifiée de chaque chantier (dates de début/fin), pour visualiser la couverture sur la période.
+                  Barres continues alignées sur les dates prévues des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
                 </div>
                 <div className="overflow-x-auto">
-                  <div className="min-w-full space-y-2">
-                    <div
-                      className="grid items-center text-[11px] font-semibold text-neutral-600 gap-2"
-                      style={{ gridTemplateColumns: `180px repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}
-                    >
-                      <div className="px-2">Chantier</div>
-                      {timelineWindow.buckets.map((bucket, idx) => (
-                        <div key={`${bucket.label}-${idx}`} className="text-center">
-                          {bucket.label}
+                  <div className="min-w-full space-y-3">
+                    <div className="grid" style={{ gridTemplateColumns: `220px 1fr` }}>
+                      <div className="px-2 text-[11px] font-semibold text-neutral-600">Chantier</div>
+                      <div className="relative pl-2">
+                        <div className="grid text-[11px] font-semibold text-neutral-600" style={{ gridTemplateColumns: `repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}>
+                          {timelineWindow.buckets.map((bucket, idx) => (
+                            <div key={`${bucket.label}-${idx}`} className="text-center pb-1 border-l first:border-l-0 border-neutral-200">
+                              {bucket.label}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                        <div className="absolute inset-x-0 bottom-0 h-2 bg-gradient-to-r from-neutral-100 via-white to-neutral-100 pointer-events-none" />
+                      </div>
                     </div>
 
                     {ganttTimeline.rows.length === 0 && (
@@ -1876,35 +2014,110 @@ useEffect(() => {
                     )}
 
                     {ganttTimeline.rows.map((row) => (
-                      <div
-                        key={row.site.id}
-                        className="grid items-center gap-2 text-sm"
-                        style={{ gridTemplateColumns: `180px repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}
-                      >
-                        <div className="flex items-center gap-2 px-2">
-                          <span className="font-medium text-neutral-800">{row.site.name}</span>
-                          <span className="text-[11px] text-neutral-500">{row.total} j.</span>
-                        </div>
-                        {row.values.map((val, idx) => (
-                          <div key={`${row.site.id}-${idx}`} className="relative h-8 rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
-                            {val.days > 0 && (
-                              <div
-                                className="absolute inset-y-1 left-1 rounded-md bg-sky-500/80"
-                                style={{
-                                  width: `${val.widthPct}%`,
-                                  left: `${val.offsetPct}%`,
-                                }}
-                              />
-                            )}
-                            <div className="relative z-10 flex items-center justify-center text-xs font-semibold text-neutral-800">
-                              {val.days > 0 ? `${val.days} j.` : ""}
-                            </div>
+                      <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
+                        <div className="flex flex-col gap-1 px-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className="font-medium text-neutral-800">{row.site.name}</span>
+                            <span className="text-[11px] text-neutral-500">{row.bar.days} j.</span>
                           </div>
-                        ))}
+                          <div className="text-[11px] text-neutral-500">
+                            {formatFR(row.bar.start)} → {formatFR(row.bar.end)}
+                          </div>
+                        </div>
+                        <div className="relative h-12 rounded-xl bg-gradient-to-b from-neutral-50 to-white border border-neutral-200 shadow-[inset_0_1px_0_rgba(0,0,0,0.03)]">
+                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timelineWindow.buckets.length}, minmax(140px, 1fr))` }}>
+                            {timelineWindow.buckets.map((_, idx) => (
+                              <div key={idx} className="border-l last:border-r border-neutral-200/80" />
+                            ))}
+                          </div>
+                          <div
+                            className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
+                            style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
+                          >
+                            <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-neutral-800 drop-shadow-sm">
+                            {row.bar.days} j.
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
+
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="text-sm font-semibold">Récap période</div>
+                    <div className="grid md:grid-cols-3 gap-3 text-sm">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Jours couverts</span>
+                          <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                            {timelineLoad.totalDays - timelineLoad.zeroDays}/{timelineLoad.totalDays}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Périodes vides</span>
+                          <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                            {timelineLoad.zeroDays} j.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Charge max</span>
+                          <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold">
+                            {timelineLoad.max} chantier{timelineLoad.max > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-neutral-700">Périodes sans chantier</div>
+                        {timelineLoad.gaps.length === 0 && <div className="text-xs text-neutral-500">Aucune période vide.</div>}
+                        {timelineLoad.gaps.map((gap, idx) => (
+                          <div key={idx} className="text-xs flex items-center justify-between bg-amber-50 text-amber-800 px-2 py-1 rounded-lg border border-amber-100">
+                            <span>{formatFR(gap.start)} → {formatFR(gap.end)}</span>
+                            <span className="font-semibold">{gap.days} j.</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-neutral-700">Périodes très chargées</div>
+                        {timelineLoad.peaks.length === 0 && <div className="text-xs text-neutral-500">Aucune période dense.</div>}
+                        {timelineLoad.peaks.map((peak, idx) => (
+                          <div key={idx} className="text-xs flex items-center justify-between bg-emerald-50 text-emerald-800 px-2 py-1 rounded-lg border border-emerald-100">
+                            <span>{formatFR(peak.start)} → {formatFR(peak.end)}</span>
+                            <span className="font-semibold">{peak.count} ch. / {peak.days} j.</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-neutral-700">Charge par bucket</div>
+                      <div className="grid md:grid-cols-3 gap-2">
+                        {timelineLoad.bucketStats.map((b) => (
+                          <div key={b.label} className="p-2 rounded-lg border border-neutral-200 bg-neutral-50">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-700 mb-1">
+                              <span>{b.label}</span>
+                              <span className="text-neutral-500">{b.avg.toFixed(1)} ch.</span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-white border border-neutral-200 overflow-hidden">
+                              <div
+                                className="h-full bg-sky-500"
+                                style={{ width: `${Math.min(100, (b.avg / Math.max(1, timelineLoad.max || 1)) * 100)}%` }}
+                              />
+                            </div>
+                            {b.idle > 0 && (
+                              <div className="text-[11px] text-amber-700 mt-1">{b.idle} j. sans chantier</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </div>
@@ -1924,17 +2137,21 @@ useEffect(() => {
         initialYear={renamePickerYear}
         startDate={renameTarget?.type === 'site' ? renameTarget?.startDate : undefined}
         endDate={renameTarget?.type === 'site' ? renameTarget?.endDate : undefined}
-        onSave={(newName: string, weeks?: string[], schedule?: { startDate: string; endDate: string }) => {
+        color={renameTarget?.type === 'site' ? renameTarget?.color : undefined}
+        onSave={(newName: string, weeks?: string[], schedule?: { startDate: string; endDate: string }, colorChoice?: string) => {
           if (!renameTarget) return;
           const n = newName.trim();
           if (!n) return;
           if (renameTarget.type === 'person') {
             renamePerson(renameTarget.id, n);
           } else {
-            renameSite(renameTarget.id, n);
+            renameSite(renameTarget.id, n, colorChoice);
             if (schedule?.startDate && schedule?.endDate) {
               updateSiteSchedule(renameTarget.id, schedule.startDate, schedule.endDate);
               setRenameTarget((prev) => (prev ? { ...prev, startDate: schedule.startDate, endDate: schedule.endDate } : prev));
+            }
+            if (colorChoice) {
+              setRenameTarget((prev) => (prev ? { ...prev, color: colorChoice } : prev));
             }
             if (weeks) {
               setSiteWeekVisibility((prev) => {
