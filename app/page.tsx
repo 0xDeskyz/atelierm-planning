@@ -1034,21 +1034,19 @@ export default function Page() {
     });
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
+  const earliestChantierStart = useMemo(
+    () =>
+      sites.reduce<Date | null>((min, site) => {
+        const s = fromLocalKey(site.startDate || todayKey);
+        return !min || s.getTime() < min.getTime() ? s : min;
+      }, null),
+    [sites, todayKey]
+  );
+
   const timelineView = useMemo(() => {
     if (!timelineWindow) return null;
-    const earliestStart = sites.reduce<Date | null>((min, site) => {
-      const s = fromLocalKey(site.startDate || todayKey);
-      return !min || s.getTime() < min.getTime() ? s : min;
-    }, null);
-    const startCandidate = earliestStart && earliestStart.getTime() > timelineWindow.start.getTime()
-      ? earliestStart
-      : timelineWindow.start;
-    const start = startCandidate.getTime() > timelineWindow.end.getTime() ? timelineWindow.end : startCandidate;
-    const buckets = timelineWindow.buckets
-      .filter((b) => b.end.getTime() >= start.getTime())
-      .map((b) => ({ ...b, start: b.start.getTime() < start.getTime() ? start : b.start }));
-    return { ...timelineWindow, start, buckets };
-  }, [sites, timelineWindow, todayKey]);
+    return { ...timelineWindow, start: timelineWindow.start, buckets: timelineWindow.buckets };
+  }, [timelineWindow]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -1266,11 +1264,17 @@ export default function Page() {
       return ranges;
     };
 
-    const gaps = findRanges((v) => v === 0).map((r) => {
-      const start = new Date(days[r.startIdx].date);
-      const end = new Date(days[r.endIdx].date);
-      return { start, end, days: r.endIdx - r.startIdx + 1 };
-    });
+    const earliestWorkingStart = earliestChantierStart ? firstWorkingDayOnOrAfter(new Date(earliestChantierStart)) : null;
+
+    const gaps = findRanges((v) => v === 0)
+      .map((r) => {
+        const start = new Date(days[r.startIdx].date);
+        const end = new Date(days[r.endIdx].date);
+        if (earliestWorkingStart && end.getTime() < earliestWorkingStart.getTime()) return null;
+        const adjustedStart = earliestWorkingStart && start.getTime() < earliestWorkingStart.getTime() ? earliestWorkingStart : start;
+        return { start: adjustedStart, end, days: countWorkingDaysInclusive(adjustedStart, end) };
+      })
+      .filter(Boolean) as { start: Date; end: Date; days: number }[];
 
     const peaks = max > 0
       ? findRanges((v) => v === max).map((r) => {
@@ -1289,7 +1293,7 @@ export default function Page() {
     });
 
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
-  }, [isWeekend, sites, timelineView, todayKey]);
+  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, sites, timelineView, todayKey]);
 
   // DnD sensors
   const sensors = useSensors(
