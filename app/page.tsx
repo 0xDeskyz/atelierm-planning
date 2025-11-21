@@ -935,6 +935,12 @@ export default function Page() {
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
+  const syncVersionRef = useRef<number>(0);
+  const clientIdRef = useRef(
+    typeof crypto !== "undefined" && (crypto as any).randomUUID
+      ? (crypto as any).randomUUID()
+      : `client-${Date.now()}`
+  );
   const today = useMemo(() => new Date(), []);
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
@@ -1543,10 +1549,40 @@ export default function Page() {
     setSiteWeekVisibility((prev) => { const { [id]: _omit, ...rest } = prev; return rest; });
   };
 
-  // ==========================
+// ==========================
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
 const firstLoad = useRef(true);
+
+// Polling temps réel pour récupérer les mises à jour des autres utilisateurs
+useEffect(() => {
+  let cancelled = false;
+  const poll = async () => {
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!data || typeof data !== "object" || cancelled) return;
+      const remoteVersion = Number((data as any).updatedAt || 0);
+      const remoteClient = (data as any).clientId;
+      if (remoteVersion <= syncVersionRef.current) return;
+      if (remoteClient && remoteClient === clientIdRef.current) return;
+      setPeople((data as any).people || DEMO_PEOPLE);
+      setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
+      setAssignments((data as any).assignments || []);
+      setNotes((data as any).notes || {});
+      setAbsencesByWeek((data as any).absencesByWeek || {});
+      setSiteWeekVisibility((data as any).siteWeekVisibility || {});
+      setHoursPerDay((data as any).hoursPerDay ?? 8);
+      syncVersionRef.current = remoteVersion;
+    } catch {}
+  };
+  const id = setInterval(poll, 4000);
+  poll();
+  return () => {
+    cancelled = true;
+    clearInterval(id);
+  };
+}, [currentWeekKey]);
 
 // Charger depuis le serveur pour la semaine affichée (fallback localStorage)
 useEffect(() => {
@@ -1563,6 +1599,7 @@ useEffect(() => {
         setAbsencesByWeek(srv.absencesByWeek || {});
         setSiteWeekVisibility(srv.siteWeekVisibility || {});
         setHoursPerDay(srv.hoursPerDay ?? 8);
+        syncVersionRef.current = Number(srv.updatedAt || 0);
         firstLoad.current = false;
         return;
       }
@@ -1579,6 +1616,7 @@ useEffect(() => {
         setAbsencesByWeek(s.absencesByWeek || {});
         setSiteWeekVisibility(s.siteWeekVisibility || {});
         setHoursPerDay(s.hoursPerDay ?? 8);
+        syncVersionRef.current = Number(s.updatedAt || 0);
       }
     } catch {}
     firstLoad.current = false;
@@ -1598,7 +1636,19 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
 // Sauvegarder à chaque modif
 useEffect(() => {
   if (firstLoad.current) return;
-  const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay };
+  const stamp = Date.now();
+  syncVersionRef.current = stamp;
+  const payload = {
+    people,
+    sites,
+    assignments,
+    notes,
+    absencesByWeek,
+    siteWeekVisibility,
+    hoursPerDay,
+    updatedAt: stamp,
+    clientId: clientIdRef.current,
+  };
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)

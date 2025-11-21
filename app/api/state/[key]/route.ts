@@ -1,4 +1,7 @@
-﻿import { list, put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   const pathname = `planner/${params.key}.json`; // ex: planner/2025-W45.json
@@ -10,7 +13,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
   const res = await fetch(blob.url, { cache: "no-store" });
   if (!res.ok) return new Response("Blob fetch failed", { status: 500 });
   const json = await res.json();
-  return Response.json(json);
+  return Response.json(json, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
