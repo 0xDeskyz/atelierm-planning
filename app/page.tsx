@@ -1576,7 +1576,10 @@ useEffect(() => {
         const remoteVersion = Number((data as any).updatedAt || 0);
         const remoteClient = (data as any).clientId;
         const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
-        if (fromOther && remoteVersion !== syncVersionRef.current) {
+        const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
+        const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
+
+        if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
           setPeople((data as any).people || DEMO_PEOPLE);
           setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
           setAssignments((data as any).assignments || []);
