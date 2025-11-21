@@ -935,6 +935,7 @@ export default function Page() {
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
+  const [refreshing, setRefreshing] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -1552,7 +1553,75 @@ export default function Page() {
 // ==========================
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
-const firstLoad = useRef(true);
+  const applyState = useCallback((state: any) => {
+    setPeople(state.people || DEMO_PEOPLE);
+    setSites((state.sites || DEMO_SITES).map(normalizeSiteRecord));
+    setAssignments(state.assignments || []);
+    setNotes(state.notes || {});
+    setAbsencesByWeek(state.absencesByWeek || {});
+    setSiteWeekVisibility(state.siteWeekVisibility || {});
+    setHoursPerDay(state.hoursPerDay ?? 8);
+    syncVersionRef.current = Number(state.updatedAt || 0);
+  }, []);
+
+  const firstLoad = useRef(true);
+
+  const loadWeekState = useCallback(
+    async (markLoaded = false) => {
+      const wk = currentWeekKey;
+      const hasPayload = (s: any) =>
+        s && typeof s === "object" && (Array.isArray(s.people) || Array.isArray(s.sites) || Array.isArray(s.assignments));
+
+      setRefreshing(true);
+      try {
+        let remoteState: any = null;
+        try {
+          const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+            cache: "reload",
+            headers: {
+              "Cache-Control": "no-store, no-cache, must-revalidate",
+              Pragma: "no-cache",
+            },
+            next: { revalidate: 0 },
+          });
+          const srv = await res.json();
+          if (hasPayload(srv)) {
+            remoteState = srv;
+          }
+        } catch {}
+
+        let localState: any = null;
+        try {
+          const raw = localStorage.getItem("btp-planner-state:v1");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (hasPayload(parsed)) {
+              localState = parsed;
+            }
+          }
+        } catch {}
+
+        const candidates = [remoteState, localState].filter(Boolean) as any[];
+        if (candidates.length > 0) {
+          const newest = candidates.reduce((best, cur) => {
+            const curTs = Number(cur.updatedAt || 0);
+            const bestTs = Number(best.updatedAt || 0);
+            if (curTs > bestTs) return cur;
+            return best;
+          }, candidates[0]);
+          applyState(newest);
+        }
+      } finally {
+        if (markLoaded) firstLoad.current = false;
+        setRefreshing(false);
+      }
+    },
+    [applyState, currentWeekKey]
+  );
+
+  const refreshPlanning = useCallback(() => {
+    loadWeekState(false);
+  }, [loadWeekState]);
 
 // Polling temps réel pour récupérer les mises à jour des autres utilisateurs
 useEffect(() => {
@@ -1580,14 +1649,7 @@ useEffect(() => {
         const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
 
         if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
-          setPeople((data as any).people || DEMO_PEOPLE);
-          setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
-          setAssignments((data as any).assignments || []);
-          setNotes((data as any).notes || {});
-          setAbsencesByWeek((data as any).absencesByWeek || {});
-          setSiteWeekVisibility((data as any).siteWeekVisibility || {});
-          setHoursPerDay((data as any).hoursPerDay ?? 8);
-          syncVersionRef.current = remoteVersion;
+          applyState(data);
         }
       }
     } catch {}
@@ -1610,69 +1672,12 @@ useEffect(() => {
       document.removeEventListener("visibilitychange", onFocus);
     }
   };
-}, [currentWeekKey]);
+}, [currentWeekKey, applyState]);
 
 // Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
 useEffect(() => {
-  (async () => {
-    const wk = currentWeekKey;
-
-    const applyState = (state: any) => {
-      setPeople(state.people || DEMO_PEOPLE);
-      setSites((state.sites || DEMO_SITES).map(normalizeSiteRecord));
-      setAssignments(state.assignments || []);
-      setNotes(state.notes || {});
-      setAbsencesByWeek(state.absencesByWeek || {});
-      setSiteWeekVisibility(state.siteWeekVisibility || {});
-      setHoursPerDay(state.hoursPerDay ?? 8);
-      syncVersionRef.current = Number(state.updatedAt || 0);
-    };
-
-    const hasPayload = (s: any) =>
-      s && typeof s === "object" && (Array.isArray(s.people) || Array.isArray(s.sites) || Array.isArray(s.assignments));
-
-    let remoteState: any = null;
-    try {
-      const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
-        cache: "reload",
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
-        },
-        next: { revalidate: 0 },
-      });
-      const srv = await res.json();
-      if (hasPayload(srv)) {
-        remoteState = srv;
-      }
-    } catch {}
-
-    let localState: any = null;
-    try {
-      const raw = localStorage.getItem("btp-planner-state:v1");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (hasPayload(parsed)) {
-          localState = parsed;
-        }
-      }
-    } catch {}
-
-    const candidates = [remoteState, localState].filter(Boolean) as any[];
-    if (candidates.length > 0) {
-      const newest = candidates.reduce((best, cur) => {
-        const curTs = Number(cur.updatedAt || 0);
-        const bestTs = Number(best.updatedAt || 0);
-        if (curTs > bestTs) return cur;
-        return best;
-      }, candidates[0]);
-      applyState(newest);
-    }
-
-    // Si aucune source valide, on garde les valeurs actuelles (démo) mais on permet les sauvegardes suivantes
-    firstLoad.current = false;
-  })();
-}, [currentWeekKey]);
+  loadWeekState(true);
+}, [currentWeekKey, loadWeekState]);
 
 const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   try {
@@ -1841,10 +1846,11 @@ useEffect(() => {
           <Button variant="outline" onClick={() => shift(1)} aria-label="Suivant"><ChevronRight className="w-4 h-4" /></Button>
           <Button
             variant="outline"
-            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
+            onClick={refreshPlanning}
             className="ml-1"
-            aria-label="Aller à la semaine actuelle"
-            title="Revenir rapidement à la semaine en cours"
+            aria-label="Recharger le planning"
+            title="Recharger le planning pour appliquer les dernières modifications"
+            disabled={refreshing}
           >
             <RotateCcw className="w-4 h-4" />
           </Button>
@@ -1912,11 +1918,12 @@ useEffect(() => {
           </Tabs>
           <Button
             variant="ghost"
-            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
+            onClick={refreshPlanning}
             className="hidden md:inline-flex"
-            aria-label="Afficher la semaine actuelle"
+            aria-label="Recharger le planning"
+            disabled={refreshing}
           >
-            Aller à la semaine en cours
+            Recharger le planning
           </Button>
         </div>
       </div>
