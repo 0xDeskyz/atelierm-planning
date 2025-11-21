@@ -1906,7 +1906,17 @@ useEffect(() => {
                 <div className="space-y-2">
                   {sitesForCurrentWeek.map((site) => (
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
-                      <div className="text-sm flex items-center">{site.name}</div>
+                      <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                        <span
+                          className={cx(
+                            "w-3 h-3 rounded-full border", 
+                            site.color || "bg-neutral-300",
+                            site.color ? "border-black/10" : "border-neutral-200"
+                          )}
+                          aria-hidden
+                        />
+                        {site.name}
+                      </div>
                       {weekDays.map((d) => (
                         <DayCell
                           key={`${site.id}-${toLocalKey(d)}`}
@@ -2002,7 +2012,17 @@ useEffect(() => {
                         </div>
                         {sitesForWeek.map((site) => (
                           <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
-                            <div className="text-sm flex items-center font-medium text-neutral-800">{site.name}</div>
+                            <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                              <span
+                                className={cx(
+                                  "w-3 h-3 rounded-full border",
+                                  site.color || "bg-neutral-300",
+                                  site.color ? "border-black/10" : "border-neutral-200"
+                                )}
+                                aria-hidden
+                              />
+                              {site.name}
+                            </div>
                             {week.slice(0, 5).map((d) => (
                               <DayCell
                                 key={`${site.id}-${toLocalKey(d)}`}
