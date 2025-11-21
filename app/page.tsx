@@ -1612,11 +1612,27 @@ useEffect(() => {
   };
 }, [currentWeekKey]);
 
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage)
+// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
 useEffect(() => {
   (async () => {
+    const wk = currentWeekKey;
+
+    const applyState = (state: any) => {
+      setPeople(state.people || DEMO_PEOPLE);
+      setSites((state.sites || DEMO_SITES).map(normalizeSiteRecord));
+      setAssignments(state.assignments || []);
+      setNotes(state.notes || {});
+      setAbsencesByWeek(state.absencesByWeek || {});
+      setSiteWeekVisibility(state.siteWeekVisibility || {});
+      setHoursPerDay(state.hoursPerDay ?? 8);
+      syncVersionRef.current = Number(state.updatedAt || 0);
+    };
+
+    const hasPayload = (s: any) =>
+      s && typeof s === "object" && (Array.isArray(s.people) || Array.isArray(s.sites) || Array.isArray(s.assignments));
+
+    let remoteState: any = null;
     try {
-      const wk = currentWeekKey;
       const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
         cache: "reload",
         headers: {
@@ -1626,34 +1642,34 @@ useEffect(() => {
         next: { revalidate: 0 },
       });
       const srv = await res.json();
-      if (srv && typeof srv === 'object') {
-        setPeople(srv.people || DEMO_PEOPLE);
-        setSites((srv.sites || DEMO_SITES).map(normalizeSiteRecord));
-        setAssignments(srv.assignments || []);
-        setNotes(srv.notes || {});
-        setAbsencesByWeek(srv.absencesByWeek || {});
-        setSiteWeekVisibility(srv.siteWeekVisibility || {});
-        setHoursPerDay(srv.hoursPerDay ?? 8);
-        syncVersionRef.current = Number(srv.updatedAt || 0);
-        firstLoad.current = false;
-        return;
+      if (hasPayload(srv)) {
+        remoteState = srv;
       }
     } catch {}
-    // fallback localStorage si pas de remote
+
+    let localState: any = null;
     try {
       const raw = localStorage.getItem("btp-planner-state:v1");
       if (raw) {
-        const s = JSON.parse(raw);
-        setPeople(s.people || DEMO_PEOPLE);
-        setSites((s.sites || DEMO_SITES).map(normalizeSiteRecord));
-        setAssignments(s.assignments || []);
-        setNotes(s.notes || {});
-        setAbsencesByWeek(s.absencesByWeek || {});
-        setSiteWeekVisibility(s.siteWeekVisibility || {});
-        setHoursPerDay(s.hoursPerDay ?? 8);
-        syncVersionRef.current = Number(s.updatedAt || 0);
+        const parsed = JSON.parse(raw);
+        if (hasPayload(parsed)) {
+          localState = parsed;
+        }
       }
     } catch {}
+
+    const candidates = [remoteState, localState].filter(Boolean) as any[];
+    if (candidates.length > 0) {
+      const newest = candidates.reduce((best, cur) => {
+        const curTs = Number(cur.updatedAt || 0);
+        const bestTs = Number(best.updatedAt || 0);
+        if (curTs > bestTs) return cur;
+        return best;
+      }, candidates[0]);
+      applyState(newest);
+    }
+
+    // Si aucune source valide, on garde les valeurs actuelles (démo) mais on permet les sauvegardes suivantes
     firstLoad.current = false;
   })();
 }, [currentWeekKey]);
