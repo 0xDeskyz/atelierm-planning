@@ -1776,17 +1776,19 @@ useEffect(() => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
-            Heures/jour
-            <Input
-              type="number"
-              min={0}
-              step={0.5}
-              value={hoursPerDay}
-              onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
-              className="w-20 h-9"
-            />
-          </label>
+          {view === "hours" && (
+            <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
+              Heures/jour
+              <Input
+                type="number"
+                min={0}
+                step={0.5}
+                value={hoursPerDay}
+                onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
+                className="w-20 h-9"
+              />
+            </label>
+          )}
           <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
           <Button variant="outline" onClick={copyFromPreviousWeek} aria-label="Copier semaine précédente" title="Copie les affectations, notes et absences de la semaine N-1">
             <Copy className="w-4 h-4 mr-1" /> Copier N-1
