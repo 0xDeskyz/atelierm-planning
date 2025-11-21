@@ -1557,30 +1557,47 @@ const firstLoad = useRef(true);
 // Polling temps réel pour récupérer les mises à jour des autres utilisateurs
 useEffect(() => {
   let cancelled = false;
+  let polling = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   const poll = async () => {
+    if (polling) return;
+    polling = true;
     try {
       const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
-      if (!data || typeof data !== "object" || cancelled) return;
-      const remoteVersion = Number((data as any).updatedAt || 0);
-      const remoteClient = (data as any).clientId;
-      if (remoteVersion <= syncVersionRef.current) return;
-      if (remoteClient && remoteClient === clientIdRef.current) return;
-      setPeople((data as any).people || DEMO_PEOPLE);
-      setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
-      setAssignments((data as any).assignments || []);
-      setNotes((data as any).notes || {});
-      setAbsencesByWeek((data as any).absencesByWeek || {});
-      setSiteWeekVisibility((data as any).siteWeekVisibility || {});
-      setHoursPerDay((data as any).hoursPerDay ?? 8);
-      syncVersionRef.current = remoteVersion;
+      if (data && typeof data === "object" && !cancelled) {
+        const remoteVersion = Number((data as any).updatedAt || 0);
+        const remoteClient = (data as any).clientId;
+        if (remoteVersion > syncVersionRef.current && (!remoteClient || remoteClient !== clientIdRef.current)) {
+          setPeople((data as any).people || DEMO_PEOPLE);
+          setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
+          setAssignments((data as any).assignments || []);
+          setNotes((data as any).notes || {});
+          setAbsencesByWeek((data as any).absencesByWeek || {});
+          setSiteWeekVisibility((data as any).siteWeekVisibility || {});
+          setHoursPerDay((data as any).hoursPerDay ?? 8);
+          syncVersionRef.current = remoteVersion;
+        }
+      }
     } catch {}
+    finally {
+      polling = false;
+      if (!cancelled) timer = setTimeout(poll, 1000);
+    }
   };
-  const id = setInterval(poll, 4000);
   poll();
+  const onFocus = () => poll();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+  }
   return () => {
     cancelled = true;
-    clearInterval(id);
+    if (timer) clearTimeout(timer);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    }
   };
 }, [currentWeekKey]);
 
