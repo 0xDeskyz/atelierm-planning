@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -24,6 +24,8 @@ import {
   RotateCcw,
   Upload,
   Download,
+  Copy,
+  Eraser,
 } from "lucide-react";
 
 // ================= UI maison (Tailwind)
@@ -145,16 +147,7 @@ const COLORS = [
   "bg-purple-400",
   "bg-slate-500",
 ];
-
-const DEMO_PEOPLE = [
-  { id: "p1", name: "Ali", color: "bg-rose-500" },
-  { id: "p2", name: "Mina", color: "bg-amber-500" },
-  { id: "p3", name: "Rachid", color: "bg-emerald-500" },
-];
-const DEMO_SITES = [
-  { id: "s1", name: "Chantier A" },
-  { id: "s2", name: "Chantier B" },
-];
+const SITE_COLORS = COLORS;
 
 // Pastels (3 options) pour mini post-it & surlignage
 const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
@@ -200,20 +193,109 @@ function getISOWeekAndYear(date: Date) {
 const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
+const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
 function getMonthWeeks(anchor: Date) {
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const gridStart = startOfISOWeekLocal(first);
-  return Array.from({ length: 6 }, (_, w) => {
-    const start = new Date(gridStart);
-    start.setDate(gridStart.getDate() + w * 7);
-    return Array.from({ length: 7 }, (_, i) => {
+  const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  const weeks: Date[][] = [];
+  let start = startOfISOWeekLocal(firstDay);
+
+  while (true) {
+    const week = Array.from({ length: 7 }, (_, i) => {
       const dd = new Date(start);
       dd.setDate(start.getDate() + i);
       return dd;
     });
-  });
+
+    const overlapsMonth = week.some((d) => d.getMonth() === firstDay.getMonth());
+    if (!overlapsMonth && start > lastDay) break;
+    if (overlapsMonth) weeks.push(week);
+
+    start = new Date(start);
+    start.setDate(start.getDate() + 7);
+  }
+
+  return weeks;
 }
+const startOfMonthLocal = (d: Date) => {
+  const dt = new Date(d.getFullYear(), d.getMonth(), 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfMonthLocal = (d: Date) => {
+  const dt = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const startOfQuarterLocal = (d: Date) => {
+  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+  const dt = new Date(d.getFullYear(), quarterStartMonth, 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfQuarterLocal = (d: Date) => {
+  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+  const dt = new Date(d.getFullYear(), quarterStartMonth + 3, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const startOfYearLocal = (year: number) => {
+  const dt = new Date(year, 0, 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const endOfYearLocal = (year: number) => {
+  const dt = new Date(year, 12, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+
+const todayKey = toLocalKey(new Date());
+const nextMonthKey = (() => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return toLocalKey(d);
+})();
+
+const DEMO_PEOPLE = [
+  { id: "p1", name: "Ali", color: "bg-rose-500" },
+  { id: "p2", name: "Mina", color: "bg-amber-500" },
+  { id: "p3", name: "Rachid", color: "bg-emerald-500" },
+];
+const DEMO_SITES = [
+  { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
+  { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
+];
+const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
+const mapWeekDates = (src: Date[], dest: Date[]) => {
+  const len = Math.min(src.length, dest.length);
+  const result: Record<string, string> = {};
+  for (let i = 0; i < len; i++) {
+    result[toLocalKey(src[i])] = toLocalKey(dest[i]);
+  }
+  return result;
+};
+const fromLocalKey = (key: string) => {
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(y || 0, (m || 1) - 1, d || 1);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+const hashString = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return h;
+};
+const normalizeSiteRecord = (site: any) => {
+  const start = site?.startDate || toLocalKey(new Date());
+  const end = site?.endDate || start;
+  const colorIndex = hashString(String(site?.id || site?.name || start)) % SITE_COLORS.length;
+  const color = site?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
+  return { ...site, startDate: start, endDate: end, color };
+};
 // Helper format FR (jour mois année)
 function formatFR(d: Date, withWeekday: boolean = false): string {
   try {
@@ -251,15 +333,38 @@ function PersonChip({ person }: any) {
 // ==================================
 // Assignment chip (draggable)
 // ==================================
-function AssignmentChip({ a, person, onRemove }: any) {
+const getPortion = (val: any) => {
+  const portion = Number(val ?? 1);
+  return Number.isFinite(portion) && portion > 0 ? portion : 1;
+};
+
+function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `assign-${a.id}`,
     data: { type: "assignment", assignmentId: a.id, personId: a.personId, from: { siteId: a.siteId, dateKey: a.date } },
   });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5 } : undefined;
+  const portion = getPortion(a.portion);
+  const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
+  const parsedHours = Number(a.hours);
+  const hours = hasCustomHours && Number.isFinite(parsedHours) ? parsedHours : baseHours * portion;
+  const extraLabel = (() => {
+    if (hasCustomHours) return `${hours || 0}h`;
+    if (portion !== 1) return portion === 0.5 ? "½j" : `${portion}j`;
+    return null;
+  })();
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""}`}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
+      title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
+    >
       <span>{person.name}</span>
+      {extraLabel && <span className="text-[10px] px-1 py-0.5 rounded-full bg-black/30">{extraLabel}</span>}
+      {conflict && <span className="text-[10px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-900">Conflit</span>}
       <button className="ml-1 w-4 h-4 leading-none rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center" title="Retirer du jour" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
     </div>
   );
@@ -268,7 +373,7 @@ function AssignmentChip({ a, person, onRemove }: any) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment }: any) {
+function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -278,6 +383,8 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
   const pastel = meta.highlight && PASTELS[meta.highlight] ? meta.highlight : null;
   const status = meta.holiday ? "holiday" : (meta.blocked ? "blocked" : null);
   const unavailable = Boolean(status);
+  const hoursLabel = meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" ? `${meta.hoursOverride}h` : null;
+  const baseHours = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
 
   return (
     <div
@@ -294,7 +401,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         unavailable ? "opacity-90" : ""
       )}
       ref={setNodeRef}
-      title={meta.text || meta.blText || meta?.brNote?.text || ""}
+      title={meta.text || meta?.brNote?.text || ""}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between mb-1">
@@ -306,6 +413,11 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
               {meta.text}
             </div>
           )}
+          {hoursLabel && (
+            <div className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures spécifiques pour cette case">
+              {hoursLabel}
+            </div>
+          )}
         </div>
         <div className="text-[11px] text-neutral-500">{date.getDate()}</div>
       </div>
@@ -314,14 +426,24 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
       <div className="flex flex-wrap gap-1">
         {todays.map((a: any) => {
           const p = people.find((pp: any) => pp.id === a.personId);
-          return p ? <AssignmentChip key={a.id} a={a} person={p} onRemove={() => onRemoveAssignment(a.id)} /> : null;
+          const conflictKey = `${a.personId}|${a.date}`;
+          const conflict = (conflictMap?.[conflictKey] || 0) > 1;
+          return p ? (
+            <AssignmentChip
+              key={a.id}
+              a={a}
+              person={p}
+              onRemove={() => onRemoveAssignment(a.id)}
+              baseHours={baseHours}
+              conflict={conflict}
+            />
+          ) : null;
         })}
       </div>
 
       {/* Bottom bar */}
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap min-h-[18px]">
-          {meta.blText && (<div className="text-[11px] text-neutral-700 max-w-[70%] truncate" title={meta.blText}>{meta.blText}</div>)}
           {meta.brNote?.text && (
             <div className={cx("text-[10px] px-1.5 py-0.5 rounded shadow border", meta.brNote.color && PASTELS[meta.brNote.color]?.bg)} title={meta.brNote.text}>
               {meta.brNote.text}
@@ -331,6 +453,120 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
           <Edit3 className="w-4 h-4" />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, getInfo }: any) {
+  const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
+  const key = cellKey(site.id, toLocalKey(date));
+  const raw = notes[key];
+  const meta = typeof raw === "string" ? { text: raw } : (raw || {});
+  const status = meta.holiday ? "holiday" : meta.blocked ? "blocked" : null;
+  const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
+  const unavailable = Boolean(status);
+
+  return (
+    <div
+      className={cx(
+        "border min-h-[6rem] p-3 rounded-xl bg-white",
+        status === "holiday"
+          ? "bg-red-50 ring-2 ring-red-300 border-red-200"
+          : status === "blocked"
+          ? "bg-sky-50 ring-2 ring-sky-300 border-sky-200"
+          : "border-neutral-200"
+      )}
+      title={meta.text || meta?.brNote?.text || ""}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{toLocalKey(date)}</span>
+          {meta.holiday && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</span>
+          )}
+          {meta.blocked && !meta.holiday && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200">Indispo</span>
+          )}
+          {meta.text && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
+              {meta.text}
+            </span>
+          )}
+          {meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures propres à la case">
+              {meta.hoursOverride}h / jour
+            </span>
+          )}
+        </div>
+        <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
+          <Edit3 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {todays.map((a: any) => {
+          const p = people.find((pp: any) => pp.id === a.personId);
+          if (!p) return null;
+          const info = getInfo(a, meta);
+          const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
+          const portionLabel = info.portion === 1 ? "journée" : info.portion === 0.5 ? "½ journée" : `${info.portion} j`;
+          const displayHours = Number.isFinite(info.hours) ? info.hours : 0;
+          return (
+            <div key={a.id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-2">
+                    <span className={cx("inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-[11px] font-semibold text-white shadow", p.color)}>
+                      <span className="w-2 h-2 rounded-full bg-white/70" />
+                      {p.name}
+                    </span>
+                    <span className="text-[11px] rounded-full bg-white px-2 py-0.5 border border-neutral-200">{portionLabel}</span>
+                  </span>
+                  {conflict && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">Conflit possible</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-neutral-600">{displayHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Button size="sm" variant={info.portion === 1 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 1 })}>
+                  Journée
+                </Button>
+                <Button size="sm" variant={info.portion === 0.5 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 0.5 })}>
+                  ½ journée
+                </Button>
+                <Input
+                  type="number"
+                  step={0.25}
+                  min={0}
+                  className="w-24 h-8"
+                  disabled={unavailable}
+                  value={info.hasCustomHours ? info.hours : ""}
+                  placeholder={info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
+                  onChange={(e: any) => onUpdateAssignment(a.id, { hours: e.target.value === "" ? "" : Number(e.target.value) })}
+                />
+                <Button size="sm" variant="ghost" disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { hours: "" })}>
+                  Défaut
+                </Button>
+              </div>
+
+              <div className="text-[11px] text-neutral-500 leading-snug">
+                Base {baseValue}h × {info.portion} = {info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h
+                {info.hasCustomHours
+                  ? " (override manuel)"
+                  : meta.hoursOverride
+                  ? " (heures de la case)"
+                  : ` (heure/jour globale ${hoursPerDay}h)`}
+              </div>
+            </div>
+          );
+        })}
+
+        {todays.length === 0 && (
+          <div className="text-[11px] text-neutral-500">Aucune affectation sur ce jour.</div>
+        )}
       </div>
     </div>
   );
@@ -364,29 +600,203 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
 
 function AddSiteDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState<string>(() => toLocalKey(new Date()));
+  const [endDate, setEndDate] = useState<string>(() => toLocalKey(new Date()));
+  const [color, setColor] = useState<string>(SITE_COLORS[6]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>Ajouter un chantier</DialogTitle></DialogHeader>
-        <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
+        <div className="space-y-3">
+          <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Couleur</div>
+            <div className="flex flex-wrap gap-2">
+              {SITE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={cx(
+                    "w-7 h-7 rounded-full border transition",
+                    c,
+                    color === c ? "ring-2 ring-black border-black" : "border-transparent"
+                  )}
+                  aria-label={`Choisir la couleur ${c}`}
+                  title={c}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <label className="space-y-1">
+              <span className="text-neutral-600">Début</span>
+              <Input type="date" value={startDate} onChange={(e: any) => setStartDate(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-neutral-600">Fin</span>
+              <Input type="date" value={endDate} min={startDate} onChange={(e: any) => setEndDate(e.target.value)} />
+            </label>
+          </div>
+        </div>
         <DialogFooter>
-          <Button onClick={() => { if (name.trim()) { onAdd(name.trim()); setOpen(false); setName(""); } }}>Ajouter</Button>
+          <Button
+            onClick={() => {
+              const n = name.trim();
+              if (!n) return;
+              if (!startDate || !endDate || fromLocalKey(endDate) < fromLocalKey(startDate)) {
+                window.alert("Merci de saisir des dates de début et fin valides.");
+                return;
+              }
+              onAdd(n, startDate, endDate, color);
+              setOpen(false);
+              setName("");
+              setStartDate(toLocalKey(new Date()));
+              setEndDate(toLocalKey(new Date()));
+              setColor(SITE_COLORS[6]);
+            }}
+          >
+            Ajouter
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RenameDialog({ open, setOpen, name, onSave, title = "Renommer" }: any) {
+function RenameDialog({
+  open,
+  setOpen,
+  name,
+  onSave,
+  title = "Renommer",
+  weekSelection,
+  onWeekSelectionChange,
+  initialYear,
+  startDate,
+  endDate,
+  color,
+}: any) {
   const [val, setVal] = useState<string>(name || "");
+  const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
+  const [selectedWeeks, setSelectedWeeks] = useState<string[]>(weekSelection || []);
+  const [scheduleStart, setScheduleStart] = useState<string>(startDate || "");
+  const [scheduleEnd, setScheduleEnd] = useState<string>(endDate || "");
+  const [siteColor, setSiteColor] = useState<string>(color || SITE_COLORS[0]);
+
   useEffect(() => setVal(name || ""), [name]);
+  useEffect(() => setSelectedWeeks(weekSelection || []), [weekSelection]);
+  useEffect(() => { if (initialYear) setPickerYear(initialYear); }, [initialYear]);
+  useEffect(() => setScheduleStart(startDate || ""), [startDate]);
+  useEffect(() => setScheduleEnd(endDate || ""), [endDate]);
+  useEffect(() => setSiteColor(color || SITE_COLORS[0]), [color]);
+
+  const toggleWeek = (wkKey: string) => {
+    setSelectedWeeks((prev) => {
+      const exists = prev.includes(wkKey);
+      const next = exists ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
+      onWeekSelectionChange?.(next);
+      return next;
+    });
+  };
+
+  const weeksInYear = Math.max(54, getISOWeeksInYear(pickerYear));
+  const weeksList = Array.from({ length: weeksInYear }, (_, i) => i + 1);
+  const renderWeekPicker = typeof weekSelection !== 'undefined';
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <Input value={val} onChange={(e: any) => setVal(e.target.value)} placeholder="Nouveau nom" />
+        {typeof startDate !== "undefined" && typeof endDate !== "undefined" && (
+          <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+            <label className="space-y-1">
+              <span className="text-neutral-600">Début du chantier</span>
+              <Input type="date" value={scheduleStart} onChange={(e: any) => setScheduleStart(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-neutral-600">Fin du chantier</span>
+              <Input type="date" value={scheduleEnd} min={scheduleStart} onChange={(e: any) => setScheduleEnd(e.target.value)} />
+            </label>
+          </div>
+        )}
+        {typeof color !== "undefined" && (
+          <div className="mt-3 space-y-1">
+            <div className="text-neutral-600 text-sm">Couleur du chantier</div>
+            <div className="flex flex-wrap gap-2">
+              {SITE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setSiteColor(c)}
+                  className={cx(
+                    "w-7 h-7 rounded-full border transition",
+                    c,
+                    siteColor === c ? "ring-2 ring-black border-black" : "border-transparent"
+                  )}
+                  aria-label={`Couleur ${c}`}
+                  title={c}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {renderWeekPicker && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Semaines visibles</div>
+              <div className="flex items-center gap-2">
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente"><ChevronLeft className="w-4 h-4" /></Button>
+                <div className="text-sm font-semibold w-14 text-center">{pickerYear}</div>
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante"><ChevronRight className="w-4 h-4" /></Button>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-500">Sélectionnez les semaines où le chantier doit s'afficher. Sans sélection, il restera visible toute l'année.</p>
+            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
+              {weeksList.map((wk) => {
+                const wkKey = `${pickerYear}-W${pad2(wk)}`;
+                const active = selectedWeeks.includes(wkKey);
+                return (
+                  <button
+                    key={wkKey}
+                    type="button"
+                    onClick={() => toggleWeek(wkKey)}
+                    className={cx(
+                      "text-xs rounded-md border px-2 py-1 text-center transition",
+                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
+                    )}
+                  >
+                    S{pad2(wk)}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between text-xs text-neutral-600">
+              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); }}>Toutes les semaines</button>
+              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); setPickerYear(initialYear || new Date().getFullYear()); }}>Réinitialiser</button>
+            </div>
+          </div>
+        )}
         <DialogFooter>
-          <Button onClick={() => { const n = val.trim(); if (!n) return; onSave(n); }}>Enregistrer</Button>
+          <Button
+            onClick={() => {
+              const n = val.trim();
+              if (!n) return;
+              if (scheduleStart && scheduleEnd && fromLocalKey(scheduleEnd) < fromLocalKey(scheduleStart)) {
+                window.alert("La fin doit être postérieure ou égale au début du chantier.");
+                return;
+              }
+              onSave(
+                n,
+                selectedWeeks,
+                scheduleStart && scheduleEnd ? { startDate: scheduleStart, endDate: scheduleEnd } : undefined,
+                siteColor
+              );
+            }}
+          >
+            Enregistrer
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -398,20 +808,22 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const [text, setText] = useState<string>(initial.text || "");
   const [holiday, setHoliday] = useState<boolean>(!!initial.holiday);
   const [blocked, setBlocked] = useState<boolean>(!!initial.blocked);
-  const [blText, setBlText] = useState<string>(initial.blText || "");
   const [brText, setBrText] = useState<string>(initial.brNote?.text || "");
   const [brColor, setBrColor] = useState<string>(initial.brNote?.color || "mint");
   const [highlight, setHighlight] = useState<string>(initial.highlight || "");
+  const [hoursOverride, setHoursOverride] = useState<string | number>(
+    initial.hoursOverride ?? ""
+  );
 
   useEffect(() => {
     const i = typeof value === "string" ? { text: value } : value || {};
     setText(i.text || "");
     setHoliday(!!i.holiday);
     setBlocked(!!i.blocked);
-    setBlText(i.blText || "");
     setBrText(i.brNote?.text || "");
     setBrColor(i.brNote?.color || "mint");
     setHighlight(i.highlight || "");
+    setHoursOverride(i.hoursOverride ?? "");
   }, [value]);
 
   const ColorDot = ({ c, selected, onClick }: any) => (
@@ -433,11 +845,6 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
             <div className="text-sm font-medium">Note principale</div>
             <Textarea className="min-h-24" value={text} onChange={(e: any) => setText(e.target.value)} placeholder="Note générale de la case" />
           </div>
-          {/* Bas-gauche */}
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Texte bas-gauche</div>
-            <Input value={blText} onChange={(e: any) => setBlText(e.target.value)} placeholder="Petit texte affiché en bas à gauche" />
-          </div>
           {/* Bas-droit (mini post-it) */}
           <div className="space-y-2">
             <div className="text-sm font-medium">Post-it bas-droit</div>
@@ -458,9 +865,36 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
               ))}
             </div>
           </div>
+
+          {/* Heures */}
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Heures de la case (optionnel)</div>
+            <Input
+              type="number"
+              min={0}
+              step={0.5}
+              value={hoursOverride}
+              onChange={(e: any) => setHoursOverride(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="Laisser vide pour utiliser les heures/jour"
+            />
+          </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => { onSave({ text, holiday, blocked, blText, brNote: brText ? { text: brText, color: brColor } : undefined, highlight: highlight || undefined, }); setOpen(false); }}>Enregistrer</Button>
+          <Button
+            onClick={() => {
+              onSave({
+                text,
+                holiday,
+                blocked,
+                brNote: brText ? { text: brText, color: brColor } : undefined,
+                highlight: highlight || undefined,
+                hoursOverride: hoursOverride === "" ? undefined : hoursOverride,
+              });
+              setOpen(false);
+            }}
+          >
+            Enregistrer
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -479,7 +913,7 @@ function AddPerson({ onAdd }: { onAdd: (name: string, color: string) => void }) 
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string) => void }) {
+function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string, color: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -490,23 +924,392 @@ function AddSite({ onAdd }: { onAdd: (name: string) => void }) {
 }
 
 // ==================================
-// Main Component (Page) – Semaine & Mois seulement
+// Main Component (Page) – Semaine / Mois / Heures
 // ==================================
 export default function Page() {
   // Core state
   const [people, setPeople] = useState(DEMO_PEOPLE);
-  const [sites, setSites] = useState(DEMO_SITES);
+  const [sites, setSites] = useState(() => DEMO_SITES.map(normalizeSiteRecord));
   const [assignments, setAssignments] = useState<any[]>([]);
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
+  const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
+  const [hoursPerDay, setHoursPerDay] = useState<number>(8);
+  const syncVersionRef = useRef<number>(0);
+  const clientIdRef = useRef(
+    typeof crypto !== "undefined" && (crypto as any).randomUUID
+      ? (crypto as any).randomUUID()
+      : `client-${Date.now()}`
+  );
+  const today = useMemo(() => new Date(), []);
+
+  const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
+    const selection = siteWeekVisibility[siteId];
+    if (!selection || selection.length === 0) return true;
+    return selection.includes(wk);
+  }, [siteWeekVisibility]);
 
   // View / navigation
-  const [view, setView] = useState<"week" | "month">("week");
+  const [view, setView] = useState<"week" | "month" | "hours" | "timeline">("week");
+  const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
+  const previousWeek = useMemo(() => {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() - 7);
+    return getWeekDatesLocal(d);
+  }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const isWeekend = useCallback((d: Date) => {
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  }, []);
+  const countWorkingDaysInclusive = useCallback(
+    (start: Date, end: Date) => {
+      if (end.getTime() < start.getTime()) return 0;
+      let count = 0;
+      const cursor = new Date(start);
+      while (cursor.getTime() <= end.getTime()) {
+        if (!isWeekend(cursor)) count++;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    },
+    [isWeekend]
+  );
+  const workingDaysUntil = useCallback(
+    (start: Date, target: Date) => {
+      if (target.getTime() <= start.getTime()) return 0;
+      let count = 0;
+      const cursor = new Date(start);
+      while (cursor.getTime() < target.getTime()) {
+        if (!isWeekend(cursor)) count++;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    },
+    [isWeekend]
+  );
+  const firstWorkingDayOnOrAfter = useCallback(
+    (d: Date) => {
+      const cursor = new Date(d);
+      while (isWeekend(cursor)) {
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return cursor;
+    },
+    [isWeekend]
+  );
+  const timelineWindow = useMemo(() => {
+    const base = new Date(anchor);
+    base.setHours(0, 0, 0, 0);
+
+    if (timelineScope === "month") {
+      const start = startOfMonthLocal(base);
+      const end = endOfMonthLocal(base);
+      const buckets = getMonthWeeks(base).map((week) => {
+        const startDay = new Date(week[0]);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(week[6]);
+        endDay.setHours(0, 0, 0, 0);
+        return { label: `S${pad2(getISOWeek(week[0]))}`, start: startDay, end: endDay };
+      });
+      return { start, end, buckets, label: base.toLocaleString("fr-FR", { month: "long", year: "numeric" }) };
+    }
+
+    if (timelineScope === "quarter") {
+      const start = startOfQuarterLocal(base);
+      const end = endOfQuarterLocal(base);
+      const startMonth = start.getMonth();
+      const buckets = Array.from({ length: 3 }, (_, idx) => {
+        const s = new Date(start.getFullYear(), startMonth + idx, 1);
+        const e = endOfMonthLocal(s);
+        return { label: s.toLocaleString("fr-FR", { month: "short" }), start: s, end: e };
+      });
+      const quarterIndex = Math.floor(base.getMonth() / 3) + 1;
+      return { start, end, buckets, label: `T${quarterIndex} ${base.getFullYear()}` };
+    }
+
+    const start = startOfYearLocal(base.getFullYear());
+    const end = endOfYearLocal(base.getFullYear());
+    const buckets = Array.from({ length: 12 }, (_, idx) => {
+      const s = new Date(base.getFullYear(), idx, 1);
+      const e = endOfMonthLocal(s);
+      return { label: s.toLocaleString("fr-FR", { month: "short" }), start: s, end: e };
+    });
+    return { start, end, buckets, label: `${base.getFullYear()}` };
+  }, [anchor, timelineScope]);
+  const earliestChantierStart = useMemo(
+    () =>
+      sites.reduce<Date | null>((min, site) => {
+        const s = fromLocalKey(site.startDate || todayKey);
+        return !min || s.getTime() < min.getTime() ? s : min;
+      }, null),
+    [sites, todayKey]
+  );
+
+  const timelineView = useMemo(() => {
+    if (!timelineWindow) return null;
+    return { ...timelineWindow, start: timelineWindow.start, buckets: timelineWindow.buckets };
+  }, [timelineWindow]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
+  const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
+  const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
+  const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
+  const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
+  const sitesForCurrentWeek = useMemo(
+    () => sites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
+    [sites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+  );
+
+  const getCellMeta = useCallback(
+    (siteId: string, dateKey: string) => {
+      const raw = notes[cellKey(siteId, dateKey)];
+      return (typeof raw === "string" ? { text: raw } : raw || {}) as any;
+    },
+    [notes]
+  );
+
+  const getAssignmentHoursInfo = useCallback(
+    (a: any, metaFromCell?: any) => {
+      const meta = metaFromCell || getCellMeta(a.siteId, a.date);
+      const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay))
+        ? Number(meta.hoursOverride ?? hoursPerDay)
+        : 0;
+      const portion = getPortion(a.portion);
+      const suggestedHours = baseValue * portion;
+      const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
+      const parsedCustom = Number(a.hours);
+      const hours = hasCustomHours && Number.isFinite(parsedCustom) ? parsedCustom : suggestedHours;
+      return { meta, portion, hours, suggestedHours, hasCustomHours, baseValue };
+    },
+    [getCellMeta, hoursPerDay]
+  );
+
+  const weekDateKeys = useMemo(() => weekDays.map((d) => toLocalKey(d)), [weekDays]);
+  const weekDateSet = useMemo(() => new Set(weekDateKeys), [weekDateKeys]);
+  const weekAssignments = useMemo(
+    () => assignments.filter((a) => weekDateSet.has(a.date)),
+    [assignments, weekDateSet]
+  );
+
+  const conflictMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    assignments.forEach((a) => {
+      const key = `${a.personId}|${a.date}`;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [assignments]);
+
+  const weekConflictCount = useMemo(() => {
+    const dateSet = new Set(weekDateKeys);
+    return Object.entries(conflictMap).reduce((sum, [key, count]) => {
+      if (count <= 1) return sum;
+      const [, date] = key.split("|");
+      return dateSet.has(date) ? sum + count : sum;
+    }, 0);
+  }, [conflictMap, weekDateKeys]);
+
+  const peopleById = useMemo(() => {
+    const map: Record<string, any> = {};
+    people.forEach((p) => {
+      map[p.id] = p;
+    });
+    return map;
+  }, [people]);
+
+  const sitesById = useMemo(() => {
+    const map: Record<string, any> = {};
+    sites.forEach((s) => {
+      map[s.id] = s;
+    });
+    return map;
+  }, [sites]);
+
+  const exportableHours = useMemo(() => {
+    const rows: {
+      isoYear: number;
+      week: number;
+      dateKey: string;
+      dateLabel: string;
+      person: string;
+      personColor?: string;
+      site: string;
+      portion: number;
+      hours: number;
+      conflict: boolean;
+      source: string;
+    }[] = [];
+
+    const sorted = [...weekAssignments].sort((a, b) => {
+      if (a.date === b.date) {
+        return a.siteId.localeCompare(b.siteId) || a.personId.localeCompare(b.personId);
+      }
+      return a.date.localeCompare(b.date);
+    });
+
+    sorted.forEach((a) => {
+      const person = peopleById[a.personId];
+      const site = sitesById[a.siteId];
+      if (!person || !site) return;
+
+      const info = getAssignmentHoursInfo(a);
+      if (info.meta.holiday || info.meta.blocked) return;
+
+      const dateObj = fromLocalKey(a.date);
+      const { week, isoYear } = getISOWeekAndYear(dateObj);
+      const hoursValue = Number.isFinite(info.hours) ? info.hours : 0;
+      const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
+      const source = info.hasCustomHours ? "manuel" : info.meta.hoursOverride ? "case" : "global";
+
+      rows.push({
+        isoYear,
+        week,
+        dateKey: a.date,
+        dateLabel: formatFR(dateObj),
+        person: person.name,
+        personColor: person.color,
+        site: site.name,
+        portion: Number.isFinite(info.portion) ? info.portion : 0,
+        hours: hoursValue,
+        conflict,
+        source,
+      });
+    });
+
+    return rows;
+  }, [conflictMap, getAssignmentHoursInfo, peopleById, sitesById, weekAssignments]);
+
+  const ganttTimeline = useMemo(() => {
+    if (!timelineView)
+      return { rows: [] as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[], totalDays: 0 };
+
+    const totalDays = Math.max(1, countWorkingDaysInclusive(timelineView.start, timelineView.end));
+
+    const rows = sites
+      .map((site) => {
+        const siteStart = fromLocalKey(site.startDate || todayKey);
+        const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+        if (siteEnd < timelineView.start || siteStart > timelineView.end) return null;
+
+        const start = siteStart.getTime() < timelineView.start.getTime() ? new Date(timelineView.start) : siteStart;
+        const end = siteEnd.getTime() > timelineView.end.getTime() ? new Date(timelineView.end) : siteEnd;
+        const spanDays = Math.max(1, countWorkingDaysInclusive(start, end));
+        const offsetDays = Math.max(0, workingDaysUntil(timelineView.start, start));
+        const offsetPct = (offsetDays / totalDays) * 100;
+        const widthPct = Math.max(2, (spanDays / totalDays) * 100);
+
+        const bucketOverlap = timelineView.buckets.map((bucket) => {
+          const overlapStart = firstWorkingDayOnOrAfter(new Date(Math.max(bucket.start.getTime(), start.getTime())));
+          const overlapEnd = new Date(Math.min(bucket.end.getTime(), end.getTime()));
+          const hasOverlap = overlapEnd.getTime() >= overlapStart.getTime();
+          const days = hasOverlap ? countWorkingDaysInclusive(overlapStart, overlapEnd) : 0;
+          const bucketDays = Math.max(1, countWorkingDaysInclusive(bucket.start, bucket.end));
+          const pct = Math.min(100, bucketDays > 0 ? (days / bucketDays) * 100 : 0);
+          return { label: bucket.label, days, pct };
+        });
+
+        return {
+          site,
+          bar: { days: spanDays, offsetPct, widthPct, start, end },
+          bucketOverlap,
+        };
+      })
+      .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
+
+    return { rows, totalDays };
+  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, sites, timelineView, todayKey, workingDaysUntil]);
+
+  const timelineScopeLabel = useMemo(() => {
+    if (!timelineView) return "";
+    if (timelineScope === "month") return `Vue mensuelle • ${timelineView.label}`;
+    if (timelineScope === "quarter") return `Vue trimestrielle • ${timelineView.label}`;
+    return `Vue annuelle • ${timelineView.label}`;
+  }, [timelineScope, timelineView]);
+
+  const timelineLoad = useMemo(() => {
+    if (!timelineView) return { counts: [] as number[], labels: [] as string[], gaps: [] as any[], peaks: [] as any[], bucketStats: [] as any[], max: 0, zeroDays: 0, totalDays: 0 };
+    const days: { date: Date; count: number }[] = [];
+    const cursor = new Date(timelineView.start);
+    while (cursor.getTime() <= timelineView.end.getTime()) {
+      if (!isWeekend(cursor)) {
+        const dateKey = toLocalKey(cursor);
+        const count = sites.reduce((acc, site) => {
+          const siteStart = fromLocalKey(site.startDate || todayKey);
+          const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+          if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+        days.push({ date: new Date(cursor), count });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const counts = days.map((d) => d.count);
+    const labels = days.map((d) => toLocalKey(d.date));
+    const max = counts.length ? Math.max(...counts) : 0;
+    const zeroDays = counts.filter((c) => c === 0).length;
+
+    const findRanges = (predicate: (v: number) => boolean) => {
+      const ranges: { startIdx: number; endIdx: number }[] = [];
+      let i = 0;
+      while (i < counts.length) {
+        if (predicate(counts[i])) {
+          const startIdx = i;
+          while (i < counts.length && predicate(counts[i])) i++;
+          const endIdx = i - 1;
+          ranges.push({ startIdx, endIdx });
+        } else {
+          i++;
+        }
+      }
+      return ranges;
+    };
+
+    const earliestWorkingStart = earliestChantierStart ? firstWorkingDayOnOrAfter(new Date(earliestChantierStart)) : null;
+
+    const gaps = findRanges((v) => v === 0)
+      .map((r) => {
+        const start = new Date(days[r.startIdx].date);
+        const end = new Date(days[r.endIdx].date);
+        if (earliestWorkingStart && end.getTime() < earliestWorkingStart.getTime()) return null;
+        const adjustedStart = earliestWorkingStart && start.getTime() < earliestWorkingStart.getTime() ? earliestWorkingStart : start;
+        return { start: adjustedStart, end, days: countWorkingDaysInclusive(adjustedStart, end) };
+      })
+      .filter(Boolean) as { start: Date; end: Date; days: number }[];
+
+    const peaks = max > 0
+      ? findRanges((v) => v === max).map((r) => {
+          const start = new Date(days[r.startIdx].date);
+          const end = new Date(days[r.endIdx].date);
+          return { start, end, days: r.endIdx - r.startIdx + 1, count: max };
+        })
+      : [];
+
+    const bucketStats = timelineView.buckets.map((bucket) => {
+      const spanDays = days.filter((d) => d.date.getTime() >= bucket.start.getTime() && d.date.getTime() <= bucket.end.getTime());
+      const sum = spanDays.reduce((acc, d) => acc + d.count, 0);
+      const idle = spanDays.filter((d) => d.count === 0).length;
+      const avg = spanDays.length > 0 ? sum / spanDays.length : 0;
+      return { label: bucket.label, avg, idle, span: spanDays.length };
+    });
+
+    return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
+  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, sites, timelineView, todayKey]);
+
+  const getLoadTone = useCallback((ratio: number) => {
+    if (ratio >= 0.7) {
+      return { color: "#ef4444", softBg: "bg-rose-50", softText: "text-rose-700", border: "border-rose-100" };
+    }
+    if (ratio >= 0.35) {
+      return { color: "#f59e0b", softBg: "bg-amber-50", softText: "text-amber-700", border: "border-amber-100" };
+    }
+    return { color: "#10b981", softBg: "bg-emerald-50", softText: "text-emerald-700", border: "border-emerald-100" };
+  }, []);
 
   // DnD sensors
   const sensors = useSensors(
@@ -540,8 +1343,10 @@ export default function Page() {
     if (data.type === "person" && data.person) {
       const person = data.person;
       if (isAbsentOnWeek(person.id, wkKey)) return;
-      const hasSameDay = assignments.some((a) => a.personId === person.id && a.date === targetDateKey);
-      if (hasSameDay) return;
+      const duplicate = assignments.some(
+        (a) => a.personId === person.id && a.date === targetDateKey && a.siteId === targetSite.id
+      );
+      if (duplicate) return;
       const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${person.id}-${targetSite.id}-${targetDateKey}-${Date.now()}`;
       setAssignments((prev) => [...prev, { id, personId: person.id, siteId: targetSite.id, date: targetDateKey }]);
       return;
@@ -552,8 +1357,10 @@ export default function Page() {
       const ass = assignments.find((a) => a.id === assId);
       if (!ass) return;
       if (isAbsentOnWeek(ass.personId, wkKey)) return;
-      const conflict = assignments.some((a) => a.personId === ass.personId && a.date === targetDateKey && a.id !== assId);
-      if (conflict) return;
+      const duplicate = assignments.some(
+        (a) => a.personId === ass.personId && a.date === targetDateKey && a.siteId === targetSite.id && a.id !== assId
+      );
+      if (duplicate) return;
       if (ass.date === targetDateKey && ass.siteId === targetSite.id) return;
       setAssignments((prev) => prev.map((a) => (a.id === assId ? { ...a, date: targetDateKey, siteId: targetSite.id } : a)));
       return;
@@ -562,71 +1369,307 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (view === "week") d.setDate(d.getDate() + delta * 7);
-    else d.setMonth(d.getMonth() + delta);
+    if (view === "month") {
+      d.setMonth(d.getMonth() + delta);
+    } else if (view === "timeline") {
+      if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
+      else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
+      else d.setFullYear(d.getFullYear() + delta);
+    } else {
+      d.setDate(d.getDate() + delta * 7);
+    }
     setAnchor(d);
   };
 
+  const monthWeekRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pendingScrollWeek, setPendingScrollWeek] = useState<string | null>(null);
+
+  const jumpToCurrentWeek = (opts?: { forceView?: "week" | "hours" }) => {
+    const now = new Date();
+    const wkKey = weekKeyOf(now);
+    setAnchor(now);
+    if (view === "month") {
+      setPendingScrollWeek(wkKey);
+    }
+    if (opts?.forceView) setView(opts.forceView);
+  };
+
+  useEffect(() => {
+    const keys = new Set(monthWeeks.map((w) => weekKeyOf(w[0])));
+    Object.keys(monthWeekRefs.current).forEach((key) => {
+      if (!keys.has(key)) delete monthWeekRefs.current[key];
+    });
+  }, [monthWeeks]);
+
+  useEffect(() => {
+    if (!pendingScrollWeek || view !== "month") return;
+    const el = monthWeekRefs.current[pendingScrollWeek];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingScrollWeek(null);
+    }
+  }, [pendingScrollWeek, view, monthWeeks]);
+
   // Notes / Rename dialogs state
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<null | { type: 'person' | 'site'; id: string; name: string }>(null);
+  const [renameTarget, setRenameTarget] = useState<
+    | null
+    | { type: 'person' | 'site'; id: string; name: string; startDate?: string; endDate?: string; color?: string }
+  >(null);
+  const [renameWeeks, setRenameWeeks] = useState<string[]>([]);
+  const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
 
+  const clearCurrentWeek = () => {
+    const confirmClear = window.confirm(
+      "Supprimer toutes les affectations, notes et absences de la semaine courante ?"
+    );
+    if (!confirmClear) return;
+    const targetDates = new Set(weekDays.map((d) => toLocalKey(d)));
+    setAssignments((prev) => prev.filter((a) => !targetDates.has(a.date)));
+    setNotes((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      sites.forEach((site) => {
+        targetDates.forEach((dateKey) => {
+          delete next[cellKey(site.id, dateKey)];
+        });
+      });
+      return next;
+    });
+    setAbsencesByWeek((prev) => {
+      if (!prev[currentWeekKey]) return prev;
+      const next = { ...prev } as typeof prev;
+      delete (next as any)[currentWeekKey];
+      return next;
+    });
+  };
+
+  const copyFromPreviousWeek = () => {
+    const ok = window.confirm("Copier la semaine précédente vers celle-ci ?");
+    if (!ok) return;
+    const prevDates = previousWeek.slice(0, 5);
+    const prevKeys = prevDates.map((d) => toLocalKey(d));
+    const currentKeys = weekDays.map((d) => toLocalKey(d));
+    const dateMap = mapWeekDates(prevDates, weekDays);
+
+    setAssignments((prev) => {
+      const existing = new Set(prev.map((a) => `${a.personId}-${a.date}-${a.siteId}`));
+      const additions = prev
+        .filter((a) => dateMap[a.date])
+        .map((a) => {
+          const newDate = dateMap[a.date];
+          if (!newDate) return null;
+          if (isAbsentOnWeek(a.personId, currentWeekKey)) return null;
+          if (existing.has(`${a.personId}-${newDate}-${a.siteId}`)) return null;
+          return {
+            ...a,
+            id:
+              typeof crypto !== "undefined" && (crypto as any).randomUUID
+                ? (crypto as any).randomUUID()
+                : `a${Date.now()}-${Math.random()}`,
+            date: newDate,
+          };
+        })
+        .filter(Boolean) as typeof prev;
+      return [...prev, ...additions];
+    });
+
+    setNotes((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      sites.forEach((site) => {
+        prevKeys.forEach((prevKey, idx) => {
+          const srcKey = cellKey(site.id, prevKey);
+          const destKey = cellKey(site.id, currentKeys[idx]);
+          if (prev[srcKey] && !next[destKey]) {
+            next[destKey] = prev[srcKey];
+          }
+        });
+      });
+      return next;
+    });
+
+    setAbsencesByWeek((prev) => {
+      if (!prev[previousWeekKey] || prev[currentWeekKey]) return prev;
+      return { ...prev, [currentWeekKey]: { ...prev[previousWeekKey] } };
+    });
+  };
+
   // CRUD helpers
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
-  const renameSite = (id: string, name: string) => setSites((s) => s.map((x) => (x.id === id ? { ...x, name } : x)));
+  const renameSite = (id: string, name: string, color?: string) =>
+    setSites((s) => s.map((x) => (x.id === id ? { ...x, name, color: color || x.color } : x)));
+  const updateSiteSchedule = (id: string, startDate: string, endDate: string) =>
+    setSites((s) => s.map((x) => (x.id === id ? { ...x, startDate, endDate } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
+  const updateAssignment = (id: string, changes: { hours?: any; portion?: any }) => {
+    setAssignments((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const next: any = { ...a };
+        if (Object.prototype.hasOwnProperty.call(changes, "portion")) {
+          next.portion = getPortion(changes.portion);
+        }
+        if (Object.prototype.hasOwnProperty.call(changes, "hours")) {
+          const raw = changes.hours;
+          if (raw === undefined || raw === null || raw === "") {
+            delete next.hours;
+          } else if (Number.isFinite(Number(raw))) {
+            next.hours = Number(raw);
+          }
+        }
+        return next;
+      })
+    );
+  };
   const addPerson = (name: string, color: string) => setPeople((p) => [...p, { id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `p${Date.now()}`, name, color }]);
   const removePerson = (id: string) => {
     setPeople((p) => p.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string) => setSites((s) => [...s, { id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `s${Date.now()}`, name }]);
+  const addSite = (name: string, startDate: string, endDate: string, color: string) =>
+    setSites((s) => [
+      ...s,
+      normalizeSiteRecord({
+        id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `s${Date.now()}`,
+        name,
+        startDate,
+        endDate,
+        color,
+      }),
+    ]);
   const removeSite = (id: string) => {
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
+    setSiteWeekVisibility((prev) => { const { [id]: _omit, ...rest } = prev; return rest; });
   };
 
-  // ==========================
+// ==========================
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
 const firstLoad = useRef(true);
 
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage)
+// Polling temps réel pour récupérer les mises à jour des autres utilisateurs
 useEffect(() => {
-  (async () => {
+  let cancelled = false;
+  let polling = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const poll = async () => {
+    if (polling) return;
+    polling = true;
     try {
-      const wk = currentWeekKey;
-      const res = await fetch(`/api/state/${wk}`, { cache: 'no-store' });
-      const srv = await res.json();
-      if (srv && typeof srv === 'object') {
-        setPeople(srv.people || DEMO_PEOPLE);
-        setSites(srv.sites || DEMO_SITES);
-        setAssignments(srv.assignments || []);
-        setNotes(srv.notes || {});
-        setAbsencesByWeek(srv.absencesByWeek || {});
-        firstLoad.current = false;
-        return;
+      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+        next: { revalidate: 0 },
+      });
+      const data = await res.json();
+      if (data && typeof data === "object" && !cancelled) {
+        const remoteVersion = Number((data as any).updatedAt || 0);
+        const remoteClient = (data as any).clientId;
+        const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
+        const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
+        const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
+
+        if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
+          setPeople((data as any).people || DEMO_PEOPLE);
+          setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
+          setAssignments((data as any).assignments || []);
+          setNotes((data as any).notes || {});
+          setAbsencesByWeek((data as any).absencesByWeek || {});
+          setSiteWeekVisibility((data as any).siteWeekVisibility || {});
+          setHoursPerDay((data as any).hoursPerDay ?? 8);
+          syncVersionRef.current = remoteVersion;
+        }
       }
     } catch {}
-    // fallback localStorage si pas de remote
+    finally {
+      polling = false;
+      if (!cancelled) timer = setTimeout(poll, 1000);
+    }
+  };
+  poll();
+  const onFocus = () => poll();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+  }
+  return () => {
+    cancelled = true;
+    if (timer) clearTimeout(timer);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    }
+  };
+}, [currentWeekKey]);
+
+// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
+useEffect(() => {
+  (async () => {
+    const wk = currentWeekKey;
+
+    const applyState = (state: any) => {
+      setPeople(state.people || DEMO_PEOPLE);
+      setSites((state.sites || DEMO_SITES).map(normalizeSiteRecord));
+      setAssignments(state.assignments || []);
+      setNotes(state.notes || {});
+      setAbsencesByWeek(state.absencesByWeek || {});
+      setSiteWeekVisibility(state.siteWeekVisibility || {});
+      setHoursPerDay(state.hoursPerDay ?? 8);
+      syncVersionRef.current = Number(state.updatedAt || 0);
+    };
+
+    const hasPayload = (s: any) =>
+      s && typeof s === "object" && (Array.isArray(s.people) || Array.isArray(s.sites) || Array.isArray(s.assignments));
+
+    let remoteState: any = null;
+    try {
+      const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+        next: { revalidate: 0 },
+      });
+      const srv = await res.json();
+      if (hasPayload(srv)) {
+        remoteState = srv;
+      }
+    } catch {}
+
+    let localState: any = null;
     try {
       const raw = localStorage.getItem("btp-planner-state:v1");
       if (raw) {
-        const s = JSON.parse(raw);
-        setPeople(s.people || DEMO_PEOPLE);
-        setSites(s.sites || DEMO_SITES);
-        setAssignments(s.assignments || []);
-        setNotes(s.notes || {});
-        setAbsencesByWeek(s.absencesByWeek || {});
+        const parsed = JSON.parse(raw);
+        if (hasPayload(parsed)) {
+          localState = parsed;
+        }
       }
     } catch {}
+
+    const candidates = [remoteState, localState].filter(Boolean) as any[];
+    if (candidates.length > 0) {
+      const newest = candidates.reduce((best, cur) => {
+        const curTs = Number(cur.updatedAt || 0);
+        const bestTs = Number(best.updatedAt || 0);
+        if (curTs > bestTs) return cur;
+        return best;
+      }, candidates[0]);
+      applyState(newest);
+    }
+
+    // Si aucune source valide, on garde les valeurs actuelles (démo) mais on permet les sauvegardes suivantes
     firstLoad.current = false;
   })();
 }, [currentWeekKey]);
@@ -644,12 +1687,24 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
 // Sauvegarder à chaque modif
 useEffect(() => {
   if (firstLoad.current) return;
-  const payload = { people, sites, assignments, notes, absencesByWeek };
+  const stamp = Date.now();
+  syncVersionRef.current = stamp;
+  const payload = {
+    people,
+    sites,
+    assignments,
+    notes,
+    absencesByWeek,
+    siteWeekVisibility,
+    hoursPerDay,
+    updatedAt: stamp,
+    clientId: clientIdRef.current,
+  };
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, currentWeekKey, saveRemote]);
+}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -659,6 +1714,7 @@ useEffect(() => {
     console.assert(/\d{4}-\d{2}-\d{2}/.test(toLocalKey(new Date("2025-10-02"))), "toLocalKey format");
     console.assert(weekKeyOf(new Date("2021-01-04")) === "2021-W01", "weekKeyOf ISO-year");
     console.assert(getISOWeek(new Date("2020-12-31")) === 53, "ISO week 2020-12-31 = 53");
+    console.assert(getISOWeeksInYear(2020) >= 52 && getISOWeeksInYear(2020) <= 54, "getISOWeeksInYear range");
 
     // palette
     console.assert(Array.isArray(COLORS) && COLORS.length >= 17, "COLORS étendu (>=17)");
@@ -682,11 +1738,34 @@ useEffect(() => {
     const _sitesRenamed = _sites.map(x => x.id === 'ss' ? { ...x, name: 'Site B' } : x);
     console.assert(_sitesRenamed[0].name === 'Site B', 'rename site mapping works');
 
+    // mapWeekDates helper
+    const m = mapWeekDates(
+      [new Date('2025-01-06'), new Date('2025-01-07')],
+      [new Date('2025-01-13'), new Date('2025-01-14')]
+    );
+    console.assert(m['2025-01-06'] === '2025-01-13' && m['2025-01-07'] === '2025-01-14', 'mapWeekDates preserves order');
+
+    // week visibility helper (default all weeks when empty)
+    console.assert(isSiteVisibleOnWeek('unknown', '2025-W10') === true, 'site visible if no selection');
+    const tmpSel = { test: ['2025-W02', '2025-W03'] } as Record<string, string[]>;
+    const tmpCheck = (id: string, wk: string) => {
+      const selection = tmpSel[id];
+      if (!selection || selection.length === 0) return true;
+      return selection.includes(wk);
+    };
+    console.assert(tmpCheck('test', '2025-W03') && !tmpCheck('test', '2025-W05'), 'manual visibility toggle works');
+
     // month grid shape$1// export blob test
 
     // formatFR
     const frs = formatFR(new Date('2025-11-07'), true);
     console.assert(typeof frs === 'string' && /novembre|11\/?2025/i.test(frs), 'formatFR fr locale string');
+
+    // timeline helpers
+    const quarterStart = startOfQuarterLocal(new Date('2025-07-15'));
+    console.assert(quarterStart.getMonth() === 6 && quarterStart.getDate() === 1, 'quarter start aligns to July 1');
+    const yearEnd = endOfYearLocal(2025);
+    console.assert(yearEnd.getMonth() === 11 && yearEnd.getDate() === 31, 'year end aligns to Dec 31');
 
     const b = new Blob([JSON.stringify({ a: 1 })], { type: 'application/json' });
     console.assert(b.type === 'application/json', 'export blob type ok');
@@ -697,20 +1776,61 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `btp-planner-${Date.now()}.json`; a.click(); URL.revokeObjectURL(url);
   };
+
+  const exportHoursCSV = () => {
+    if (exportableHours.length === 0) {
+      window.alert("Aucune ligne exportable pour cette semaine (heures ou affectations manquantes).");
+      return;
+    }
+
+    const header = ["Année ISO", "Semaine", "Date", "Salarié", "Chantier", "Portion", "Heures", "Conflit", "Source heures"];
+    const rows = exportableHours.map((row) => {
+      const conflict = row.conflict ? "Conflit" : "";
+      const sourceLabel = row.source === "global"
+        ? `global (${hoursPerDay}h/j)`
+        : row.source === "case"
+        ? "heures de la case"
+        : "manuel";
+
+      return [
+        row.isoYear,
+        `S${pad2(row.week)}`,
+        row.dateKey,
+        row.person,
+        row.site,
+        row.portion,
+        row.hours,
+        conflict,
+        sourceLabel,
+      ];
+    });
+
+    const csv = [header, ...rows]
+      .map((line) => line.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `heures-semaine-${currentWeekKey}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites(data.sites||[]); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites((data.sites||[]).map(normalizeSiteRecord)); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
   // ==========================
-  // UI (Semaine & Mois)
+  // UI (Semaine / Mois / Heures)
   // ==========================
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -719,23 +1839,85 @@ useEffect(() => {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => shift(-1)} aria-label="Précédent"><ChevronLeft className="w-4 h-4" /></Button>
           <Button variant="outline" onClick={() => shift(1)} aria-label="Suivant"><ChevronRight className="w-4 h-4" /></Button>
-          <Button variant="outline" onClick={() => { setAnchor(new Date()); setView("week"); }} className="ml-1" aria-label="Aujourd'hui"><RotateCcw className="w-4 h-4" /></Button>
+          <Button
+            variant="outline"
+            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
+            className="ml-1"
+            aria-label="Aller à la semaine actuelle"
+            title="Revenir rapidement à la semaine en cours"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
           <div className="font-semibold text-lg flex items-center gap-2">
             <CalendarRange className="w-5 h-5" />
-            {view === 'week' && `Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}
-            {view === 'month' && anchor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}
+            {(view === 'week' || view === 'hours') && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{`Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}</span>
+                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                  Semaine actuelle : S{pad2(todayWeekNumber)}
+                </span>
+              </div>
+            )}
+            {view === 'month' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{anchor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}</span>
+                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                  Semaine actuelle : S{pad2(todayWeekNumber)}
+                </span>
+              </div>
+            )}
+            {view === 'timeline' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{timelineScopeLabel}</span>
+                <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                  Barres basées sur les dates prévues des chantiers
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {view === "hours" && (
+            <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
+              Heures/jour
+              <Input
+                type="number"
+                min={0}
+                step={0.5}
+                value={hoursPerDay}
+                onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
+                className="w-20 h-9"
+              />
+            </label>
+          )}
           <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
+          <Button variant="outline" onClick={copyFromPreviousWeek} aria-label="Copier semaine précédente" title="Copie les affectations, notes et absences de la semaine N-1">
+            <Copy className="w-4 h-4 mr-1" /> Copier N-1
+          </Button>
+          <Button variant="outline" onClick={clearCurrentWeek} aria-label="Vider la semaine" title="Retire toutes les données de la semaine affichée">
+            <Eraser className="w-4 h-4 mr-1" /> Vider
+          </Button>
           <Button variant="outline" onClick={() => fileRef.current?.click()} aria-label="Importer"><Upload className="w-4 h-4 mr-1" />Importer</Button>
-          <Button onClick={exportJSON} aria-label="Exporter"><Download className="w-4 h-4 mr-1" />Exporter</Button>
+          <Button onClick={exportJSON} aria-label="Exporter le JSON"><Download className="w-4 h-4 mr-1" />Exporter JSON</Button>
+          <Button variant="outline" onClick={exportHoursCSV} aria-label="Exporter les heures en CSV">
+            <Download className="w-4 h-4 mr-1" /> Export heures CSV
+          </Button>
           <Tabs value={view} onValueChange={(v: any) => setView(v)}>
             <TabsList>
               <TabsTrigger value="week">Semaine</TabsTrigger>
               <TabsTrigger value="month">Mois</TabsTrigger>
+              <TabsTrigger value="hours">Heures</TabsTrigger>
+              <TabsTrigger value="timeline">Calendrier</TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button
+            variant="ghost"
+            onClick={() => jumpToCurrentWeek({ forceView: view === "hours" ? "hours" : view === "week" ? "week" : undefined })}
+            className="hidden md:inline-flex"
+            aria-label="Afficher la semaine actuelle"
+          >
+            Aller à la semaine en cours
+          </Button>
         </div>
       </div>
 
@@ -743,7 +1925,12 @@ useEffect(() => {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-12 gap-4">
           {/* Left column: People & Sites */}
-          <div className="col-span-12 lg:col-span-3 space-y-4">
+          <div
+            className={cx(
+              "col-span-12 lg:col-span-3 space-y-4",
+              view === "month" && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+            )}
+          >
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -778,9 +1965,22 @@ useEffect(() => {
                 <div className="space-y-2">
                   {sites.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-sm">
-                      <span>{s.name}</span>
+                      <span className="flex items-center gap-2">
+                        <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
+                        {s.name}
+                      </span>
                       <div className="flex items-center gap-2">
-                        <Button size="icon" variant="ghost" onClick={() => { setRenameTarget({ type: 'site', id: s.id, name: s.name }); setRenameOpen(true); }} aria-label={`Renommer ${s.name}`}><Edit3 className="w-4 h-4" /></Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, color: s.color });
+                            setRenameWeeks(siteWeekVisibility[s.id] || []);
+                            setRenamePickerYear(getISOWeekYear(anchor));
+                            setRenameOpen(true);
+                          }}
+                          aria-label={`Renommer ${s.name}`}
+                        ><Edit3 className="w-4 h-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
                       </div>
                     </div>
@@ -796,15 +1996,84 @@ useEffect(() => {
             {view === "week" && (
               <div className="space-y-2">
                 <div className="grid grid-cols-6 text-xs text-neutral-500">
-                  <div className="px-1">Sem. {getISOWeek(weekDays[0])}</div>
+                  <div className="px-1 flex items-center gap-2">
+                    <span>Sem. {getISOWeek(weekDays[0])}</span>
+                    {isViewingCurrentWeek && (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
+                    )}
+                  </div>
                   {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
                 </div>
                 <div className="space-y-2">
-                  {sites.map((site) => (
+                  {sitesForCurrentWeek.map((site) => (
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
-                      <div className="text-sm flex items-center">{site.name}</div>
+                      <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                        <span
+                          className={cx(
+                            "w-3 h-3 rounded-full border", 
+                            site.color || "bg-neutral-300",
+                            site.color ? "border-black/10" : "border-neutral-200"
+                          )}
+                          aria-hidden
+                        />
+                        {site.name}
+                      </div>
                       {weekDays.map((d) => (
-                        <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+                        <DayCell
+                          key={`${site.id}-${toLocalKey(d)}`}
+                          date={d}
+                          site={site}
+                          people={people}
+                          assignments={assignments}
+                          onEditNote={openNote}
+                          notes={notes}
+                          hoursPerDay={hoursPerDay}
+                          conflictMap={conflictMap}
+                          onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* HOURS VIEW */}
+            {view === "hours" && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-6 text-xs text-neutral-500">
+                  <div className="px-1 flex items-center gap-2">
+                    <span>Sem. {getISOWeek(weekDays[0])}</span>
+                    {isViewingCurrentWeek && (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
+                    )}
+                    {weekConflictCount > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{weekConflictCount} conflits potentiels</span>
+                    )}
+                  </div>
+                  {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                </div>
+                <div className="space-y-2">
+                  {sitesForCurrentWeek.map((site) => (
+                    <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
+                      <div className="text-sm flex items-center font-semibold justify-between">
+                        <span>{site.name}</span>
+                        <span className="text-[11px] text-neutral-500">Heures & portions</span>
+                      </div>
+                      {weekDays.map((d) => (
+                        <HoursCell
+                          key={`${site.id}-${toLocalKey(d)}`}
+                          date={d}
+                          site={site}
+                          people={people}
+                          assignments={assignments}
+                          notes={notes}
+                          hoursPerDay={hoursPerDay}
+                          conflictMap={conflictMap}
+                          onEditNote={openNote}
+                          onUpdateAssignment={updateAssignment}
+                          getInfo={getAssignmentHoursInfo}
+                        />
                       ))}
                     </div>
                   ))}
@@ -815,22 +2084,227 @@ useEffect(() => {
             {/* MONTH VIEW */}
             {view === "month" && (
               <div className="space-y-4">
-                {monthWeeks.map((week, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="grid grid-cols-6 text-xs text-neutral-500">
-                      <div className="px-1">Sem. {getISOWeek(week[0])}</div>
-                      {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
-                    </div>
-                    {sites.map((site) => (
-                      <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
-                        <div className="text-sm flex items-center">{site.name}</div>
-                        {week.slice(0, 5).map((d) => (
-                          <DayCell key={`${site.id}-${toLocalKey(d)}`} date={d} site={site} people={people} assignments={assignments} onEditNote={openNote} notes={notes} onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))} />
+
+                {monthWeeks.map((week, idx) => {
+                  const wkKey = weekKeyOf(week[0]);
+                  const isCurrent = wkKey === todayWeekKey;
+                  const sitesForWeek = sites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  return (
+                    <div
+                      key={idx}
+                      ref={(el) => {
+                        if (el) monthWeekRefs.current[wkKey] = el;
+                        else delete monthWeekRefs.current[wkKey];
+                      }}
+                      className={cx("space-y-3", idx > 0 && "pt-4")}
+                    >
+                      {idx > 0 && <div className="h-px bg-neutral-300" aria-hidden />}
+                      <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 shadow-sm">
+                        <div className="grid grid-cols-6 items-center text-xs text-neutral-600">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-800 shadow-inner">
+                              Semaine {getISOWeek(week[0])}
+                            </span>
+                            {isCurrent && (
+                              <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800">Semaine en cours</span>
+                            )}
+                          </div>
+                          {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                        </div>
+                        {sitesForWeek.map((site) => (
+                          <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
+                            <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                              <span
+                                className={cx(
+                                  "w-3 h-3 rounded-full border",
+                                  site.color || "bg-neutral-300",
+                                  site.color ? "border-black/10" : "border-neutral-200"
+                                )}
+                                aria-hidden
+                              />
+                              {site.name}
+                            </div>
+                            {week.slice(0, 5).map((d) => (
+                              <DayCell
+                                key={`${site.id}-${toLocalKey(d)}`}
+                                date={d}
+                                site={site}
+                                people={people}
+                                assignments={assignments}
+                                onEditNote={openNote}
+                                notes={notes}
+                                hoursPerDay={hoursPerDay}
+                                conflictMap={conflictMap}
+                                onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                              />
+                            ))}
+                          </div>
                         ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+              </div>
+            )}
+
+            {/* TIMELINE / CALENDRIER GANTT */}
+            {view === "timeline" && timelineView && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Calendrier Gantt</span>
+                    <span className="text-xs text-neutral-600">{formatFR(timelineView.start)} → {formatFR(timelineView.end)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant={timelineScope === "month" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("month")}>
+                      Mensuel
+                    </Button>
+                    <Button variant={timelineScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("quarter")}>
+                      Trimestre
+                    </Button>
+                    <Button variant={timelineScope === "year" ? "default" : "outline"} size="sm" onClick={() => setTimelineScope("year")}>
+                      Année
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-600">
+                  Barres continues alignées sur les dates prévues des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-full space-y-3">
+                    <div className="grid" style={{ gridTemplateColumns: `220px 1fr` }}>
+                      <div className="px-2 text-[11px] font-semibold text-neutral-600">Chantier</div>
+                      <div className="relative pl-2">
+                        <div className="grid text-[11px] font-semibold text-neutral-600" style={{ gridTemplateColumns: `repeat(${timelineView.buckets.length}, minmax(140px, 1fr))` }}>
+                          {timelineView.buckets.map((bucket, idx) => (
+                            <div key={`${bucket.label}-${idx}`} className="text-center pb-1 border-l first:border-l-0 border-neutral-200">
+                              {bucket.label}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 h-2 bg-gradient-to-r from-neutral-100 via-white to-neutral-100 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {ganttTimeline.rows.length === 0 && (
+                      <div className="text-sm text-neutral-500 px-2">Aucun chantier planifié sur cette période.</div>
+                    )}
+
+                    {ganttTimeline.rows.map((row) => (
+                      <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
+                        <div className="flex flex-col gap-1 px-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className="font-medium text-neutral-800">{row.site.name}</span>
+                          </div>
+                          <div className="text-[11px] text-neutral-500">
+                            {formatFR(row.bar.start)} → {formatFR(row.bar.end)}
+                          </div>
+                        </div>
+                        <div className="relative h-12 rounded-xl bg-gradient-to-b from-neutral-50 to-white border border-neutral-200 shadow-[inset_0_1px_0_rgba(0,0,0,0.03)]">
+                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timelineView.buckets.length}, minmax(140px, 1fr))` }}>
+                            {timelineView.buckets.map((_, idx) => (
+                              <div key={idx} className="border-l last:border-r border-neutral-200/80" />
+                            ))}
+                          </div>
+                          <div
+                            className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
+                            style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
+                          >
+                            <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
-                ))}
+                </div>
+
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="text-sm font-semibold">Récap période</div>
+                    <div className="grid md:grid-cols-3 gap-3 text-sm">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Jours couverts</span>
+                          <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                            {timelineLoad.totalDays - timelineLoad.zeroDays}/{timelineLoad.totalDays}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Périodes vides</span>
+                          <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                            {timelineLoad.zeroDays} j.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs">Charge max</span>
+                          <span className="px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-semibold">
+                            {timelineLoad.max} chantier{timelineLoad.max > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-neutral-700">Périodes sans chantier (jours exacts)</div>
+                        {timelineLoad.gaps.length === 0 && <div className="text-xs text-neutral-500">Aucune période vide.</div>}
+                        {timelineLoad.gaps.map((gap, idx) => (
+                          <div key={idx} className="text-xs flex items-center justify-between bg-amber-50 text-amber-800 px-2 py-1 rounded-lg border border-amber-100">
+                            <span>{formatFR(gap.start)} → {formatFR(gap.end)}</span>
+                            <span className="font-semibold">{gap.days} j.</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-neutral-700">Périodes très chargées</div>
+                        {timelineLoad.peaks.length === 0 && <div className="text-xs text-neutral-500">Aucune période dense.</div>}
+                        {timelineLoad.peaks.map((peak, idx) => (
+                          <div key={idx} className="text-xs flex items-center justify-between bg-rose-50 text-rose-800 px-2 py-1 rounded-lg border border-rose-100">
+                            <span>{formatFR(peak.start)} → {formatFR(peak.end)}</span>
+                            <span className="font-semibold">{peak.count} ch. / {peak.days} j.</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-neutral-700">Charge par bucket</div>
+                      <div className="grid md:grid-cols-3 gap-2">
+                        {timelineLoad.bucketStats.map((b) => {
+                          const ratio = timelineLoad.max > 0 ? b.avg / Math.max(1, timelineLoad.max || 1) : 0;
+                          const pct = Math.min(100, ratio * 100);
+                          const tone = getLoadTone(ratio);
+                          return (
+                            <div key={b.label} className={cx("p-3 rounded-lg border", tone.border, tone.softBg)}>
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-700 mb-2">
+                                <span>{b.label}</span>
+                                <span className={cx("text-xs font-semibold", tone.softText)}>{b.avg.toFixed(1)} ch.</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-16 h-16 rounded-full border border-white shadow-inner relative"
+                                  style={{ background: `conic-gradient(${tone.color} ${pct}%, #e5e7eb ${pct}% 100%)` }}
+                                >
+                                  <div className="absolute inset-2 rounded-full bg-white flex items-center justify-center text-xs font-semibold text-neutral-700">
+                                    {Math.round(pct)}%
+                                  </div>
+                                </div>
+                                <div className="text-[11px] text-neutral-600 space-y-1">
+                                  <div>Charge moyenne</div>
+                                  <div className="font-semibold text-neutral-800">
+                                    {b.avg.toFixed(1)} chantier{b.avg >= 2 ? "s" : ""}
+                                  </div>
+                                  {b.idle > 0 && <div className="text-amber-700">{b.idle} j. sans chantier</div>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </div>
@@ -840,7 +2314,46 @@ useEffect(() => {
 
       {/* Dialogs */}
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
-      <RenameDialog open={renameOpen} setOpen={setRenameOpen} name={renameTarget?.name || ''} title={renameTarget?.type === 'person' ? 'Renommer le salarié' : 'Renommer le chantier'} onSave={(newName: string) => { if (!renameTarget) return; const n = newName.trim(); if (!n) return; if (renameTarget.type === 'person') renamePerson(renameTarget.id, n); else renameSite(renameTarget.id, n); setRenameOpen(false); }} />
+      <RenameDialog
+        open={renameOpen}
+        setOpen={setRenameOpen}
+        name={renameTarget?.name || ''}
+        title={renameTarget?.type === 'person' ? 'Renommer le salarié' : 'Renommer le chantier'}
+        weekSelection={renameTarget?.type === 'site' ? renameWeeks : undefined}
+        onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
+        initialYear={renamePickerYear}
+        startDate={renameTarget?.type === 'site' ? renameTarget?.startDate : undefined}
+        endDate={renameTarget?.type === 'site' ? renameTarget?.endDate : undefined}
+        color={renameTarget?.type === 'site' ? renameTarget?.color : undefined}
+        onSave={(newName: string, weeks?: string[], schedule?: { startDate: string; endDate: string }, colorChoice?: string) => {
+          if (!renameTarget) return;
+          const n = newName.trim();
+          if (!n) return;
+          if (renameTarget.type === 'person') {
+            renamePerson(renameTarget.id, n);
+          } else {
+            renameSite(renameTarget.id, n, colorChoice);
+            if (schedule?.startDate && schedule?.endDate) {
+              updateSiteSchedule(renameTarget.id, schedule.startDate, schedule.endDate);
+              setRenameTarget((prev) => (prev ? { ...prev, startDate: schedule.startDate, endDate: schedule.endDate } : prev));
+            }
+            if (colorChoice) {
+              setRenameTarget((prev) => (prev ? { ...prev, color: colorChoice } : prev));
+            }
+            if (weeks) {
+              setSiteWeekVisibility((prev) => {
+                const unique = Array.from(new Set(weeks)).filter(Boolean);
+                if (unique.length === 0) {
+                  const { [renameTarget.id]: _omit, ...rest } = prev;
+                  return rest;
+                }
+                return { ...prev, [renameTarget.id]: unique };
+              });
+            }
+          }
+          setRenameOpen(false);
+        }}
+      />
     </div>
   );
 }
