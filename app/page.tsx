@@ -1563,7 +1563,11 @@ useEffect(() => {
     if (polling) return;
     polling = true;
     try {
-      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store" },
+        next: { revalidate: 0 },
+      });
       const data = await res.json();
       if (data && typeof data === "object" && !cancelled) {
         const remoteVersion = Number((data as any).updatedAt || 0);
@@ -1606,7 +1610,11 @@ useEffect(() => {
   (async () => {
     try {
       const wk = currentWeekKey;
-      const res = await fetch(`/api/state/${wk}`, { cache: 'no-store' });
+      const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store" },
+        next: { revalidate: 0 },
+      });
       const srv = await res.json();
       if (srv && typeof srv === 'object') {
         setPeople(srv.people || DEMO_PEOPLE);
