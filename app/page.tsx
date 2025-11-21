@@ -1564,15 +1564,19 @@ useEffect(() => {
     polling = true;
     try {
       const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-store" },
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
         next: { revalidate: 0 },
       });
       const data = await res.json();
       if (data && typeof data === "object" && !cancelled) {
         const remoteVersion = Number((data as any).updatedAt || 0);
         const remoteClient = (data as any).clientId;
-        if (remoteVersion > syncVersionRef.current && (!remoteClient || remoteClient !== clientIdRef.current)) {
+        const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
+        if (fromOther && remoteVersion !== syncVersionRef.current) {
           setPeople((data as any).people || DEMO_PEOPLE);
           setSites(((data as any).sites || DEMO_SITES).map(normalizeSiteRecord));
           setAssignments((data as any).assignments || []);
@@ -1611,8 +1615,11 @@ useEffect(() => {
     try {
       const wk = currentWeekKey;
       const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-store" },
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
         next: { revalidate: 0 },
       });
       const srv = await res.json();
