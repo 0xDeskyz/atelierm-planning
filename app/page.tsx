@@ -826,8 +826,15 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
     setHoursOverride(i.hoursOverride ?? "");
   }, [value]);
 
-  const ColorDot = ({ c, selected, onClick }: any) => (
-    <button type="button" onClick={onClick} className={cx("w-7 h-7 rounded-full border", PASTELS[c].bg, selected ? "ring-2 ring-black" : "")} aria-label={`Couleur ${c}`} title={c} />
+  const ColorDot = ({ c, selected, onClick, label = "Choisir cette couleur" }: any) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx("w-7 h-7 rounded-full border", PASTELS[c].bg, selected ? "ring-2 ring-black" : "")}
+      aria-label={label}
+    >
+      <span className="sr-only">{label}</span>
+    </button>
   );
 
   return (
@@ -859,9 +866,25 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
           <div className="space-y-2">
             <div className="text-sm font-medium">Surlignage de la case</div>
             <div className="flex items-center gap-3">
-              <button type="button" className={cx("px-2 py-1 text-sm rounded border", !highlight ? "border-black" : "")} onClick={() => setHighlight("")}>Aucun</button>
+              <button
+                type="button"
+                onClick={() => setHighlight("")}
+                className={cx(
+                  "w-7 h-7 rounded-full border border-neutral-400 bg-white flex items-center justify-center",
+                  !highlight ? "ring-2 ring-black" : ""
+                )}
+                aria-label="Sans surlignage"
+              >
+                <span className="sr-only">Sans surlignage</span>
+              </button>
               {["mint", "sky", "peach"].map((c) => (
-                <button key={c} type="button" onClick={() => setHighlight(c)} className={cx("px-2 py-1 text-sm rounded border", PASTELS[c].bg, highlight === c ? "ring-2 ring-black" : "")}>{c}</button>
+                <ColorDot
+                  key={c}
+                  c={c}
+                  selected={highlight === c}
+                  onClick={() => setHighlight(c)}
+                  label="Choisir cette couleur"
+                />
               ))}
             </div>
           </div>
