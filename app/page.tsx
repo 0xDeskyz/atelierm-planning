@@ -1075,11 +1075,9 @@ export default function Page() {
   const [newQuote, setNewQuote] = useState({
     title: "",
     client: "",
-    amount: "",
-    dueDate: "",
-    note: "",
-    status: "todo",
   });
+  const [quoteDetail, setQuoteDetail] = useState<any | null>(null);
+  const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
   const timelineWindow = useMemo(() => {
     const base = new Date(anchor);
     base.setHours(0, 0, 0, 0);
@@ -1391,6 +1389,30 @@ export default function Page() {
   }, []);
 
   // Gestion des devis (kanban)
+  const normalizeQuoteForSave = useCallback((quote: any) => {
+    const todayKeyLocal = toLocalKey(new Date());
+    const status = quote?.status || "todo";
+    const amountNum = Number(quote?.amount);
+    const patch: any = {
+      ...quote,
+      title: quote?.title?.trim() || "Nouveau devis",
+      client: quote?.client?.trim() || undefined,
+      note: quote?.note?.trim() || undefined,
+      amount: Number.isFinite(amountNum) ? amountNum : undefined,
+      dueDate: quote?.dueDate || undefined,
+      status,
+    };
+
+    if ((status === "pending" || status === "won") && !quote?.sentAt) {
+      patch.sentAt = todayKeyLocal;
+    }
+    if (status !== "lost") {
+      patch.reason = undefined;
+    }
+
+    return patch;
+  }, []);
+
   const quotesByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
     QUOTE_COLUMNS.forEach((c) => (map[c.id] = []));
@@ -1401,23 +1423,28 @@ export default function Page() {
     return map;
   }, [quotes]);
 
-  const updateQuoteStatus = useCallback((id: string, status: string) => {
-    const todayKeyLocal = toLocalKey(new Date());
-    setQuotes((prev) =>
-      prev.map((q) => {
-        if (q.id !== id) return q;
-        const patch: any = { ...q, status };
-        if (status === "pending" && !q.sentAt) patch.sentAt = todayKeyLocal;
-        if (status === "won" && !q.sentAt) patch.sentAt = q.sentAt || todayKeyLocal;
-        if (status !== "lost") patch.reason = undefined;
-        return patch;
-      })
-    );
+  const openQuoteDetail = useCallback((quote: any) => {
+    setQuoteDetail(quote);
+    setQuoteDetailOpen(true);
   }, []);
 
-  const updateQuoteReason = useCallback((id: string, reason: string) => {
-    setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, reason } : q)));
-  }, []);
+  const saveQuoteDetail = useCallback(() => {
+    if (!quoteDetail) return;
+    const normalized = normalizeQuoteForSave(quoteDetail);
+    setQuotes((prev) => prev.map((q) => (q.id === normalized.id ? normalized : q)));
+    setQuoteDetailOpen(false);
+  }, [normalizeQuoteForSave, quoteDetail]);
+
+  useEffect(() => {
+    if (!quoteDetail) return;
+    const refreshed = quotes.find((q) => q.id === quoteDetail.id);
+    if (!refreshed) {
+      setQuoteDetailOpen(false);
+      setQuoteDetail(null);
+      return;
+    }
+    setQuoteDetail((prev) => (prev ? { ...prev, ...refreshed } : prev));
+  }, [quotes, quoteDetail?.id]);
 
   const addQuote = () => {
     if (!newQuote.title.trim()) {
@@ -1425,20 +1452,11 @@ export default function Page() {
       return;
     }
     const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
-    const amountNum = Number(newQuote.amount);
-    setQuotes((prev) => [
-      ...prev,
-      {
-        id,
-        title: newQuote.title.trim(),
-        client: newQuote.client.trim(),
-        amount: Number.isFinite(amountNum) ? amountNum : undefined,
-        dueDate: newQuote.dueDate || undefined,
-        note: newQuote.note?.trim() || undefined,
-        status: newQuote.status as string,
-      },
-    ]);
-    setNewQuote({ title: "", client: "", amount: "", dueDate: "", note: "", status: "todo" });
+    const base = { id, title: newQuote.title.trim(), client: newQuote.client.trim(), status: "todo" };
+    const normalized = normalizeQuoteForSave(base);
+    setQuotes((prev) => [...prev, normalized]);
+    setNewQuote({ title: "", client: "" });
+    openQuoteDetail(normalized);
   };
 
   // DnD sensors
@@ -2557,163 +2575,93 @@ useEffect(() => {
               <div className="space-y-3">
                 <Card>
                   <CardContent className="space-y-4">
-                    <div className="flex flex-col gap-1">
-                      <div className="text-base font-semibold">Devis en cours</div>
-                      <p className="text-sm text-neutral-600">
-                        Visualisez vos devis comme un kanban : préparer, envoyer, suivre les réponses et documenter les refus.
-                      </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-3 gap-3">
-                      <div className="col-span-2 space-y-2">
-                        <div className="overflow-x-auto pb-1">
-                          <div className="min-w-[960px] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
-                          {QUOTE_COLUMNS.map((col) => {
-                            const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
-                            const items = quotesByColumn[col.id] || [];
-                            return (
-                              <div
-                                key={col.id}
-                                className={cx(
-                                  "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] max-h-[72vh] overflow-hidden",
-                                  tone.bg,
-                                  tone.border
-                                )}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
-                                    <div className="text-xs text-neutral-600">{col.hint}</div>
-                                  </div>
-                                  <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>
-                                    {items.length}
-                                  </span>
-                                </div>
-                                <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-                                  {items.length === 0 && (
-                                    <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
-                                      Rien ici pour l'instant.
-                                    </div>
-                                  )}
-                                  {items.map((q) => (
-                                    <div key={q.id} className="rounded-lg border bg-white p-3 shadow-sm space-y-2">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="font-semibold text-sm text-neutral-900 truncate" title={q.title}>{q.title}</div>
-                                        {Number.isFinite(q.amount) && (
-                                          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                                            {formatEUR(q.amount)}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-neutral-600 flex flex-wrap gap-2 items-center">
-                                        {q.client && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-neutral-100 text-neutral-700">
-                                            <Users className="w-3 h-3" /> {q.client}
-                                          </span>
-                                        )}
-                                        {q.dueDate && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-100">
-                                            <CalendarRange className="w-3 h-3" /> Échéance {formatFR(new Date(q.dueDate))}
-                                          </span>
-                                        )}
-                                        {q.sentAt && q.status !== "draft" && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100">
-                                            Envoyé le {formatFR(new Date(q.sentAt))}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {q.note && <div className="text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 px-2 py-1 rounded-md">{q.note}</div>}
-                                      <div className="flex items-center gap-2 text-xs">
-                                        <label className="text-neutral-600">Statut</label>
-                                        <select
-                                          value={q.status}
-                                          onChange={(e) => updateQuoteStatus(q.id, e.target.value)}
-                                          className="text-sm border rounded-md px-2 py-1"
-                                        >
-                                          {QUOTE_COLUMNS.map((opt) => (
-                                            <option key={opt.id} value={opt.id}>
-                                              {opt.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                      {q.status === "lost" && (
-                                        <div className="space-y-1">
-                                          <label className="text-xs font-semibold text-rose-700">Motif (optionnel)</label>
-                                          <Textarea
-                                            value={q.reason || ""}
-                                            onChange={(e: any) => updateQuoteReason(q.id, e.target.value)}
-                                            placeholder="Pourquoi ce devis a été refusé ?"
-                                            className="text-sm"
-                                          />
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
+                    <div className="space-y-3">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="space-y-1">
+                          <div className="text-base font-semibold">Devis en cours</div>
+                          <p className="text-sm text-neutral-600">
+                            Kanban minimaliste : cliquez sur une carte pour ouvrir le détail complet et l'éditer.
+                          </p>
                         </div>
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white shadow-sm p-2">
+                          <Input
+                            placeholder="Nouveau devis"
+                            value={newQuote.title}
+                            onChange={(e: any) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
+                            className="w-48 h-9"
+                          />
+                          <Input
+                            placeholder="Client (optionnel)"
+                            value={newQuote.client}
+                            onChange={(e: any) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
+                            className="w-44 h-9"
+                          />
+                          <Button onClick={addQuote} className="h-9 px-3">
+                            <Plus className="w-4 h-4 mr-1" /> Créer
+                          </Button>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <div className="rounded-xl border border-neutral-200 p-3 bg-neutral-50 space-y-2">
-                          <div className="text-sm font-semibold">Nouveau devis</div>
-                          <div className="grid grid-cols-1 gap-2">
-                            <Input
-                              placeholder="Intitulé du devis"
-                              value={newQuote.title}
-                              onChange={(e: any) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
-                            />
-                            <Input
-                              placeholder="Client"
-                              value={newQuote.client}
-                              onChange={(e: any) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
-                            />
-                            <div className="grid grid-cols-2 gap-2">
-                              <Input
-                                placeholder="Montant (€)"
-                                value={newQuote.amount}
-                                onChange={(e: any) => setNewQuote((q) => ({ ...q, amount: e.target.value }))}
-                              />
-                              <Input
-                                type="date"
-                                placeholder="Échéance"
-                                value={newQuote.dueDate}
-                                onChange={(e: any) => setNewQuote((q) => ({ ...q, dueDate: e.target.value }))}
-                              />
-                            </div>
-                            <Textarea
-                              placeholder="Notes internes"
-                              value={newQuote.note}
-                              onChange={(e: any) => setNewQuote((q) => ({ ...q, note: e.target.value }))}
-                              className="text-sm"
-                            />
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className="text-neutral-600">Statut initial</span>
-                              <select
-                                value={newQuote.status}
-                                onChange={(e) => setNewQuote((q) => ({ ...q, status: e.target.value }))}
-                                className="border rounded-md px-2 py-1 text-sm"
-                              >
-                                {QUOTE_COLUMNS.map((opt) => (
-                                  <option key={opt.id} value={opt.id}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                          <Button className="w-full" onClick={addQuote}>
-                            <Plus className="w-4 h-4 mr-2" /> Ajouter au kanban
-                          </Button>
-                        </div>
+                      <div className="text-xs text-neutral-600">Toutes les colonnes sont visibles sans défilement horizontal. Les cartes affichent l'essentiel et s'ouvrent au clic pour le reste.</div>
 
-                        <div className="rounded-xl border border-dashed border-neutral-300 p-3 text-xs text-neutral-600 bg-white">
-                          Organisez vos devis par colonne : changez le statut via la liste déroulante et renseignez un motif lorsqu'un devis est refusé.
-                        </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                        {QUOTE_COLUMNS.map((col) => {
+                          const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
+                          const items = quotesByColumn[col.id] || [];
+                          return (
+                            <div
+                              key={col.id}
+                              className={cx(
+                                "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] bg-white",
+                                tone.bg,
+                                tone.border
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
+                                  <div className="text-xs text-neutral-600">{col.hint}</div>
+                                </div>
+                                <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>
+                                  {items.length}
+                                </span>
+                              </div>
+                              <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[70vh]">
+                                {items.length === 0 && (
+                                  <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
+                                    Rien ici pour l'instant.
+                                  </div>
+                                )}
+                                {items.map((q) => (
+                                  <button
+                                    key={q.id}
+                                    onClick={() => openQuoteDetail(q)}
+                                    className="w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="text-sm font-semibold text-neutral-900 leading-tight break-words">
+                                        {q.title || "Sans titre"}
+                                      </div>
+                                      <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 mt-0.5", tone.chip)} aria-hidden />
+                                    </div>
+                                    <div className="text-xs text-neutral-600 space-y-1">
+                                      {q.client && <div className="truncate">Client : {q.client}</div>}
+                                      {Number.isFinite(q.amount) && (
+                                        <div className="font-semibold text-neutral-800">{formatEUR(q.amount)}</div>
+                                      )}
+                                      {q.dueDate && (
+                                        <div className="flex items-center gap-1 text-sky-700">
+                                          <CalendarRange className="w-3 h-3" /> {formatFR(new Date(q.dueDate))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-neutral-500">Cliquer pour voir le détail</div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </CardContent>
@@ -2811,6 +2759,95 @@ useEffect(() => {
       </DndContext>
 
       {/* Dialogs */}
+      {quoteDetail && (
+        <Dialog
+          open={quoteDetailOpen}
+          onOpenChange={(v: boolean) => {
+            setQuoteDetailOpen(v);
+            if (!v) setQuoteDetail(null);
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <div className="text-lg font-semibold">Détail du devis</div>
+              <p className="text-sm text-neutral-600">Complétez ou ajustez les informations puis enregistrez.</p>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                value={quoteDetail.title || ""}
+                onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, title: e.target.value } : prev))}
+                placeholder="Intitulé"
+              />
+              <div className="grid md:grid-cols-2 gap-2">
+                <Input
+                  value={quoteDetail.client || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, client: e.target.value } : prev))}
+                  placeholder="Client"
+                />
+                <Input
+                  value={quoteDetail.amount ?? ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, amount: e.target.value } : prev))}
+                  placeholder="Montant (€)"
+                />
+              </div>
+              <div className="grid md:grid-cols-2 gap-2 items-center">
+                <Input
+                  type="date"
+                  value={quoteDetail.dueDate || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, dueDate: e.target.value } : prev))}
+                  placeholder="Échéance"
+                />
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-neutral-600">Statut</span>
+                  <select
+                    value={quoteDetail.status || "todo"}
+                    onChange={(e) =>
+                      setQuoteDetail((prev: any) => (prev ? { ...prev, status: e.target.value } : prev))
+                    }
+                    className="border rounded-md px-2 py-1 text-sm w-full"
+                  >
+                    {QUOTE_COLUMNS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <Textarea
+                value={quoteDetail.note || ""}
+                onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, note: e.target.value } : prev))}
+                placeholder="Notes internes"
+                className="text-sm"
+              />
+              {quoteDetail.status === "lost" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-rose-700">Motif (optionnel)</label>
+                  <Textarea
+                    value={quoteDetail.reason || ""}
+                    onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, reason: e.target.value } : prev))}
+                    placeholder="Pourquoi ce devis a été refusé ?"
+                    className="text-sm"
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setQuoteDetailOpen(false);
+                  setQuoteDetail(null);
+                }}
+              >
+                Fermer
+              </Button>
+              <Button onClick={saveQuoteDetail}>Enregistrer</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
       <RenameDialog
         open={renameOpen}
