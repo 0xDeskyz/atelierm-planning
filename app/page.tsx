@@ -331,6 +331,7 @@ const parseWeekList = (input: string, fallbackYear: number) => {
   });
   return Array.from(weeks);
 };
+const toArray = (val: any, fallback: any[] = []) => (Array.isArray(val) ? val : fallback);
 const normalizeSiteRecord = (site: any) => {
   const start = site?.startDate || toLocalKey(new Date());
   const end = site?.endDate || start;
@@ -1343,8 +1344,10 @@ export default function Page() {
     });
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
-  const plannedSites = useMemo(() => sites.filter((s) => (s.status || "planned") === "planned"), [sites]);
-  const pendingSites = useMemo(() => sites.filter((s) => (s.status || "planned") !== "planned"), [sites]);
+  const safeSites = Array.isArray(sites) ? sites : [];
+  const safeQuotes = Array.isArray(quotes) ? quotes : [];
+  const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
+  const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
 
   const earliestChantierStart = useMemo(
     () =>
@@ -1712,12 +1715,12 @@ export default function Page() {
   const quotesByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
     QUOTE_COLUMNS.forEach((c) => (map[c.id] = []));
-    quotes.forEach((q) => {
+    safeQuotes.forEach((q) => {
       if (!map[q.status]) map[q.status] = [];
       map[q.status].push(q);
     });
     return map;
-  }, [quotes]);
+  }, [safeQuotes]);
 
   const openQuoteDetail = useCallback((quote: any) => {
     setQuoteDetail(quote);
@@ -1753,8 +1756,8 @@ export default function Page() {
   }, [quotes, quoteDetail?.id]);
 
   useEffect(() => {
-    quotes.forEach((q) => upsertChantierFromQuote(q));
-  }, [quotes, upsertChantierFromQuote]);
+    safeQuotes.forEach((q) => upsertChantierFromQuote(q));
+  }, [safeQuotes, upsertChantierFromQuote]);
 
   const addQuote = () => {
     if (!newQuote.title.trim()) {
@@ -2028,7 +2031,7 @@ export default function Page() {
     });
   };
   const openSiteDetail = (id: string, statusOverride?: "planned" | "pending") => {
-    const site = sites.find((s) => s.id === id);
+    const site = safeSites.find((s) => s.id === id);
     if (!site) return;
     setSiteDetail(statusOverride ? { ...site, status: statusOverride } : site);
     setSiteDetailOpen(true);
@@ -2052,14 +2055,14 @@ export default function Page() {
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
   const applyState = useCallback((state: any) => {
-    setPeople(state.people || DEMO_PEOPLE);
-    setSites((state.sites || DEMO_SITES).map(normalizeSiteRecord));
-    setAssignments(state.assignments || []);
+    setPeople(toArray(state.people, DEMO_PEOPLE));
+    setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
+    setAssignments(toArray(state.assignments));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
-    setQuotes(state.quotes || []);
+    setQuotes(toArray(state.quotes));
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -2330,7 +2333,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites((data.sites||[]).map(normalizeSiteRecord)); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(data.quotes||[]); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
