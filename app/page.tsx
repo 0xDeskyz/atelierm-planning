@@ -2566,7 +2566,8 @@ useEffect(() => {
 
                     <div className="grid md:grid-cols-3 gap-3">
                       <div className="col-span-2 space-y-2">
-                        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
+                        <div className="overflow-x-auto pb-1">
+                          <div className="min-w-[960px] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
                           {QUOTE_COLUMNS.map((col) => {
                             const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
                             const items = quotesByColumn[col.id] || [];
@@ -2574,7 +2575,7 @@ useEffect(() => {
                               <div
                                 key={col.id}
                                 className={cx(
-                                  "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px]",
+                                  "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] max-h-[72vh] overflow-hidden",
                                   tone.bg,
                                   tone.border
                                 )}
@@ -2588,7 +2589,7 @@ useEffect(() => {
                                     {items.length}
                                   </span>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="flex-1 space-y-2 overflow-y-auto pr-1">
                                   {items.length === 0 && (
                                     <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
                                       Rien ici pour l'instant.
@@ -2653,6 +2654,7 @@ useEffect(() => {
                               </div>
                             );
                           })}
+                        </div>
                         </div>
                       </div>
 
