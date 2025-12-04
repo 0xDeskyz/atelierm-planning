@@ -521,6 +521,45 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
   );
 }
 
+// ==================================
+// Devis Kanban – Carte draggable
+// ==================================
+function QuoteCard({ quote, tone, onOpen }: any) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `quote-${quote.id}`,
+    data: { type: "quote", quoteId: quote.id, status: quote.status },
+  });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined;
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onClick={onOpen}
+      className={cx(
+        "w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition",
+        isDragging && "ring-2 ring-sky-300 opacity-90"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-semibold text-neutral-900 leading-tight break-words">{quote.title || "Sans titre"}</div>
+        <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 mt-0.5", tone.chip)} aria-hidden />
+      </div>
+      <div className="text-xs text-neutral-600 space-y-1">
+        {quote.client && <div className="truncate">Client : {quote.client}</div>}
+        {Number.isFinite(quote.amount) && <div className="font-semibold text-neutral-800">{formatEUR(quote.amount)}</div>}
+        {quote.dueDate && (
+          <div className="flex items-center gap-1 text-sky-700">
+            <CalendarRange className="w-3 h-3" /> {formatFR(new Date(quote.dueDate))}
+          </div>
+        )}
+      </div>
+      <div className="text-[11px] text-neutral-500">Cliquer pour voir le détail</div>
+    </button>
+  );
+}
+
 function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, getInfo }: any) {
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
@@ -1749,6 +1788,14 @@ export default function Page() {
     const { active, over } = e;
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
+    if (data.type === "quote" && over.data?.current?.type === "quote-column") {
+      const newStatus = over.data.current.status;
+      if (!newStatus || data.status === newStatus) return;
+      setQuotes((prev) => prev.map((q) => (q.id === data.quoteId ? normalizeQuoteForSave({ ...q, status: newStatus }) : q)));
+      setQuoteDetail((prev) => (prev && prev.id === data.quoteId ? normalizeQuoteForSave({ ...prev, status: newStatus }) : prev));
+      return;
+    }
+
     if (over.data?.current?.type !== "day-site") return;
     const targetDate: Date = over.data.current.date;
     const targetSite: any = over.data.current.site;
@@ -2916,14 +2963,20 @@ useEffect(() => {
                         {QUOTE_COLUMNS.map((col) => {
                           const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
                           const items = quotesByColumn[col.id] || [];
+                          const { setNodeRef, isOver } = useDroppable({
+                            id: `quote-col-${col.id}`,
+                            data: { type: "quote-column", status: col.id },
+                          });
                           return (
                             <div
                               key={col.id}
                               className={cx(
                                 "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] bg-white",
                                 tone.bg,
-                                tone.border
+                                tone.border,
+                                isOver && "ring-2 ring-sky-300"
                               )}
+                              ref={setNodeRef}
                             >
                               <div className="flex items-center justify-between">
                                 <div>
@@ -2941,30 +2994,12 @@ useEffect(() => {
                                   </div>
                                 )}
                                 {items.map((q) => (
-                                  <button
+                                  <QuoteCard
                                     key={q.id}
-                                    onClick={() => openQuoteDetail(q)}
-                                    className="w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition"
-                                  >
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="text-sm font-semibold text-neutral-900 leading-tight break-words">
-                                        {q.title || "Sans titre"}
-                                      </div>
-                                      <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 mt-0.5", tone.chip)} aria-hidden />
-                                    </div>
-                                    <div className="text-xs text-neutral-600 space-y-1">
-                                      {q.client && <div className="truncate">Client : {q.client}</div>}
-                                      {Number.isFinite(q.amount) && (
-                                        <div className="font-semibold text-neutral-800">{formatEUR(q.amount)}</div>
-                                      )}
-                                      {q.dueDate && (
-                                        <div className="flex items-center gap-1 text-sky-700">
-                                          <CalendarRange className="w-3 h-3" /> {formatFR(new Date(q.dueDate))}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="text-[11px] text-neutral-500">Cliquer pour voir le détail</div>
-                                  </button>
+                                    quote={q}
+                                    tone={tone}
+                                    onOpen={() => openQuoteDetail(q)}
+                                  />
                                 ))}
                               </div>
                             </div>
