@@ -26,6 +26,7 @@ import {
   Download,
   Copy,
   Eraser,
+  Settings,
 } from "lucide-react";
 
 // ================= UI maison (Tailwind)
@@ -959,13 +960,25 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [refreshing, setRefreshing] = useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const syncVersionRef = useRef<number>(0);
+  const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
       ? (crypto as any).randomUUID()
       : `client-${Date.now()}`
   );
   const today = useMemo(() => new Date(), []);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (maintenanceRef.current && !maintenanceRef.current.contains(e.target as Node)) {
+        setMaintenanceOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
@@ -1863,91 +1876,159 @@ useEffect(() => {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => shift(-1)} aria-label="Précédent"><ChevronLeft className="w-4 h-4" /></Button>
-          <Button variant="outline" onClick={() => shift(1)} aria-label="Suivant"><ChevronRight className="w-4 h-4" /></Button>
-          <Button
-            variant="outline"
-            onClick={refreshPlanning}
-            className="ml-1"
-            aria-label="Recharger le planning"
-            title="Recharger le planning pour appliquer les dernières modifications"
-            disabled={refreshing}
-          >
-            <RotateCcw className="w-4 h-4" />
-          </Button>
-          <div className="font-semibold text-lg flex items-center gap-2">
-            <CalendarRange className="w-5 h-5" />
-            {(view === 'week' || view === 'hours') && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span>{`Semaine ${getISOWeek(weekDays[0])} - du ${formatFR(weekDays[0], true)} au ${formatFR(weekDays[4], true)}`}</span>
-                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
-                  Semaine actuelle : S{pad2(todayWeekNumber)}
-                </span>
-              </div>
-            )}
-            {view === 'month' && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span>{anchor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}</span>
-                <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
-                  Semaine actuelle : S{pad2(todayWeekNumber)}
-                </span>
-              </div>
-            )}
-            {view === 'timeline' && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span>{timelineScopeLabel}</span>
-                <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                  Barres basées sur les dates prévues des chantiers
-                </span>
-              </div>
-            )}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
+            <Tabs value={view} onValueChange={(v: any) => setView(v)}>
+              <TabsList>
+                <TabsTrigger value="week">Semaine</TabsTrigger>
+                <TabsTrigger value="month">Mois</TabsTrigger>
+                <TabsTrigger value="hours">Heures</TabsTrigger>
+                <TabsTrigger value="timeline">Calendrier</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          <div className="flex items-center gap-2" ref={maintenanceRef}>
+            <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
+            <div className="relative">
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Options de maintenance"
+                onClick={() => setMaintenanceOpen((v) => !v)}
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+              {maintenanceOpen && (
+                <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-white shadow-lg p-2 space-y-1">
+                  <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Maintenance</div>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      refreshPlanning();
+                      setMaintenanceOpen(false);
+                    }}
+                    disabled={refreshing}
+                  >
+                    <RotateCcw className="w-4 h-4" /> Recharger le planning
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      fileRef.current?.click();
+                      setMaintenanceOpen(false);
+                    }}
+                  >
+                    <Upload className="w-4 h-4" /> Importer JSON
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      exportJSON();
+                      setMaintenanceOpen(false);
+                    }}
+                  >
+                    <Download className="w-4 h-4" /> Exporter JSON
+                  </Button>
+                  {view === "hours" && (
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start gap-2"
+                      onClick={() => {
+                        exportHoursCSV();
+                        setMaintenanceOpen(false);
+                      }}
+                    >
+                      <Download className="w-4 h-4" /> Export heures CSV
+                    </Button>
+                  )}
+                  <div className="px-2 pt-1 text-[11px] text-neutral-500">
+                    Centralise les exports/imports pour garder le planning propre et synchronisé.
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {view === "hours" && (
-            <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
-              Heures/jour
-              <Input
-                type="number"
-                min={0}
-                step={0.5}
-                value={hoursPerDay}
-                onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
-                className="w-20 h-9"
-              />
-            </label>
-          )}
-          <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
-          <Button variant="outline" onClick={copyFromPreviousWeek} aria-label="Copier semaine précédente" title="Copie les affectations, notes et absences de la semaine N-1">
-            <Copy className="w-4 h-4 mr-1" /> Copier N-1
-          </Button>
-          <Button variant="outline" onClick={clearCurrentWeek} aria-label="Vider la semaine" title="Retire toutes les données de la semaine affichée">
-            <Eraser className="w-4 h-4 mr-1" /> Vider
-          </Button>
-          <Button variant="outline" onClick={() => fileRef.current?.click()} aria-label="Importer"><Upload className="w-4 h-4 mr-1" />Importer</Button>
-          <Button onClick={exportJSON} aria-label="Exporter le JSON"><Download className="w-4 h-4 mr-1" />Exporter JSON</Button>
-          <Button variant="outline" onClick={exportHoursCSV} aria-label="Exporter les heures en CSV">
-            <Download className="w-4 h-4 mr-1" /> Export heures CSV
-          </Button>
-          <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-            <TabsList>
-              <TabsTrigger value="week">Semaine</TabsTrigger>
-              <TabsTrigger value="month">Mois</TabsTrigger>
-              <TabsTrigger value="hours">Heures</TabsTrigger>
-              <TabsTrigger value="timeline">Calendrier</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button
-            variant="ghost"
-            onClick={refreshPlanning}
-            className="hidden md:inline-flex"
-            aria-label="Recharger le planning"
-            disabled={refreshing}
-          >
-            Recharger le planning
-          </Button>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Suivant">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="font-semibold text-base flex items-center gap-2">
+              <CalendarRange className="w-5 h-5" />
+              {(view === "week" || view === "hours") && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>{`Semaine ${getISOWeek(weekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(weekDays[4], true)}`}</span>
+                  <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                    Semaine actuelle : S{pad2(todayWeekNumber)}
+                  </span>
+                </div>
+              )}
+              {view === "month" && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
+                  <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                    Semaine actuelle : S{pad2(todayWeekNumber)}
+                  </span>
+                </div>
+              )}
+              {view === "timeline" && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>{timelineScopeLabel}</span>
+                  <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                    Barres basées sur les dates prévues des chantiers
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {view === "hours" && (
+              <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
+                Heures/jour
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={hoursPerDay}
+                  onChange={(e: any) => setHoursPerDay(e.target.value === "" ? 0 : Number(e.target.value))}
+                  className="w-20 h-9"
+                />
+              </label>
+            )}
+            {(view === "week" || view === "hours") && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={copyFromPreviousWeek}
+                  aria-label="Copier semaine précédente"
+                  title="Copie les affectations, notes et absences de la semaine N-1"
+                >
+                  <Copy className="w-4 h-4 mr-1" /> Copier N-1
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={clearCurrentWeek}
+                  aria-label="Vider la semaine"
+                  title="Retire toutes les données de la semaine affichée"
+                >
+                  <Eraser className="w-4 h-4 mr-1" /> Vider
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
