@@ -332,24 +332,35 @@ const parseWeekList = (input: string, fallbackYear: number) => {
   return Array.from(weeks);
 };
 const toArray = (val: any, fallback: any[] = []) => (Array.isArray(val) ? val : fallback);
+const ensureId = (seed: string, prefix: string) => {
+  if (seed) return `${prefix}-${seed}`;
+  if (typeof crypto !== "undefined" && (crypto as any).randomUUID) {
+    return (crypto as any).randomUUID();
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 const normalizeSiteRecord = (site: any) => {
-  const start = site?.startDate || toLocalKey(new Date());
-  const end = site?.endDate || start;
-  const colorIndex = hashString(String(site?.id || site?.name || start)) % SITE_COLORS.length;
-  const color = site?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
-  const status = site?.status === "pending" ? "pending" : "planned";
-  const planningWeeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
+  const base = typeof site === "object" && site !== null ? site : {};
+  const start = (base as any)?.startDate || toLocalKey(new Date());
+  const end = (base as any)?.endDate || start;
+  const colorIndex = hashString(String((base as any)?.id || (base as any)?.name || start)) % SITE_COLORS.length;
+  const color = (base as any)?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
+  const status = (base as any)?.status === "pending" ? "pending" : "planned";
+  const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
   return {
-    ...site,
+    ...base,
+    id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),
     startDate: start,
     endDate: end,
     color,
     status,
     planningWeeks,
-    address: site?.address?.trim?.() || site?.address || "",
-    clientName: site?.clientName || site?.quoteSnapshot?.client || "",
-    contactName: site?.contactName || site?.clientName || site?.quoteSnapshot?.client || "",
-    contactPhone: site?.contactPhone || "",
+    address: (base as any)?.address?.trim?.() || (base as any)?.address || "",
+    clientName: (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
+    contactName:
+      (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
+    contactPhone: (base as any)?.contactPhone || "",
   };
 };
 // Helper format FR (jour mois année)
@@ -374,6 +385,41 @@ const formatEUR = (val?: number) => {
   } catch {
     return `${val} €`;
   }
+};
+const normalizeQuoteRecord = (quote: any) => {
+  const base = typeof quote === "object" && quote !== null ? quote : {};
+  const todayKeyLocal = toLocalKey(new Date());
+  const status = (base as any)?.status || "todo";
+  const amountNum = Number((base as any)?.amount);
+  const id = (base as any)?.id || ensureId(String((base as any)?.title || (base as any)?.client || Date.now()), "quote");
+  const patch: any = {
+    ...base,
+    id,
+    title: (base as any)?.title?.trim?.() || "Nouveau devis",
+    client: (base as any)?.client?.trim?.() || undefined,
+    note: (base as any)?.note?.trim?.() || undefined,
+    amount: Number.isFinite(amountNum) ? amountNum : undefined,
+    dueDate: (base as any)?.dueDate || undefined,
+    status,
+    address: (base as any)?.address?.trim?.() || undefined,
+    contactName: (base as any)?.contactName?.trim?.() || (base as any)?.client || undefined,
+    contactPhone: (base as any)?.contactPhone?.trim?.() || undefined,
+    plannedStart: (base as any)?.plannedStart || undefined,
+    plannedEnd: (base as any)?.plannedEnd || undefined,
+  };
+
+  if (patch.plannedStart && patch.plannedEnd && fromLocalKey(patch.plannedEnd) < fromLocalKey(patch.plannedStart)) {
+    patch.plannedEnd = patch.plannedStart;
+  }
+
+  if ((status === "pending" || status === "won") && !quote?.sentAt) {
+    patch.sentAt = todayKeyLocal;
+  }
+  if (status !== "lost") {
+    patch.reason = undefined;
+  }
+
+  return patch;
 };
 // Debounce helper for throttling remote saves
 function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
@@ -1212,7 +1258,7 @@ export default function Page() {
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
-  const [quotes, setQuotes] = useState<any[]>(DEMO_QUOTES);
+  const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const syncVersionRef = useRef<number>(0);
@@ -1345,7 +1391,7 @@ export default function Page() {
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
   const safeSites = Array.isArray(sites) ? sites : [];
-  const safeQuotes = Array.isArray(quotes) ? quotes : [];
+  const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
 
@@ -1621,64 +1667,34 @@ export default function Page() {
   }, []);
 
   // Gestion des devis (kanban)
-  const normalizeQuoteForSave = useCallback((quote: any) => {
-    const todayKeyLocal = toLocalKey(new Date());
-    const status = quote?.status || "todo";
-    const amountNum = Number(quote?.amount);
-    const patch: any = {
-      ...quote,
-      title: quote?.title?.trim() || "Nouveau devis",
-      client: quote?.client?.trim() || undefined,
-      note: quote?.note?.trim() || undefined,
-      amount: Number.isFinite(amountNum) ? amountNum : undefined,
-      dueDate: quote?.dueDate || undefined,
-      status,
-      address: quote?.address?.trim?.() || undefined,
-      contactName: quote?.contactName?.trim?.() || quote?.client || undefined,
-      contactPhone: quote?.contactPhone?.trim?.() || undefined,
-      plannedStart: quote?.plannedStart || undefined,
-      plannedEnd: quote?.plannedEnd || undefined,
-    };
-
-    if (patch.plannedStart && patch.plannedEnd && fromLocalKey(patch.plannedEnd) < fromLocalKey(patch.plannedStart)) {
-      patch.plannedEnd = patch.plannedStart;
-    }
-
-    if ((status === "pending" || status === "won") && !quote?.sentAt) {
-      patch.sentAt = todayKeyLocal;
-    }
-    if (status !== "lost") {
-      patch.reason = undefined;
-    }
-
-    return patch;
-  }, []);
+  const normalizeQuoteForSave = useCallback((quote: any) => normalizeQuoteRecord(quote), []);
 
   const upsertChantierFromQuote = useCallback(
     (quote: any) => {
-      if (!quote || quote.status !== "won") return;
+      const normalizedQuote = normalizeQuoteForSave(quote);
+      if (!normalizedQuote || normalizedQuote.status !== "won") return;
       const snapshot = {
-        title: quote.title,
-        client: quote.client,
-        amount: quote.amount,
-        note: quote.note,
-        dueDate: quote.dueDate,
+        title: normalizedQuote.title,
+        client: normalizedQuote.client,
+        amount: normalizedQuote.amount,
+        note: normalizedQuote.note,
+        dueDate: normalizedQuote.dueDate,
       };
-      const baseStart = quote.plannedStart || quote.dueDate || quote.sentAt || todayKey;
-      const baseEnd = quote.plannedEnd || baseStart;
+      const baseStart = normalizedQuote.plannedStart || normalizedQuote.dueDate || normalizedQuote.sentAt || todayKey;
+      const baseEnd = normalizedQuote.plannedEnd || baseStart;
 
       setSites((prev) => {
-        const existing = prev.find((s) => s.quoteId === quote.id);
+        const existing = prev.find((s) => s.quoteId === normalizedQuote.id);
         if (existing) {
           const updated = normalizeSiteRecord({
             ...existing,
-            name: existing.name || quote.title || "Chantier issu d'un devis",
+            name: existing.name || normalizedQuote.title || "Chantier issu d'un devis",
             startDate: existing.startDate || baseStart,
             endDate: existing.endDate || baseEnd,
-            address: existing.address || quote.address,
-            clientName: existing.clientName || quote.client,
-            contactName: existing.contactName || quote.contactName || quote.client,
-            contactPhone: existing.contactPhone || quote.contactPhone,
+            address: existing.address || normalizedQuote.address,
+            clientName: existing.clientName || normalizedQuote.client,
+            contactName: existing.contactName || normalizedQuote.contactName || normalizedQuote.client,
+            contactPhone: existing.contactPhone || normalizedQuote.contactPhone,
             quoteSnapshot: { ...(existing.quoteSnapshot || {}), ...snapshot },
             status: existing.status || "pending",
           });
@@ -1687,29 +1703,26 @@ export default function Page() {
           return prev.map((s) => (s.id === existing.id ? updated : s));
         }
 
-        const id =
-          typeof crypto !== "undefined" && (crypto as any).randomUUID
-            ? (crypto as any).randomUUID()
-            : `s${Date.now()}`;
-        const colorIndex = hashString(String(quote.id || quote.title || baseStart)) % SITE_COLORS.length;
+        const id = ensureId(String(normalizedQuote.title || baseStart), "site");
+        const colorIndex = hashString(String(normalizedQuote.id || normalizedQuote.title || baseStart)) % SITE_COLORS.length;
         const newSite = normalizeSiteRecord({
           id,
-          name: quote.title || "Chantier issu d'un devis",
+          name: normalizedQuote.title || "Chantier issu d'un devis",
           startDate: baseStart,
           endDate: baseEnd,
           color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
-          address: quote.address,
-          clientName: quote.client,
-          contactName: quote.contactName || quote.client,
-          contactPhone: quote.contactPhone,
-          quoteId: quote.id,
+          address: normalizedQuote.address,
+          clientName: normalizedQuote.client,
+          contactName: normalizedQuote.contactName || normalizedQuote.client,
+          contactPhone: normalizedQuote.contactPhone,
+          quoteId: normalizedQuote.id,
           quoteSnapshot: snapshot,
           status: "pending",
         });
         return [...prev, newSite];
       });
     },
-    [todayKey]
+    [normalizeQuoteForSave, todayKey]
   );
 
   const quotesByColumn = useMemo(() => {
@@ -1723,7 +1736,7 @@ export default function Page() {
   }, [safeQuotes]);
 
   const openQuoteDetail = useCallback((quote: any) => {
-    setQuoteDetail(quote);
+    setQuoteDetail(normalizeQuoteRecord(quote));
     setQuoteDetailOpen(true);
   }, []);
 
@@ -1752,7 +1765,7 @@ export default function Page() {
       setQuoteDetail(null);
       return;
     }
-    setQuoteDetail((prev) => (prev ? { ...prev, ...refreshed } : prev));
+    setQuoteDetail((prev) => (prev ? normalizeQuoteRecord({ ...prev, ...refreshed }) : prev));
   }, [quotes, quoteDetail?.id]);
 
   useEffect(() => {
@@ -2062,7 +2075,7 @@ export default function Page() {
     setAbsencesByWeek(state.absencesByWeek || {});
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
-    setQuotes(toArray(state.quotes));
+    setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -2333,7 +2346,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
