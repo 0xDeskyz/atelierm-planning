@@ -267,6 +267,26 @@ const DEMO_SITES = [
   { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
   { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
 ];
+const QUOTE_COLUMNS = [
+  { id: "todo", label: "À réaliser", hint: "Devis à préparer", tone: "sky" },
+  { id: "draft", label: "Préparé, pas envoyé", hint: "Brouillons prêts", tone: "amber" },
+  { id: "pending", label: "En attente de réponse", hint: "Envoyé au client", tone: "indigo" },
+  { id: "won", label: "Validé", hint: "Accepté", tone: "emerald" },
+  { id: "lost", label: "Refusé", hint: "Avec motif optionnel", tone: "rose" },
+];
+const QUOTE_TONES: Record<string, { bg: string; border: string; text: string; chip: string }> = {
+  sky: { bg: "bg-sky-50", border: "border-sky-200", text: "text-sky-800", chip: "bg-sky-500" },
+  amber: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-800", chip: "bg-amber-500" },
+  indigo: { bg: "bg-indigo-50", border: "border-indigo-200", text: "text-indigo-800", chip: "bg-indigo-500" },
+  emerald: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-800", chip: "bg-emerald-500" },
+  rose: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-800", chip: "bg-rose-500" },
+};
+const DEMO_QUOTES = [
+  { id: "q1", title: "Extension maison", client: "Mme Diallo", amount: 12000, status: "todo", dueDate: todayKey },
+  { id: "q2", title: "Rénovation bureau", client: "Société Nova", amount: 18500, status: "draft", note: "Attente métrés" },
+  { id: "q3", title: "Création terrasse", client: "M. Karim", amount: 7600, status: "pending", sentAt: todayKey },
+  { id: "q4", title: "Salle de réunion", client: "Startup Hexa", amount: 9200, status: "won", sentAt: todayKey },
+];
 const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
 const mapWeekDates = (src: Date[], dest: Date[]) => {
@@ -312,6 +332,14 @@ function formatFR(d: Date, withWeekday: boolean = false): string {
     return `${dd}/${mm}/${yyyy}`;
   }
 }
+const formatEUR = (val?: number) => {
+  if (!Number.isFinite(val)) return "";
+  try {
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(val || 0);
+  } catch {
+    return `${val} €`;
+  }
+};
 // Debounce helper for throttling remote saves
 function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
   let t: any;
@@ -959,6 +987,7 @@ export default function Page() {
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
+  const [quotes, setQuotes] = useState<any[]>(DEMO_QUOTES);
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const syncVersionRef = useRef<number>(0);
@@ -1043,6 +1072,14 @@ export default function Page() {
     },
     [isWeekend]
   );
+  const [newQuote, setNewQuote] = useState({
+    title: "",
+    client: "",
+    amount: "",
+    dueDate: "",
+    note: "",
+    status: "todo",
+  });
   const timelineWindow = useMemo(() => {
     const base = new Date(anchor);
     base.setHours(0, 0, 0, 0);
@@ -1353,6 +1390,57 @@ export default function Page() {
     return { color: "#10b981", softBg: "bg-emerald-50", softText: "text-emerald-700", border: "border-emerald-100" };
   }, []);
 
+  // Gestion des devis (kanban)
+  const quotesByColumn = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    QUOTE_COLUMNS.forEach((c) => (map[c.id] = []));
+    quotes.forEach((q) => {
+      if (!map[q.status]) map[q.status] = [];
+      map[q.status].push(q);
+    });
+    return map;
+  }, [quotes]);
+
+  const updateQuoteStatus = useCallback((id: string, status: string) => {
+    const todayKeyLocal = toLocalKey(new Date());
+    setQuotes((prev) =>
+      prev.map((q) => {
+        if (q.id !== id) return q;
+        const patch: any = { ...q, status };
+        if (status === "pending" && !q.sentAt) patch.sentAt = todayKeyLocal;
+        if (status === "won" && !q.sentAt) patch.sentAt = q.sentAt || todayKeyLocal;
+        if (status !== "lost") patch.reason = undefined;
+        return patch;
+      })
+    );
+  }, []);
+
+  const updateQuoteReason = useCallback((id: string, reason: string) => {
+    setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, reason } : q)));
+  }, []);
+
+  const addQuote = () => {
+    if (!newQuote.title.trim()) {
+      alert("Nom du devis requis");
+      return;
+    }
+    const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
+    const amountNum = Number(newQuote.amount);
+    setQuotes((prev) => [
+      ...prev,
+      {
+        id,
+        title: newQuote.title.trim(),
+        client: newQuote.client.trim(),
+        amount: Number.isFinite(amountNum) ? amountNum : undefined,
+        dueDate: newQuote.dueDate || undefined,
+        note: newQuote.note?.trim() || undefined,
+        status: newQuote.status as string,
+      },
+    ]);
+    setNewQuote({ title: "", client: "", amount: "", dueDate: "", note: "", status: "todo" });
+  };
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
@@ -1605,6 +1693,7 @@ export default function Page() {
     setAbsencesByWeek(state.absencesByWeek || {});
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
+    setQuotes(state.quotes || []);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -1645,8 +1734,8 @@ export default function Page() {
           }
         } catch {}
 
-        const candidates = [remoteState, localState].filter(Boolean) as any[];
-        if (candidates.length > 0) {
+    const candidates = [remoteState, localState].filter(Boolean) as any[];
+    if (candidates.length > 0) {
           const newest = candidates.reduce((best, cur) => {
             const curTs = Number(cur.updatedAt || 0);
             const bestTs = Number(best.updatedAt || 0);
@@ -1746,6 +1835,7 @@ useEffect(() => {
     absencesByWeek,
     siteWeekVisibility,
     hoursPerDay,
+    quotes,
     updatedAt: stamp,
     clientId: clientIdRef.current,
   };
@@ -1753,7 +1843,7 @@ useEffect(() => {
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay]);
+}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -1825,7 +1915,7 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1874,7 +1964,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites((data.sites||[]).map(normalizeSiteRecord)); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(data.people||[]); setSites((data.sites||[]).map(normalizeSiteRecord)); setAssignments(data.assignments||[]); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(data.quotes||[]); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -2466,18 +2556,162 @@ useEffect(() => {
             {view === "devis" && (
               <div className="space-y-3">
                 <Card>
-                  <CardContent className="space-y-2">
-                    <div className="text-base font-semibold">Devis</div>
-                    <p className="text-sm text-neutral-600">
-                      Préparez vos devis en gardant un œil sur vos sites et ressources. Cette section pourra accueillir vos
-                      brouillons, suivis d'acceptation et liens avec le planning.
-                    </p>
-                    <div className="grid md:grid-cols-2 gap-2 text-sm">
-                      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2 text-neutral-600">
-                        Ajouter un nouveau devis
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="text-base font-semibold">Devis en cours</div>
+                      <p className="text-sm text-neutral-600">
+                        Visualisez vos devis comme un kanban : préparer, envoyer, suivre les réponses et documenter les refus.
+                      </p>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-3">
+                      <div className="col-span-2 space-y-2">
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
+                          {QUOTE_COLUMNS.map((col) => {
+                            const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
+                            const items = quotesByColumn[col.id] || [];
+                            return (
+                              <div
+                                key={col.id}
+                                className={cx(
+                                  "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px]",
+                                  tone.bg,
+                                  tone.border
+                                )}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
+                                    <div className="text-xs text-neutral-600">{col.hint}</div>
+                                  </div>
+                                  <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>
+                                    {items.length}
+                                  </span>
+                                </div>
+                                <div className="space-y-2">
+                                  {items.length === 0 && (
+                                    <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
+                                      Rien ici pour l'instant.
+                                    </div>
+                                  )}
+                                  {items.map((q) => (
+                                    <div key={q.id} className="rounded-lg border bg-white p-3 shadow-sm space-y-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="font-semibold text-sm text-neutral-900 truncate" title={q.title}>{q.title}</div>
+                                        {Number.isFinite(q.amount) && (
+                                          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                                            {formatEUR(q.amount)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-neutral-600 flex flex-wrap gap-2 items-center">
+                                        {q.client && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-neutral-100 text-neutral-700">
+                                            <Users className="w-3 h-3" /> {q.client}
+                                          </span>
+                                        )}
+                                        {q.dueDate && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-100">
+                                            <CalendarRange className="w-3 h-3" /> Échéance {formatFR(new Date(q.dueDate))}
+                                          </span>
+                                        )}
+                                        {q.sentAt && q.status !== "draft" && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100">
+                                            Envoyé le {formatFR(new Date(q.sentAt))}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {q.note && <div className="text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 px-2 py-1 rounded-md">{q.note}</div>}
+                                      <div className="flex items-center gap-2 text-xs">
+                                        <label className="text-neutral-600">Statut</label>
+                                        <select
+                                          value={q.status}
+                                          onChange={(e) => updateQuoteStatus(q.id, e.target.value)}
+                                          className="text-sm border rounded-md px-2 py-1"
+                                        >
+                                          {QUOTE_COLUMNS.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      {q.status === "lost" && (
+                                        <div className="space-y-1">
+                                          <label className="text-xs font-semibold text-rose-700">Motif (optionnel)</label>
+                                          <Textarea
+                                            value={q.reason || ""}
+                                            onChange={(e: any) => updateQuoteReason(q.id, e.target.value)}
+                                            placeholder="Pourquoi ce devis a été refusé ?"
+                                            className="text-sm"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2 text-neutral-600">
-                        Importer ou synchroniser des devis existants
+
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-neutral-200 p-3 bg-neutral-50 space-y-2">
+                          <div className="text-sm font-semibold">Nouveau devis</div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <Input
+                              placeholder="Intitulé du devis"
+                              value={newQuote.title}
+                              onChange={(e: any) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
+                            />
+                            <Input
+                              placeholder="Client"
+                              value={newQuote.client}
+                              onChange={(e: any) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                placeholder="Montant (€)"
+                                value={newQuote.amount}
+                                onChange={(e: any) => setNewQuote((q) => ({ ...q, amount: e.target.value }))}
+                              />
+                              <Input
+                                type="date"
+                                placeholder="Échéance"
+                                value={newQuote.dueDate}
+                                onChange={(e: any) => setNewQuote((q) => ({ ...q, dueDate: e.target.value }))}
+                              />
+                            </div>
+                            <Textarea
+                              placeholder="Notes internes"
+                              value={newQuote.note}
+                              onChange={(e: any) => setNewQuote((q) => ({ ...q, note: e.target.value }))}
+                              className="text-sm"
+                            />
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-neutral-600">Statut initial</span>
+                              <select
+                                value={newQuote.status}
+                                onChange={(e) => setNewQuote((q) => ({ ...q, status: e.target.value }))}
+                                className="border rounded-md px-2 py-1 text-sm"
+                              >
+                                {QUOTE_COLUMNS.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <Button className="w-full" onClick={addQuote}>
+                            <Plus className="w-4 h-4 mr-2" /> Ajouter au kanban
+                          </Button>
+                        </div>
+
+                        <div className="rounded-xl border border-dashed border-neutral-300 p-3 text-xs text-neutral-600 bg-white">
+                          Organisez vos devis par colonne : changez le statut via la liste déroulante et renseignez un motif lorsqu'un devis est refusé.
+                        </div>
                       </div>
                     </div>
                   </CardContent>
