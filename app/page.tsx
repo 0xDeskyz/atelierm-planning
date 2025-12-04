@@ -866,6 +866,157 @@ function RenameDialog({
   );
 }
 
+function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
+  const [name, setName] = useState<string>("");
+  const [status, setStatus] = useState<"planned" | "pending">("pending");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [clientName, setClientName] = useState<string>("");
+  const [address, setAddress] = useState<string>("");
+  const [contactName, setContactName] = useState<string>("");
+  const [contactPhone, setContactPhone] = useState<string>("");
+  const [weeks, setWeeks] = useState<string>("");
+  const [color, setColor] = useState<string>(SITE_COLORS[0]);
+
+  useEffect(() => {
+    setName(site?.name || "");
+    setStatus(site?.status || "pending");
+    setStartDate(site?.startDate || "");
+    setEndDate(site?.endDate || "");
+    setClientName(site?.clientName || site?.quoteSnapshot?.client || "");
+    setAddress(site?.address || "");
+    setContactName(site?.contactName || site?.clientName || site?.quoteSnapshot?.client || "");
+    setContactPhone(site?.contactPhone || "");
+    setWeeks((site?.planningWeeks || []).join(", "));
+    setColor(site?.color || SITE_COLORS[0]);
+  }, [site]);
+
+  const handleSave = (nextStatus?: "planned" | "pending") => {
+    if (!site?.id) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (startDate && endDate && fromLocalKey(endDate) < fromLocalKey(startDate)) {
+      window.alert("Merci de saisir des dates de début et fin valides.");
+      return;
+    }
+    const parsedWeeks = parseWeekList(weeks, fallbackYear);
+    onSave({
+      ...site,
+      name: trimmed,
+      status: nextStatus || status,
+      startDate,
+      endDate,
+      clientName,
+      address,
+      contactName,
+      contactPhone,
+      planningWeeks: parsedWeeks,
+      color,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Détail du chantier</DialogTitle>
+          <DialogDescription>Modifier ou planifier ce chantier, même s'il est déjà actif.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={status === "pending" ? "default" : "outline"}
+              onClick={() => setStatus("pending")}
+            >
+              À planifier
+            </Button>
+            <Button
+              size="sm"
+              variant={status === "planned" ? "default" : "outline"}
+              onClick={() => setStatus("planned")}
+            >
+              Planifié
+            </Button>
+            <span className="text-[11px] text-neutral-500">Statut éditable à tout moment</span>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Nom</span>
+              <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du chantier" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Couleur</span>
+              <div className="flex flex-wrap gap-2">
+                {SITE_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={cx(
+                      "w-7 h-7 rounded-full border",
+                      c,
+                      color === c ? "ring-2 ring-black border-black" : "border-transparent"
+                    )}
+                    onClick={() => setColor(c)}
+                    aria-label={`Choisir la couleur ${c}`}
+                  />
+                ))}
+              </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Client</span>
+              <Input value={clientName} onChange={(e: any) => setClientName(e.target.value)} placeholder="Nom du client" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Adresse</span>
+              <Input value={address} onChange={(e: any) => setAddress(e.target.value)} placeholder="Adresse du chantier" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Début</span>
+              <Input type="date" value={startDate} onChange={(e: any) => setStartDate(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Fin</span>
+              <Input type="date" min={startDate || undefined} value={endDate} onChange={(e: any) => setEndDate(e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Contact</span>
+              <Input value={contactName} onChange={(e: any) => setContactName(e.target.value)} placeholder="Interlocuteur" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Téléphone</span>
+              <Input value={contactPhone} onChange={(e: any) => setContactPhone(e.target.value)} placeholder="Téléphone" />
+            </label>
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-[11px] text-neutral-600">Semaines (optionnel)</span>
+              <Input
+                value={weeks}
+                onChange={(e: any) => setWeeks(e.target.value)}
+                placeholder={`Ex: ${fallbackYear}-W12, W13`}
+              />
+              <span className="text-[11px] text-neutral-500">Laisser vide pour rendre le chantier visible toutes les semaines.</span>
+            </label>
+          </div>
+        </div>
+
+        <DialogFooter className="flex items-center justify-between">
+          <Button variant="ghost" onClick={onClose}>
+            Fermer
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => handleSave("planned")}>
+              Planifier
+            </Button>
+            <Button onClick={() => handleSave()}>Enregistrer</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const initial = typeof value === "string" ? { text: value } : value || {};
   const [text, setText] = useState<string>(initial.text || "");
@@ -1112,6 +1263,8 @@ export default function Page() {
   });
   const [quoteDetail, setQuoteDetail] = useState<any | null>(null);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
+  const [siteDetail, setSiteDetail] = useState<any | null>(null);
+  const [siteDetailOpen, setSiteDetailOpen] = useState(false);
   const timelineWindow = useMemo(() => {
     const base = new Date(anchor);
     base.setHours(0, 0, 0, 0);
@@ -1826,6 +1979,26 @@ export default function Page() {
       if (!weeks || weeks.length === 0) return prev;
       return { ...prev, [id]: weeks };
     });
+  };
+  const openSiteDetail = (id: string, statusOverride?: "planned" | "pending") => {
+    const site = sites.find((s) => s.id === id);
+    if (!site) return;
+    setSiteDetail(statusOverride ? { ...site, status: statusOverride } : site);
+    setSiteDetailOpen(true);
+  };
+  const saveSiteDetail = (payload: any) => {
+    if (!payload?.id) return;
+    const weeks = Array.isArray(payload.planningWeeks) ? payload.planningWeeks : [];
+    updateSiteMeta(payload.id, { ...payload, planningWeeks: weeks });
+    setSiteWeekVisibility((prev) => {
+      if (!weeks.length) {
+        const { [payload.id]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [payload.id]: weeks };
+    });
+    setSiteDetailOpen(false);
+    setSiteDetail(null);
   };
 
 // ==========================
@@ -2825,99 +2998,58 @@ useEffect(() => {
                           </div>
                           <div className="text-xs text-neutral-500">Issus des devis validés</div>
                         </div>
-                        <div className="space-y-2">
-                          {pendingSites.map((site) => {
-                            const weeksText = (site.planningWeeks || []).join(", ");
-                            return (
-                              <div
-                                key={site.id}
-                                className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex items-start gap-2">
-                                    <span
-                                      className={cx(
-                                        "w-3 h-3 rounded-full mt-1 border",
-                                        site.color || "bg-neutral-300",
-                                        site.color ? "border-black/10" : "border-neutral-200"
-                                      )}
-                                    />
-                                    <div className="space-y-1">
-                                      <div className="font-semibold text-neutral-900 leading-tight">{site.name}</div>
-                                      <div className="text-[11px] text-neutral-600">
-                                        Client : {site.clientName || site.quoteSnapshot?.client || "n/a"}
-                                      </div>
-                                      {site.quoteSnapshot?.amount && (
-                                        <div className="text-xs text-neutral-600">Devis : {formatEUR(site.quoteSnapshot.amount)}</div>
-                                      )}
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {pendingSites.map((site) => (
+                            <div
+                              key={site.id}
+                              className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 hover:border-amber-300 transition cursor-pointer"
+                              onClick={() => openSiteDetail(site.id)}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-2">
+                                  <span
+                                    className={cx(
+                                      "w-3 h-3 rounded-full mt-1 border",
+                                      site.color || "bg-neutral-300",
+                                      site.color ? "border-black/10" : "border-neutral-200"
+                                    )}
+                                  />
+                                  <div className="space-y-0.5">
+                                    <div className="font-semibold text-neutral-900 leading-tight">{site.name}</div>
+                                    <div className="text-[11px] text-neutral-600">
+                                      {site.clientName || site.quoteSnapshot?.client || "Client inconnu"}
                                     </div>
+                                    {(site.startDate || site.endDate) && (
+                                      <div className="text-[11px] text-neutral-600">
+                                        {site.startDate ? formatFR(new Date(site.startDate)) : ""}
+                                        {site.startDate && site.endDate ? " → " : ""}
+                                        {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                                      </div>
+                                    )}
                                   </div>
-                                  <Button
-                                    size="sm"
-                                    variant="default"
-                                    onClick={() => planSite(site.id, site.planningWeeks, site.startDate, site.endDate)}
-                                  >
-                                    Marquer planifié
-                                  </Button>
                                 </div>
-                                <div className="grid md:grid-cols-2 gap-2 text-sm">
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Semaines prévues</span>
-                                    <Input
-                                      value={weeksText}
-                                      onChange={(e: any) =>
-                                        updateSiteMeta(site.id, {
-                                          planningWeeks: parseWeekList(e.target.value, getISOWeekYear(anchor)),
-                                        })
-                                      }
-                                      placeholder={`Ex: ${getISOWeekYear(anchor)}-W12, W13`}
-                                    />
-                                  </label>
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Adresse</span>
-                                    <Input
-                                      value={site.address || ""}
-                                      onChange={(e: any) => updateSiteMeta(site.id, { address: e.target.value })}
-                                      placeholder="Adresse du chantier"
-                                    />
-                                  </label>
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Début</span>
-                                    <Input
-                                      type="date"
-                                      value={site.startDate || ""}
-                                      onChange={(e: any) => updateSiteMeta(site.id, { startDate: e.target.value })}
-                                    />
-                                  </label>
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Fin</span>
-                                    <Input
-                                      type="date"
-                                      min={site.startDate || undefined}
-                                      value={site.endDate || ""}
-                                      onChange={(e: any) => updateSiteMeta(site.id, { endDate: e.target.value })}
-                                    />
-                                  </label>
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Interlocuteur</span>
-                                    <Input
-                                      value={site.contactName || ""}
-                                      onChange={(e: any) => updateSiteMeta(site.id, { contactName: e.target.value })}
-                                      placeholder="Nom du contact"
-                                    />
-                                  </label>
-                                  <label className="space-y-1">
-                                    <span className="text-[11px] text-neutral-600">Téléphone</span>
-                                    <Input
-                                      value={site.contactPhone || ""}
-                                      onChange={(e: any) => updateSiteMeta(site.id, { contactPhone: e.target.value })}
-                                      placeholder="Contact téléphonique"
-                                    />
-                                  </label>
-                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={(e: any) => {
+                                    e.stopPropagation();
+                                    openSiteDetail(site.id, "planned");
+                                  }}
+                                >
+                                  Planifier
+                                </Button>
                               </div>
-                            );
-                          })}
+                              {site.quoteSnapshot?.amount && (
+                                <div className="text-xs text-neutral-600 mt-1">Devis : {formatEUR(site.quoteSnapshot.amount)}</div>
+                              )}
+                              <button
+                                className="mt-2 text-[11px] text-amber-700 underline"
+                                onClick={() => openSiteDetail(site.id)}
+                              >
+                                Ouvrir le détail
+                              </button>
+                            </div>
+                          ))}
                           {pendingSites.length === 0 && (
                             <div className="text-sm text-neutral-500">Aucun devis validé en attente de planification.</div>
                           )}
@@ -2936,9 +3068,10 @@ useEffect(() => {
                         </div>
                         <div className="grid md:grid-cols-2 gap-2">
                           {plannedSites.map((site) => (
-                            <div
+                            <button
                               key={site.id}
-                              className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm"
+                              className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm text-left hover:border-neutral-300"
+                              onClick={() => openSiteDetail(site.id)}
                             >
                               <span
                                 className={cx(
@@ -2977,8 +3110,9 @@ useEffect(() => {
                                     )}
                                   </div>
                                 )}
+                                <div className="text-[11px] text-sky-700">Cliquer pour modifier</div>
                               </div>
-                            </div>
+                            </button>
                           ))}
                           {plannedSites.length === 0 && (
                             <div className="text-sm text-neutral-500">Aucun chantier planifié pour l'instant.</div>
@@ -3152,6 +3286,19 @@ useEffect(() => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {siteDetail && (
+        <SiteDetailDialog
+          open={siteDetailOpen}
+          site={siteDetail}
+          fallbackYear={getISOWeekYear(anchor)}
+          onClose={() => {
+            setSiteDetailOpen(false);
+            setSiteDetail(null);
+          }}
+          onSave={saveSiteDetail}
+        />
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
