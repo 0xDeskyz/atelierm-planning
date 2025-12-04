@@ -1435,6 +1435,15 @@ export default function Page() {
     setQuoteDetailOpen(false);
   }, [normalizeQuoteForSave, quoteDetail]);
 
+  const deleteQuote = useCallback(() => {
+    if (!quoteDetail) return;
+    const confirmed = confirm("Supprimer ce devis ?");
+    if (!confirmed) return;
+    setQuotes((prev) => prev.filter((q) => q.id !== quoteDetail.id));
+    setQuoteDetailOpen(false);
+    setQuoteDetail(null);
+  }, [quoteDetail]);
+
   useEffect(() => {
     if (!quoteDetail) return;
     const refreshed = quotes.find((q) => q.id === quoteDetail.id);
@@ -2832,17 +2841,22 @@ useEffect(() => {
                 </div>
               )}
             </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setQuoteDetailOpen(false);
-                  setQuoteDetail(null);
-                }}
-              >
-                Fermer
+            <DialogFooter className="flex items-center justify-between">
+              <Button variant="destructive" onClick={deleteQuote}>
+                Supprimer le devis
               </Button>
-              <Button onClick={saveQuoteDetail}>Enregistrer</Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setQuoteDetailOpen(false);
+                    setQuoteDetail(null);
+                  }}
+                >
+                  Fermer
+                </Button>
+                <Button onClick={saveQuoteDetail}>Enregistrer</Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
