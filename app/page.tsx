@@ -310,12 +310,46 @@ const hashString = (s: string) => {
   }
   return h;
 };
+const parseWeekList = (input: string, fallbackYear: number) => {
+  const tokens = input
+    .split(/[,\s;]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const weeks = new Set<string>();
+  tokens.forEach((token) => {
+    const isoMatch = token.match(/^(\d{4})-W(\d{1,2})$/i);
+    if (isoMatch) {
+      const num = Number(isoMatch[2]);
+      if (num >= 1 && num <= 54) weeks.add(`${isoMatch[1]}-W${pad2(num)}`);
+      return;
+    }
+    const short = token.match(/^s?(\d{1,2})$/i);
+    if (short) {
+      const num = Number(short[1]);
+      if (num >= 1 && num <= 54) weeks.add(`${fallbackYear}-W${pad2(num)}`);
+    }
+  });
+  return Array.from(weeks);
+};
 const normalizeSiteRecord = (site: any) => {
   const start = site?.startDate || toLocalKey(new Date());
   const end = site?.endDate || start;
   const colorIndex = hashString(String(site?.id || site?.name || start)) % SITE_COLORS.length;
   const color = site?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
-  return { ...site, startDate: start, endDate: end, color };
+  const status = site?.status === "pending" ? "pending" : "planned";
+  const planningWeeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
+  return {
+    ...site,
+    startDate: start,
+    endDate: end,
+    color,
+    status,
+    planningWeeks,
+    address: site?.address?.trim?.() || site?.address || "",
+    clientName: site?.clientName || site?.quoteSnapshot?.client || "",
+    contactName: site?.contactName || site?.clientName || site?.quoteSnapshot?.client || "",
+    contactPhone: site?.contactPhone || "",
+  };
 };
 // Helper format FR (jour mois année)
 function formatFR(d: Date, withWeekday: boolean = false): string {
@@ -1117,13 +1151,16 @@ export default function Page() {
     });
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
+  const plannedSites = useMemo(() => sites.filter((s) => (s.status || "planned") === "planned"), [sites]);
+  const pendingSites = useMemo(() => sites.filter((s) => (s.status || "planned") !== "planned"), [sites]);
+
   const earliestChantierStart = useMemo(
     () =>
-      sites.reduce<Date | null>((min, site) => {
+      plannedSites.reduce<Date | null>((min, site) => {
         const s = fromLocalKey(site.startDate || todayKey);
         return !min || s.getTime() < min.getTime() ? s : min;
       }, null),
-    [sites, todayKey]
+    [plannedSites, todayKey]
   );
 
   const timelineView = useMemo(() => {
@@ -1136,8 +1173,8 @@ export default function Page() {
   const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
   const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
   const sitesForCurrentWeek = useMemo(
-    () => sites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
-    [sites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+    () => plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
+    [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
   );
 
   const getCellMeta = useCallback(
@@ -1265,7 +1302,7 @@ export default function Page() {
 
     const totalDays = Math.max(1, countWorkingDaysInclusive(timelineView.start, timelineView.end));
 
-    const rows = sites
+    const rows = plannedSites
       .map((site) => {
         const siteStart = fromLocalKey(site.startDate || todayKey);
         const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
@@ -1297,7 +1334,7 @@ export default function Page() {
       .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
 
     return { rows, totalDays };
-  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, sites, timelineView, todayKey, workingDaysUntil]);
+  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, plannedSites, timelineView, todayKey, workingDaysUntil]);
 
   const timelineScopeLabel = useMemo(() => {
     if (!timelineView) return "";
@@ -1313,7 +1350,7 @@ export default function Page() {
     while (cursor.getTime() <= timelineView.end.getTime()) {
       if (!isWeekend(cursor)) {
         const dateKey = toLocalKey(cursor);
-        const count = sites.reduce((acc, site) => {
+        const count = plannedSites.reduce((acc, site) => {
           const siteStart = fromLocalKey(site.startDate || todayKey);
           const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
           if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
@@ -1376,7 +1413,7 @@ export default function Page() {
     });
 
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
-  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, sites, timelineView, todayKey]);
+  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, plannedSites, timelineView, todayKey]);
 
   const getLoadTone = useCallback((ratio: number) => {
     if (ratio >= 0.7) {
@@ -1401,7 +1438,16 @@ export default function Page() {
       amount: Number.isFinite(amountNum) ? amountNum : undefined,
       dueDate: quote?.dueDate || undefined,
       status,
+      address: quote?.address?.trim?.() || undefined,
+      contactName: quote?.contactName?.trim?.() || quote?.client || undefined,
+      contactPhone: quote?.contactPhone?.trim?.() || undefined,
+      plannedStart: quote?.plannedStart || undefined,
+      plannedEnd: quote?.plannedEnd || undefined,
     };
+
+    if (patch.plannedStart && patch.plannedEnd && fromLocalKey(patch.plannedEnd) < fromLocalKey(patch.plannedStart)) {
+      patch.plannedEnd = patch.plannedStart;
+    }
 
     if ((status === "pending" || status === "won") && !quote?.sentAt) {
       patch.sentAt = todayKeyLocal;
@@ -1412,6 +1458,64 @@ export default function Page() {
 
     return patch;
   }, []);
+
+  const upsertChantierFromQuote = useCallback(
+    (quote: any) => {
+      if (!quote || quote.status !== "won") return;
+      const snapshot = {
+        title: quote.title,
+        client: quote.client,
+        amount: quote.amount,
+        note: quote.note,
+        dueDate: quote.dueDate,
+      };
+      const baseStart = quote.plannedStart || quote.dueDate || quote.sentAt || todayKey;
+      const baseEnd = quote.plannedEnd || baseStart;
+
+      setSites((prev) => {
+        const existing = prev.find((s) => s.quoteId === quote.id);
+        if (existing) {
+          const updated = normalizeSiteRecord({
+            ...existing,
+            name: existing.name || quote.title || "Chantier issu d'un devis",
+            startDate: existing.startDate || baseStart,
+            endDate: existing.endDate || baseEnd,
+            address: existing.address || quote.address,
+            clientName: existing.clientName || quote.client,
+            contactName: existing.contactName || quote.contactName || quote.client,
+            contactPhone: existing.contactPhone || quote.contactPhone,
+            quoteSnapshot: { ...(existing.quoteSnapshot || {}), ...snapshot },
+            status: existing.status || "pending",
+          });
+          const changed = Object.keys(updated).some((k) => (updated as any)[k] !== (existing as any)[k]);
+          if (!changed) return prev;
+          return prev.map((s) => (s.id === existing.id ? updated : s));
+        }
+
+        const id =
+          typeof crypto !== "undefined" && (crypto as any).randomUUID
+            ? (crypto as any).randomUUID()
+            : `s${Date.now()}`;
+        const colorIndex = hashString(String(quote.id || quote.title || baseStart)) % SITE_COLORS.length;
+        const newSite = normalizeSiteRecord({
+          id,
+          name: quote.title || "Chantier issu d'un devis",
+          startDate: baseStart,
+          endDate: baseEnd,
+          color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
+          address: quote.address,
+          clientName: quote.client,
+          contactName: quote.contactName || quote.client,
+          contactPhone: quote.contactPhone,
+          quoteId: quote.id,
+          quoteSnapshot: snapshot,
+          status: "pending",
+        });
+        return [...prev, newSite];
+      });
+    },
+    [todayKey]
+  );
 
   const quotesByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
@@ -1432,8 +1536,9 @@ export default function Page() {
     if (!quoteDetail) return;
     const normalized = normalizeQuoteForSave(quoteDetail);
     setQuotes((prev) => prev.map((q) => (q.id === normalized.id ? normalized : q)));
+    upsertChantierFromQuote(normalized);
     setQuoteDetailOpen(false);
-  }, [normalizeQuoteForSave, quoteDetail]);
+  }, [normalizeQuoteForSave, quoteDetail, upsertChantierFromQuote]);
 
   const deleteQuote = useCallback(() => {
     if (!quoteDetail) return;
@@ -1454,6 +1559,10 @@ export default function Page() {
     }
     setQuoteDetail((prev) => (prev ? { ...prev, ...refreshed } : prev));
   }, [quotes, quoteDetail?.id]);
+
+  useEffect(() => {
+    quotes.forEach((q) => upsertChantierFromQuote(q));
+  }, [quotes, upsertChantierFromQuote]);
 
   const addQuote = () => {
     if (!newQuote.title.trim()) {
@@ -1700,6 +1809,7 @@ export default function Page() {
         startDate,
         endDate,
         color,
+        status: "planned",
       }),
     ]);
   const removeSite = (id: string) => {
@@ -1707,6 +1817,15 @@ export default function Page() {
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
     setSiteWeekVisibility((prev) => { const { [id]: _omit, ...rest } = prev; return rest; });
+  };
+  const updateSiteMeta = (id: string, patch: any) =>
+    setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, ...patch }) : x)));
+  const planSite = (id: string, weeks: string[] = [], start?: string, end?: string) => {
+    setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, status: "planned", startDate: start || x.startDate, endDate: end || x.endDate, planningWeeks: weeks.length ? weeks : x.planningWeeks }) : x)));
+    setSiteWeekVisibility((prev) => {
+      if (!weeks || weeks.length === 0) return prev;
+      return { ...prev, [id]: weeks };
+    });
   };
 
 // ==========================
@@ -2231,11 +2350,18 @@ useEffect(() => {
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">Chantiers</div>
+                  <div className="font-medium flex items-center gap-2">
+                    Chantiers
+                    {pendingSites.length > 0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                        {pendingSites.length} à planifier
+                      </span>
+                    )}
+                  </div>
                   <AddSite onAdd={addSite} />
                 </div>
                 <div className="space-y-2">
-                  {sites.map((s) => (
+                  {plannedSites.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2">
                         <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
@@ -2685,46 +2811,180 @@ useEffect(() => {
                     <div className="text-base font-semibold flex items-center gap-2">
                       <span>Mes chantiers</span>
                       <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                        {sites.length} chantier{sites.length > 1 ? "s" : ""}
+                        {plannedSites.length + pendingSites.length} chantier{sites.length > 1 ? "s" : ""}
                       </span>
                     </div>
-                    <div className="grid md:grid-cols-2 gap-2">
-                      {sites.map((site) => (
-                        <div
-                          key={site.id}
-                          className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm"
-                        >
-                          <span
-                            className={cx(
-                              "w-3 h-3 rounded-full mt-1 border",
-                              site.color || "bg-neutral-300",
-                              site.color ? "border-black/10" : "border-neutral-200"
-                            )}
-                            aria-hidden
-                          />
-                          <div className="flex-1 space-y-1">
-                            <div className="font-semibold text-neutral-900">{site.name}</div>
-                            {(site.startDate || site.endDate) && (
-                              <div className="text-xs text-neutral-600">
-                                {site.startDate ? formatFR(new Date(site.startDate)) : ""}
-                                {site.startDate && site.endDate ? " → " : ""}
-                                {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                              </div>
-                            )}
-                            {siteWeekVisibility[site.id]?.length ? (
-                              <div className="text-[11px] text-neutral-600">
-                                Semaines actives : {siteWeekVisibility[site.id].slice(0, 3).join(", ")}
-                                {siteWeekVisibility[site.id].length > 3 && " …"}
-                              </div>
-                            ) : (
-                              <div className="text-[11px] text-neutral-500">Visible toutes les semaines</div>
-                            )}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-sm font-semibold">
+                            À planifier
+                            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                              {pendingSites.length}
+                            </span>
                           </div>
+                          <div className="text-xs text-neutral-500">Issus des devis validés</div>
                         </div>
-                      ))}
-                      {sites.length === 0 && (
-                        <div className="text-sm text-neutral-500">Aucun chantier enregistré pour le moment.</div>
-                      )}
+                        <div className="space-y-2">
+                          {pendingSites.map((site) => {
+                            const weeksText = (site.planningWeeks || []).join(", ");
+                            return (
+                              <div
+                                key={site.id}
+                                className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-start gap-2">
+                                    <span
+                                      className={cx(
+                                        "w-3 h-3 rounded-full mt-1 border",
+                                        site.color || "bg-neutral-300",
+                                        site.color ? "border-black/10" : "border-neutral-200"
+                                      )}
+                                    />
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-neutral-900 leading-tight">{site.name}</div>
+                                      <div className="text-[11px] text-neutral-600">
+                                        Client : {site.clientName || site.quoteSnapshot?.client || "n/a"}
+                                      </div>
+                                      {site.quoteSnapshot?.amount && (
+                                        <div className="text-xs text-neutral-600">Devis : {formatEUR(site.quoteSnapshot.amount)}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => planSite(site.id, site.planningWeeks, site.startDate, site.endDate)}
+                                  >
+                                    Marquer planifié
+                                  </Button>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-2 text-sm">
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Semaines prévues</span>
+                                    <Input
+                                      value={weeksText}
+                                      onChange={(e: any) =>
+                                        updateSiteMeta(site.id, {
+                                          planningWeeks: parseWeekList(e.target.value, getISOWeekYear(anchor)),
+                                        })
+                                      }
+                                      placeholder={`Ex: ${getISOWeekYear(anchor)}-W12, W13`}
+                                    />
+                                  </label>
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Adresse</span>
+                                    <Input
+                                      value={site.address || ""}
+                                      onChange={(e: any) => updateSiteMeta(site.id, { address: e.target.value })}
+                                      placeholder="Adresse du chantier"
+                                    />
+                                  </label>
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Début</span>
+                                    <Input
+                                      type="date"
+                                      value={site.startDate || ""}
+                                      onChange={(e: any) => updateSiteMeta(site.id, { startDate: e.target.value })}
+                                    />
+                                  </label>
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Fin</span>
+                                    <Input
+                                      type="date"
+                                      min={site.startDate || undefined}
+                                      value={site.endDate || ""}
+                                      onChange={(e: any) => updateSiteMeta(site.id, { endDate: e.target.value })}
+                                    />
+                                  </label>
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Interlocuteur</span>
+                                    <Input
+                                      value={site.contactName || ""}
+                                      onChange={(e: any) => updateSiteMeta(site.id, { contactName: e.target.value })}
+                                      placeholder="Nom du contact"
+                                    />
+                                  </label>
+                                  <label className="space-y-1">
+                                    <span className="text-[11px] text-neutral-600">Téléphone</span>
+                                    <Input
+                                      value={site.contactPhone || ""}
+                                      onChange={(e: any) => updateSiteMeta(site.id, { contactPhone: e.target.value })}
+                                      placeholder="Contact téléphonique"
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {pendingSites.length === 0 && (
+                            <div className="text-sm text-neutral-500">Aucun devis validé en attente de planification.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-sm font-semibold">
+                            Planifié
+                            <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
+                              {plannedSites.length}
+                            </span>
+                          </div>
+                          <div className="text-xs text-neutral-500">Affichés dans le planning et le calendrier</div>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {plannedSites.map((site) => (
+                            <div
+                              key={site.id}
+                              className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm"
+                            >
+                              <span
+                                className={cx(
+                                  "w-3 h-3 rounded-full mt-1 border",
+                                  site.color || "bg-neutral-300",
+                                  site.color ? "border-black/10" : "border-neutral-200"
+                                )}
+                                aria-hidden
+                              />
+                              <div className="flex-1 space-y-1">
+                                <div className="font-semibold text-neutral-900">{site.name}</div>
+                                {(site.startDate || site.endDate) && (
+                                  <div className="text-xs text-neutral-600">
+                                    {site.startDate ? formatFR(new Date(site.startDate)) : ""}
+                                    {site.startDate && site.endDate ? " → " : ""}
+                                    {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                                  </div>
+                                )}
+                                {site.planningWeeks?.length ? (
+                                  <div className="text-[11px] text-neutral-600">
+                                    Semaines actives : {site.planningWeeks.slice(0, 3).join(", ")}
+                                    {site.planningWeeks.length > 3 && " …"}
+                                  </div>
+                                ) : (
+                                  <div className="text-[11px] text-neutral-500">Visible toutes les semaines</div>
+                                )}
+                                {(site.address || site.clientName || site.contactPhone) && (
+                                  <div className="text-[11px] text-neutral-600 space-y-0.5">
+                                    {site.address && <div>{site.address}</div>}
+                                    {site.clientName && <div>Client : {site.clientName}</div>}
+                                    {(site.contactName || site.contactPhone) && (
+                                      <div>
+                                        Contact : {site.contactName}
+                                        {site.contactPhone ? ` • ${site.contactPhone}` : ""}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {plannedSites.length === 0 && (
+                            <div className="text-sm text-neutral-500">Aucun chantier planifié pour l'instant.</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -2823,6 +3083,38 @@ useEffect(() => {
                   </select>
                 </div>
               </div>
+              <div className="grid md:grid-cols-2 gap-2">
+                <Input
+                  value={quoteDetail.contactName || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, contactName: e.target.value } : prev))}
+                  placeholder="Contact principal"
+                />
+                <Input
+                  value={quoteDetail.contactPhone || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, contactPhone: e.target.value } : prev))}
+                  placeholder="Téléphone"
+                />
+              </div>
+              <Input
+                value={quoteDetail.address || ""}
+                onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, address: e.target.value } : prev))}
+                placeholder="Adresse du chantier"
+              />
+              <div className="grid md:grid-cols-2 gap-2">
+                <Input
+                  type="date"
+                  value={quoteDetail.plannedStart || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, plannedStart: e.target.value } : prev))}
+                  placeholder="Début prévu"
+                />
+                <Input
+                  type="date"
+                  min={quoteDetail.plannedStart || undefined}
+                  value={quoteDetail.plannedEnd || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, plannedEnd: e.target.value } : prev))}
+                  placeholder="Fin prévue"
+                />
+              </div>
               <Textarea
                 value={quoteDetail.note || ""}
                 onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, note: e.target.value } : prev))}
@@ -2898,6 +3190,7 @@ useEffect(() => {
                 }
                 return { ...prev, [renameTarget.id]: unique };
               });
+              updateSiteMeta(renameTarget.id, { planningWeeks: weeks });
             }
           }
           setRenameOpen(false);
