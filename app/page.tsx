@@ -121,6 +121,9 @@ function DialogHeader({ children }: any) {
 function DialogTitle({ children }: any) {
   return <div className="text-lg font-semibold">{children}</div>;
 }
+function DialogDescription({ children, className = "" }: any) {
+  return <p className={cx("text-sm text-neutral-600", className)}>{children}</p>;
+}
 function DialogFooter({ children }: any) {
   return <div className="mt-3 flex items-center justify-end gap-2">{children}</div>;
 }
