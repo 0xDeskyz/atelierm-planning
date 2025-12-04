@@ -987,11 +987,14 @@ export default function Page() {
   }, [siteWeekVisibility]);
 
   // View / navigation
-  const [view, setView] = useState<"week" | "month" | "hours" | "timeline">("week");
+  const [view, setView] = useState<"planning" | "hours" | "timeline">("planning");
+  const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
+  const isPlanningWeek = view === "planning" && planningView === "week";
+  const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
     const d = new Date(anchor);
     d.setDate(d.getDate() - 7);
@@ -1406,7 +1409,7 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (view === "month") {
+    if (isPlanningMonth) {
       d.setMonth(d.getMonth() + delta);
     } else if (view === "timeline") {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
@@ -1421,14 +1424,17 @@ export default function Page() {
   const monthWeekRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [pendingScrollWeek, setPendingScrollWeek] = useState<string | null>(null);
 
-  const jumpToCurrentWeek = (opts?: { forceView?: "week" | "hours" }) => {
+  const jumpToCurrentWeek = (opts?: { forceView?: "planning" | "hours" }) => {
     const now = new Date();
     const wkKey = weekKeyOf(now);
     setAnchor(now);
-    if (view === "month") {
+    if (isPlanningMonth) {
       setPendingScrollWeek(wkKey);
     }
-    if (opts?.forceView) setView(opts.forceView);
+    if (opts?.forceView) {
+      setView(opts.forceView);
+      if (opts.forceView === "planning") setPlanningView("week");
+    }
   };
 
   useEffect(() => {
@@ -1882,8 +1888,7 @@ useEffect(() => {
             <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
             <Tabs value={view} onValueChange={(v: any) => setView(v)}>
               <TabsList>
-                <TabsTrigger value="week">Semaine</TabsTrigger>
-                <TabsTrigger value="month">Mois</TabsTrigger>
+                <TabsTrigger value="planning">Planning</TabsTrigger>
                 <TabsTrigger value="hours">Heures</TabsTrigger>
                 <TabsTrigger value="timeline">Calendrier</TabsTrigger>
               </TabsList>
@@ -1957,6 +1962,29 @@ useEffect(() => {
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
+            {view === "planning" && (
+              <div className="flex items-center gap-2 pr-2 border-r border-neutral-200">
+                <span className="text-xs uppercase tracking-wide text-neutral-500">Vue planning</span>
+                <div className="inline-flex rounded-lg bg-neutral-100 p-1">
+                  <Button
+                    size="sm"
+                    variant={planningView === "week" ? "default" : "ghost"}
+                    className={planningView === "week" ? "shadow-sm" : ""}
+                    onClick={() => setPlanningView("week")}
+                  >
+                    Semaine
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={planningView === "month" ? "default" : "ghost"}
+                    className={planningView === "month" ? "shadow-sm" : ""}
+                    onClick={() => setPlanningView("month")}
+                  >
+                    Mois
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
                 <ChevronLeft className="w-4 h-4" />
@@ -1967,7 +1995,7 @@ useEffect(() => {
             </div>
             <div className="font-semibold text-base flex items-center gap-2">
               <CalendarRange className="w-5 h-5" />
-              {(view === "week" || view === "hours") && (
+              {(isPlanningWeek || view === "hours") && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span>{`Semaine ${getISOWeek(weekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(weekDays[4], true)}`}</span>
                   <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
@@ -1975,7 +2003,7 @@ useEffect(() => {
                   </span>
                 </div>
               )}
-              {view === "month" && (
+              {isPlanningMonth && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
                   <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
@@ -2008,7 +2036,7 @@ useEffect(() => {
                 />
               </label>
             )}
-            {(view === "week" || view === "hours") && (
+            {(isPlanningWeek || view === "hours") && (
               <>
                 <Button
                   variant="outline"
@@ -2039,7 +2067,7 @@ useEffect(() => {
           <div
             className={cx(
               "col-span-12 lg:col-span-3 space-y-4",
-              view === "month" && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+              isPlanningMonth && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
             )}
           >
             <Card>
@@ -2104,7 +2132,7 @@ useEffect(() => {
           {/* Right column: Calendars */}
           <div className="col-span-12 lg:col-span-9">
             {/* WEEK VIEW */}
-            {view === "week" && (
+            {isPlanningWeek && (
               <div className="space-y-2">
                 <div className="grid grid-cols-6 text-xs text-neutral-500">
                   <div className="px-1 flex items-center gap-2">
@@ -2193,7 +2221,7 @@ useEffect(() => {
             )}
 
             {/* MONTH VIEW */}
-            {view === "month" && (
+            {isPlanningMonth && (
               <div className="space-y-4">
 
                 {monthWeeks.map((week, idx) => {
