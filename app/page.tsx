@@ -987,7 +987,9 @@ export default function Page() {
   }, [siteWeekVisibility]);
 
   // View / navigation
-  const [view, setView] = useState<"planning" | "hours" | "timeline">("planning");
+  const [view, setView] = useState<
+    "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+  >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
@@ -1883,17 +1885,27 @@ useEffect(() => {
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
-            <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-              <TabsList>
-                <TabsTrigger value="planning">Planning</TabsTrigger>
-                <TabsTrigger value="hours">Heures</TabsTrigger>
-                <TabsTrigger value="timeline">Calendrier</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <Tabs value={view} onValueChange={(v: any) => setView(v)}>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
+                <TabsList>
+                  <TabsTrigger value="planning">Planning</TabsTrigger>
+                  <TabsTrigger value="hours">Heures</TabsTrigger>
+                  <TabsTrigger value="timeline">Calendrier</TabsTrigger>
+                </TabsList>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-xs uppercase tracking-wide text-neutral-500">Gestion</span>
+                <TabsList className="bg-white border border-neutral-200">
+                  <TabsTrigger value="devis">Devis</TabsTrigger>
+                  <TabsTrigger value="sites">Mes chantiers</TabsTrigger>
+                  <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
+                </TabsList>
+              </div>
+            </div>
+          </Tabs>
           <div className="flex items-center gap-2" ref={maintenanceRef}>
             <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
             <div className="relative">
@@ -1985,41 +1997,45 @@ useEffect(() => {
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Suivant">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="font-semibold text-base flex items-center gap-2">
-              <CalendarRange className="w-5 h-5" />
-              {(isPlanningWeek || view === "hours") && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span>{`Semaine ${getISOWeek(weekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(weekDays[4], true)}`}</span>
-                  <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
-                    Semaine actuelle : S{pad2(todayWeekNumber)}
-                  </span>
+            {["planning", "hours", "timeline"].includes(view) && (
+              <>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Suivant">
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
                 </div>
-              )}
-              {isPlanningMonth && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
-                  <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
-                    Semaine actuelle : S{pad2(todayWeekNumber)}
-                  </span>
+                <div className="font-semibold text-base flex items-center gap-2">
+                  <CalendarRange className="w-5 h-5" />
+                  {(isPlanningWeek || view === "hours") && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{`Semaine ${getISOWeek(weekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(weekDays[4], true)}`}</span>
+                      <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                        Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {isPlanningMonth && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
+                      <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                        Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {view === "timeline" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{timelineScopeLabel}</span>
+                      <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                        Barres basées sur les dates prévues des chantiers
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-              {view === "timeline" && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span>{timelineScopeLabel}</span>
-                  <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                    Barres basées sur les dates prévues des chantiers
-                  </span>
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -2441,6 +2457,113 @@ useEffect(() => {
                           );
                         })}
                       </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {view === "devis" && (
+              <div className="space-y-3">
+                <Card>
+                  <CardContent className="space-y-2">
+                    <div className="text-base font-semibold">Devis</div>
+                    <p className="text-sm text-neutral-600">
+                      Préparez vos devis en gardant un œil sur vos sites et ressources. Cette section pourra accueillir vos
+                      brouillons, suivis d'acceptation et liens avec le planning.
+                    </p>
+                    <div className="grid md:grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2 text-neutral-600">
+                        Ajouter un nouveau devis
+                      </div>
+                      <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2 text-neutral-600">
+                        Importer ou synchroniser des devis existants
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {view === "sites" && (
+              <div className="space-y-3">
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="text-base font-semibold flex items-center gap-2">
+                      <span>Mes chantiers</span>
+                      <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
+                        {sites.length} chantier{sites.length > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                      {sites.map((site) => (
+                        <div
+                          key={site.id}
+                          className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm"
+                        >
+                          <span
+                            className={cx(
+                              "w-3 h-3 rounded-full mt-1 border",
+                              site.color || "bg-neutral-300",
+                              site.color ? "border-black/10" : "border-neutral-200"
+                            )}
+                            aria-hidden
+                          />
+                          <div className="flex-1 space-y-1">
+                            <div className="font-semibold text-neutral-900">{site.name}</div>
+                            {(site.startDate || site.endDate) && (
+                              <div className="text-xs text-neutral-600">
+                                {site.startDate ? formatFR(new Date(site.startDate)) : ""}
+                                {site.startDate && site.endDate ? " → " : ""}
+                                {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                              </div>
+                            )}
+                            {siteWeekVisibility[site.id]?.length ? (
+                              <div className="text-[11px] text-neutral-600">
+                                Semaines actives : {siteWeekVisibility[site.id].slice(0, 3).join(", ")}
+                                {siteWeekVisibility[site.id].length > 3 && " …"}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-neutral-500">Visible toutes les semaines</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {sites.length === 0 && (
+                        <div className="text-sm text-neutral-500">Aucun chantier enregistré pour le moment.</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {view === "salaries" && (
+              <div className="space-y-3">
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="text-base font-semibold flex items-center gap-2">
+                      <span>Mes salariés</span>
+                      <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
+                        {people.length} personne{people.length > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                      {people.map((p) => (
+                        <div
+                          key={p.id}
+                          className="rounded-lg border border-neutral-200 p-3 bg-white shadow-sm flex items-start gap-3"
+                        >
+                          <Users className="w-4 h-4 text-neutral-500 mt-0.5" />
+                          <div className="space-y-1">
+                            <div className="font-semibold text-neutral-900">{p.name}</div>
+                            <div className="text-[11px] text-neutral-500">Disponible dans le planning</div>
+                          </div>
+                        </div>
+                      ))}
+                      {people.length === 0 && (
+                        <div className="text-sm text-neutral-500">Aucun salarié renseigné.</div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
