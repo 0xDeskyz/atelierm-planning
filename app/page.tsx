@@ -413,15 +413,35 @@ const formatEUR = (val?: number) => {
 };
 type WeatherDay = { date: string; min?: number; max?: number; rain?: number };
 type WeatherPayload = { location: string; days: WeatherDay[] };
+const normalizeAddressInput = (raw: string) =>
+  raw
+    .replace(/[\s,]+/g, (m) => (m.includes(",") ? ", " : " "))
+    .replace(/,\s*,+/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 async function fetchWeatherForRange(address: string, start: Date, end: Date): Promise<WeatherPayload> {
-  if (!address) throw new Error("Adresse manquante pour ce chantier");
+  const cleaned = normalizeAddressInput(address || "");
+  if (!cleaned) throw new Error("Adresse manquante pour ce chantier");
 
-  const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(address)}&count=1&language=fr&format=json`;
-  const geoResp = await fetch(geoUrl, { cache: "no-store" });
-  if (!geoResp.ok) throw new Error("Géocodage indisponible");
-  const geoJson: any = await geoResp.json();
-  const loc = geoJson?.results?.[0];
-  if (!loc) throw new Error("Adresse introuvable");
+  const candidates = Array.from(
+    new Set(
+      [cleaned, `${cleaned}, France`, `${cleaned}, FR`].filter(
+        (a) => a && a.length > 3 && a.length <= 200
+      )
+    )
+  );
+
+  let loc: any = null;
+  for (const query of candidates) {
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=3&language=fr&format=json`;
+    const geoResp = await fetch(geoUrl, { cache: "no-store" });
+    if (!geoResp.ok) continue;
+    const geoJson: any = await geoResp.json();
+    loc = geoJson?.results?.[0];
+    if (loc) break;
+  }
+
+  if (!loc) throw new Error("Adresse introuvable ou non reconnue");
 
   const startDate = toLocalKey(start);
   const endDate = toLocalKey(end);
