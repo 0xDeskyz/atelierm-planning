@@ -261,10 +261,26 @@ const nextMonthKey = (() => {
   return toLocalKey(d);
 })();
 
+const normalizePersonRecord = (p: any) => ({
+  id:
+    typeof p?.id === "string"
+      ? p.id
+      : typeof crypto !== "undefined" && (crypto as any).randomUUID
+      ? (crypto as any).randomUUID()
+      : `p${Date.now()}`,
+  name: typeof p?.name === "string" ? p.name : "",
+  color: typeof p?.color === "string" ? p.color : COLORS[0],
+  role: typeof p?.role === "string" ? p.role : "",
+  phone: typeof p?.phone === "string" ? p.phone : "",
+  email: typeof p?.email === "string" ? p.email : "",
+  notes: typeof p?.notes === "string" ? p.notes : "",
+  skills: Array.isArray(p?.skills) ? p.skills.map(String) : [],
+});
+
 const DEMO_PEOPLE = [
-  { id: "p1", name: "Ali", color: "bg-rose-500" },
-  { id: "p2", name: "Mina", color: "bg-amber-500" },
-  { id: "p3", name: "Rachid", color: "bg-emerald-500" },
+  normalizePersonRecord({ id: "p1", name: "Ali", color: "bg-rose-500", role: "Chef de chantier" }),
+  normalizePersonRecord({ id: "p2", name: "Mina", color: "bg-amber-500", role: "Maçonne" }),
+  normalizePersonRecord({ id: "p3", name: "Rachid", color: "bg-emerald-500", role: "Plombier" }),
 ];
 const DEMO_SITES = [
   { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
@@ -767,6 +783,9 @@ function HoursCell({ date, site, assignments, people, notes, hoursPerDay, confli
 // ==================================
 function AddPersonDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [color, setColor] = useState(COLORS[0]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -774,6 +793,11 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
         <DialogHeader><DialogTitle>Ajouter un salarié</DialogTitle></DialogHeader>
         <div className="space-y-2">
           <Input placeholder="Nom" value={name} onChange={(e: any) => setName(e.target.value)} />
+          <div className="grid md:grid-cols-2 gap-2">
+            <Input placeholder="Rôle" value={role} onChange={(e: any) => setRole(e.target.value)} />
+            <Input placeholder="Téléphone" value={phone} onChange={(e: any) => setPhone(e.target.value)} />
+            <Input placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} className="md:col-span-2" />
+          </div>
           <div className="flex flex-wrap gap-2">
             {COLORS.map((c) => (
               <div key={c} onClick={() => setColor(c)} className={`w-6 h-6 rounded-full cursor-pointer ${c} ${color === c ? "ring-2 ring-black" : ""}`} title={c} />
@@ -781,7 +805,29 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => { if (name.trim()) { onAdd(name.trim(), color); setOpen(false); setName(""); setColor(COLORS[0]); } }}>Ajouter</Button>
+          <Button
+            onClick={() => {
+              if (name.trim()) {
+                onAdd(
+                  name.trim(),
+                  color,
+                  {
+                    role: role.trim(),
+                    phone: phone.trim(),
+                    email: email.trim(),
+                  }
+                );
+                setOpen(false);
+                setName("");
+                setRole("");
+                setPhone("");
+                setEmail("");
+                setColor(COLORS[0]);
+              }
+            }}
+          >
+            Ajouter
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1144,6 +1190,94 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
   );
 }
 
+function PersonDetailDialog({ open, person, onClose, onSave }: any) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [skills, setSkills] = useState("");
+  const [notes, setNotes] = useState("");
+  const [color, setColor] = useState(COLORS[0]);
+
+  useEffect(() => {
+    setName(person?.name || "");
+    setRole(person?.role || "");
+    setPhone(person?.phone || "");
+    setEmail(person?.email || "");
+    setSkills((person?.skills || []).join(", "));
+    setNotes(person?.notes || "");
+    setColor(person?.color || COLORS[0]);
+  }, [person]);
+
+  const handleSave = () => {
+    if (!person?.id) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const parsedSkills = skills
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    onSave({
+      ...person,
+      name: trimmed,
+      role: role.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      notes: notes.trim(),
+      skills: parsedSkills,
+      color,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Fiche salarié</DialogTitle>
+          <DialogDescription>Compléter ou mettre à jour les informations associées à ce salarié.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom" />
+          <div className="grid md:grid-cols-2 gap-2">
+            <Input value={role} onChange={(e: any) => setRole(e.target.value)} placeholder="Poste / rôle" />
+            <Input value={phone} onChange={(e: any) => setPhone(e.target.value)} placeholder="Téléphone" />
+            <Input value={email} onChange={(e: any) => setEmail(e.target.value)} placeholder="Email" className="md:col-span-2" />
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Compétences (séparer par des virgules)</div>
+            <Input value={skills} onChange={(e: any) => setSkills(e.target.value)} placeholder="Ex: plomberie, coffrage, conduite" />
+          </div>
+          <Textarea value={notes} onChange={(e: any) => setNotes(e.target.value)} placeholder="Notes internes, disponibilités..." />
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Couleur</div>
+            <div className="flex flex-wrap gap-2">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={cx(
+                    "w-7 h-7 rounded-full border transition",
+                    c,
+                    color === c ? "ring-2 ring-black border-black" : "border-transparent"
+                  )}
+                  aria-label={`Choisir la couleur ${c}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+          <Button onClick={handleSave}>Enregistrer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const initial = typeof value === "string" ? { text: value } : value || {};
   const [text, setText] = useState<string>(initial.text || "");
@@ -1268,7 +1402,7 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
 // ==================================
 // Small helpers
 // ==================================
-function AddPerson({ onAdd }: { onAdd: (name: string, color: string) => void }) {
+function AddPerson({ onAdd }: { onAdd: (name: string, color: string, extra?: any) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1392,6 +1526,8 @@ export default function Page() {
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
   const [siteDetail, setSiteDetail] = useState<any | null>(null);
   const [siteDetailOpen, setSiteDetailOpen] = useState(false);
+  const [personDetail, setPersonDetail] = useState<any | null>(null);
+  const [personDetailOpen, setPersonDetailOpen] = useState(false);
   const timelineWindow = useMemo(() => {
     const base = new Date(anchor);
     base.setHours(0, 0, 0, 0);
@@ -1431,6 +1567,7 @@ export default function Page() {
     });
     return { start, end, buckets, label: `${base.getFullYear()}` };
   }, [anchor, timelineScope]);
+  const safePeople = useMemo(() => (Array.isArray(people) ? people.map(normalizePersonRecord) : []), [people]);
   const safeSites = Array.isArray(sites) ? sites : [];
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
@@ -2051,7 +2188,19 @@ export default function Page() {
       })
     );
   };
-  const addPerson = (name: string, color: string) => setPeople((p) => [...p, { id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `p${Date.now()}`, name, color }]);
+  const addPerson = (name: string, color: string, extra: any = {}) =>
+    setPeople((p) => [
+      ...p,
+      normalizePersonRecord({
+        id:
+          typeof crypto !== "undefined" && (crypto as any).randomUUID
+            ? (crypto as any).randomUUID()
+            : `p${Date.now()}`,
+        name,
+        color,
+        ...extra,
+      }),
+    ]);
   const removePerson = (id: string) => {
     setPeople((p) => p.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.personId !== id));
@@ -2105,11 +2254,25 @@ export default function Page() {
     setSiteDetail(null);
   };
 
+  const openPersonDetail = (id: string) => {
+    const person = safePeople.find((p) => p.id === id);
+    if (!person) return;
+    setPersonDetail(person);
+    setPersonDetailOpen(true);
+  };
+
+  const savePersonDetail = (payload: any) => {
+    if (!payload?.id) return;
+    setPeople((prev) => prev.map((p) => (p.id === payload.id ? normalizePersonRecord(payload) : p)));
+    setPersonDetail(null);
+    setPersonDetailOpen(false);
+  };
+
 // ==========================
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
   const applyState = useCallback((state: any) => {
-    setPeople(toArray(state.people, DEMO_PEOPLE));
+    setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments));
     setNotes(state.notes || {});
@@ -2387,7 +2550,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -3184,26 +3347,47 @@ useEffect(() => {
               <div className="space-y-3">
                 <Card>
                   <CardContent className="space-y-3">
-                    <div className="text-base font-semibold flex items-center gap-2">
-                      <span>Mes salariés</span>
-                      <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                        {people.length} personne{people.length > 1 ? "s" : ""}
-                      </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-base font-semibold flex items-center gap-2">
+                        <span>Mes salariés</span>
+                        <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
+                          {safePeople.length} personne{safePeople.length > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <AddPerson onAdd={addPerson} />
                     </div>
                     <div className="grid md:grid-cols-2 gap-2">
-                      {people.map((p) => (
-                        <div
+                      {safePeople.map((p) => (
+                        <button
                           key={p.id}
-                          className="rounded-lg border border-neutral-200 p-3 bg-white shadow-sm flex items-start gap-3"
+                          onClick={() => openPersonDetail(p.id)}
+                          className="rounded-lg border border-neutral-200 p-3 bg-white shadow-sm flex items-start gap-3 text-left hover:border-neutral-300"
                         >
-                          <Users className="w-4 h-4 text-neutral-500 mt-0.5" />
+                          <span className={cx("w-3 h-3 rounded-full mt-1 border", p.color || "bg-neutral-300", p.color ? "border-black/10" : "border-neutral-200")} aria-hidden />
                           <div className="space-y-1">
-                            <div className="font-semibold text-neutral-900">{p.name}</div>
-                            <div className="text-[11px] text-neutral-500">Disponible dans le planning</div>
+                            <div className="font-semibold text-neutral-900 flex items-center gap-2">
+                              {p.name}
+                              {p.role && <span className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">{p.role}</span>}
+                            </div>
+                            {(p.phone || p.email) && (
+                              <div className="text-[11px] text-neutral-600 space-y-0.5">
+                                {p.phone && <div>Tél : {p.phone}</div>}
+                                {p.email && <div>{p.email}</div>}
+                              </div>
+                            )}
+                            {p.skills?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 text-[11px] text-sky-700">
+                                {p.skills.slice(0, 3).map((s: any, idx: number) => (
+                                  <span key={idx} className="px-2 py-0.5 bg-sky-50 border border-sky-100 rounded-full">{s}</span>
+                                ))}
+                                {p.skills.length > 3 && <span className="text-[11px] text-neutral-500">+{p.skills.length - 3}</span>}
+                              </div>
+                            )}
+                            <div className="text-[11px] text-sky-700">Cliquer pour éditer la fiche</div>
                           </div>
-                        </div>
+                        </button>
                       ))}
-                      {people.length === 0 && (
+                      {safePeople.length === 0 && (
                         <div className="text-sm text-neutral-500">Aucun salarié renseigné.</div>
                       )}
                     </div>
@@ -3353,6 +3537,18 @@ useEffect(() => {
             setSiteDetail(null);
           }}
           onSave={saveSiteDetail}
+        />
+      )}
+
+      {personDetail && (
+        <PersonDetailDialog
+          open={personDetailOpen}
+          person={personDetail}
+          onClose={() => {
+            setPersonDetailOpen(false);
+            setPersonDetail(null);
+          }}
+          onSave={savePersonDetail}
         />
       )}
 
