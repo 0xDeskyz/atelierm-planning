@@ -14,19 +14,22 @@ import {
 } from "@dnd-kit/core";
 
 import {
+  AlertTriangle,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
-  Edit3,
-  Users,
-  Plus,
-  Trash2,
-  RotateCcw,
-  Upload,
-  Download,
+  Clock3,
   Copy,
+  Download,
+  Edit3,
   Eraser,
+  ListChecks,
+  Plus,
+  RotateCcw,
   Settings,
+  Trash2,
+  Upload,
+  Users,
 } from "lucide-react";
 
 // ================= UI maison (Tailwind)
@@ -1463,8 +1466,8 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
-  >("planning");
+    "dashboard" | "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+  >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
@@ -1833,6 +1836,40 @@ export default function Page() {
 
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
   }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, plannedSites, timelineView, todayKey]);
+
+  const actionableQuotes = useMemo(
+    () => safeQuotes.filter((q) => q.status !== "won" && q.status !== "lost"),
+    [safeQuotes]
+  );
+
+  const urgentQuotes = useMemo(() => {
+    const now = new Date();
+    const soon = new Date(now);
+    soon.setDate(soon.getDate() + 14);
+
+    return actionableQuotes
+      .filter((q) => q.dueDate && fromLocalKey(q.dueDate).getTime() >= now.getTime())
+      .filter((q) => fromLocalKey(q.dueDate).getTime() <= soon.getTime())
+      .sort((a, b) => fromLocalKey(a.dueDate).getTime() - fromLocalKey(b.dueDate).getTime())
+      .slice(0, 4);
+  }, [actionableQuotes]);
+
+  const backlogQuotes = useMemo(() => actionableQuotes.filter((q) => !q.dueDate).slice(0, 3), [actionableQuotes]);
+
+  const pendingSiteHighlights = useMemo(
+    () =>
+      [...pendingSites]
+        .sort((a, b) => fromLocalKey(a.startDate || todayKey).getTime() - fromLocalKey(b.startDate || todayKey).getTime())
+        .slice(0, 4),
+    [pendingSites]
+  );
+
+  const weekSiteHighlights = useMemo(() => sitesForCurrentWeek.slice(0, 4), [sitesForCurrentWeek]);
+
+  const upcomingGaps = useMemo(() => {
+    const now = new Date();
+    return (timelineLoad.gaps || []).filter((g) => g.end.getTime() >= now.getTime()).slice(0, 3);
+  }, [timelineLoad]);
 
   const getLoadTone = useCallback((ratio: number) => {
     if (ratio >= 0.7) {
@@ -2567,6 +2604,7 @@ useEffect(() => {
               <div className="flex items-center gap-3">
                 <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
                 <TabsList>
+                  <TabsTrigger value="dashboard">Tableau de bord</TabsTrigger>
                   <TabsTrigger value="planning">Planning</TabsTrigger>
                   <TabsTrigger value="hours">Heures</TabsTrigger>
                   <TabsTrigger value="timeline">Calendrier</TabsTrigger>
@@ -2752,9 +2790,248 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* DnD provider */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-12 gap-4">
+      {view === "dashboard" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Card className="border-neutral-200 bg-gradient-to-br from-amber-50 to-white">
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm font-semibold text-amber-800">
+                  <span>Chantiers à planifier</span>
+                  <ListChecks className="w-4 h-4" />
+                </div>
+                <div className="text-3xl font-bold">{pendingSites.length}</div>
+                <div className="text-xs text-neutral-600">
+                  {pendingSiteHighlights.length > 0
+                    ? `Prochain : ${formatFR(fromLocalKey(pendingSiteHighlights[0].startDate || todayKey))}`
+                    : "Aucun devis validé en attente."}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-neutral-200 bg-gradient-to-br from-sky-50 to-white">
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm font-semibold text-sky-800">
+                  <span>Semaine en cours</span>
+                  <CalendarRange className="w-4 h-4" />
+                </div>
+                <div className="text-3xl font-bold">{sitesForCurrentWeek.length}</div>
+                <div className="text-xs text-neutral-600">{weekAssignments.length} affectation(s) visible(s).</div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-neutral-200 bg-gradient-to-br from-emerald-50 to-white">
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
+                  <span>Devis à suivre</span>
+                  <Clock3 className="w-4 h-4" />
+                </div>
+                <div className="text-3xl font-bold">{actionableQuotes.length}</div>
+                <div className="text-xs text-neutral-600">
+                  {urgentQuotes.length > 0
+                    ? `${urgentQuotes.length} échéance(s) dans les 14 jours`
+                    : "Aucune urgence immédiate."}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-neutral-200 bg-gradient-to-br from-rose-50 to-white">
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm font-semibold text-rose-800">
+                  <span>Conflits potentiels</span>
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div className="text-3xl font-bold">{weekConflictCount}</div>
+                <div className="text-xs text-neutral-600">Détections sur la semaine affichée.</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-semibold">À planifier en priorité</div>
+                    <div className="text-xs text-neutral-600">Chantiers issus des devis validés.</div>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100">
+                    {pendingSites.length} en file d'attente
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {pendingSiteHighlights.map((site) => (
+                    <button
+                      key={site.id}
+                      className="w-full rounded-lg border border-amber-100 bg-amber-50/40 px-3 py-2 text-left hover:border-amber-200 flex items-start gap-3"
+                      onClick={() => openSiteDetail(site.id)}
+                    >
+                      <span
+                        className={cx(
+                          "mt-1 h-3 w-3 rounded-full border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200"
+                        )}
+                        aria-hidden
+                      />
+                      <div className="flex-1 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-neutral-900">{site.name}</span>
+                          {site.quoteSnapshot?.amount && (
+                            <span className="text-[11px] text-neutral-500">{formatEUR(site.quoteSnapshot.amount)}</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-neutral-600 flex items-center gap-2">
+                          <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
+                          <span className="text-neutral-400">•</span>
+                          <span>
+                            {site.startDate ? formatFR(new Date(site.startDate)) : ""}
+                            {site.startDate && site.endDate ? " → " : ""}
+                            {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {pendingSiteHighlights.length === 0 && (
+                    <div className="text-sm text-neutral-500">Aucun chantier en attente de planification.</div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-semibold">Cette semaine</div>
+                    <div className="text-xs text-neutral-600">Chantiers visibles sur la période courante.</div>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-100">
+                    S{pad2(todayWeekNumber)}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {weekSiteHighlights.map((site) => (
+                    <div key={site.id} className="rounded-lg border border-neutral-200 px-3 py-2 bg-white flex items-start gap-3">
+                      <span
+                        className={cx(
+                          "mt-1 h-3 w-3 rounded-full border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200"
+                        )}
+                        aria-hidden
+                      />
+                      <div className="flex-1 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-neutral-900">{site.name}</span>
+                          <span className="text-[11px] text-neutral-500">{formatFR(weekDays[0])}</span>
+                        </div>
+                        <div className="text-[11px] text-neutral-600 flex items-center gap-2">
+                          <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
+                          <span className="text-neutral-400">•</span>
+                          <span>
+                            {site.startDate ? formatFR(new Date(site.startDate)) : ""}
+                            {site.startDate && site.endDate ? " → " : ""}
+                            {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {weekSiteHighlights.length === 0 && (
+                    <div className="text-sm text-neutral-500">Aucun chantier affiché sur cette semaine.</div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-semibold">Devis à traiter</div>
+                    <div className="text-xs text-neutral-600">Urgences et brouillons encore ouverts.</div>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100">
+                    {actionableQuotes.length} en cours
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {urgentQuotes.map((quote) => (
+                    <button
+                      key={quote.id}
+                      className="w-full rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-left hover:border-emerald-200"
+                      onClick={() => openQuoteDetail(quote)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-neutral-900">{quote.title}</span>
+                        {quote.amount && <span className="text-[11px] text-neutral-500">{formatEUR(quote.amount)}</span>}
+                      </div>
+                      <div className="text-[11px] text-neutral-600 flex items-center gap-2">
+                        <span>{quote.client || "Client"}</span>
+                        <span className="text-neutral-400">•</span>
+                        <span>Échéance {quote.dueDate ? formatFR(fromLocalKey(quote.dueDate)) : "non renseignée"}</span>
+                      </div>
+                    </button>
+                  ))}
+
+                  {urgentQuotes.length === 0 && backlogQuotes.map((quote) => (
+                    <button
+                      key={quote.id}
+                      className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-left bg-white hover:border-neutral-300"
+                      onClick={() => openQuoteDetail(quote)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-neutral-900">{quote.title}</span>
+                        {quote.amount && <span className="text-[11px] text-neutral-500">{formatEUR(quote.amount)}</span>}
+                      </div>
+                      <div className="text-[11px] text-neutral-600 flex items-center gap-2">
+                        <span>{quote.client || "Client"}</span>
+                        <span className="text-neutral-400">•</span>
+                        <span>Brouillon à compléter</span>
+                      </div>
+                    </button>
+                  ))}
+
+                  {urgentQuotes.length === 0 && backlogQuotes.length === 0 && (
+                    <div className="text-sm text-neutral-500">Aucun devis en attente immédiate.</div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-semibold">Fenêtres creuses à venir</div>
+                    <div className="text-xs text-neutral-600">Périodes sans chantier détectées.</div>
+                  </div>
+                  <span className="text-[11px] px-2 py-1 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200">
+                    {upcomingGaps.length} opportunité(s)
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {upcomingGaps.map((gap, idx) => (
+                    <div key={idx} className="rounded-lg border border-neutral-200 px-3 py-2 bg-white flex items-center justify-between">
+                      <div className="text-sm font-semibold text-neutral-800">
+                        {formatFR(gap.start)} → {formatFR(gap.end)}
+                      </div>
+                      <span className="text-[11px] text-neutral-500">{gap.days} j. ouvrés</span>
+                    </div>
+                  ))}
+                  {upcomingGaps.length === 0 && (
+                    <div className="text-sm text-neutral-500">Aucune plage vide à court terme.</div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {view !== "dashboard" && (
+        /* DnD provider */
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <div className="grid grid-cols-12 gap-4">
           {/* Left column: People & Sites */}
           <div
             className={cx(
@@ -3399,6 +3676,7 @@ useEffect(() => {
         </div>
         <DragOverlay />
       </DndContext>
+      )}
 
       {/* Dialogs */}
       {quoteDetail && (
