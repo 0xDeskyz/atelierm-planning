@@ -23,6 +23,7 @@ import {
   Download,
   Edit3,
   Eraser,
+  LayoutDashboard,
   ListChecks,
   Plus,
   RotateCcw,
@@ -2598,93 +2599,110 @@ useEffect(() => {
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-            <div className="flex flex-col gap-2">
+        <Tabs value={view} onValueChange={(v: any) => setView(v)}>
+          <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-gradient-to-r from-neutral-50 to-white">
               <div className="flex items-center gap-3">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Vues</span>
-                <TabsList>
-                  <TabsTrigger value="dashboard">Tableau de bord</TabsTrigger>
-                  <TabsTrigger value="planning">Planning</TabsTrigger>
-                  <TabsTrigger value="hours">Heures</TabsTrigger>
-                  <TabsTrigger value="timeline">Calendrier</TabsTrigger>
+                <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-semibold">BT</div>
+                <div className="leading-tight">
+                  <div className="text-sm font-semibold text-neutral-900">BTP Planner</div>
+                  <div className="text-xs text-neutral-500">Tableau de bord & suivi collaboratif</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-neutral-500">Navigation</span>
+                <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
+                  <TabsTrigger value="dashboard">
+                    <span className="flex items-center gap-1.5 text-sm"><LayoutDashboard className="w-4 h-4" /> Tableau de bord</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="planning">
+                    <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="hours">
+                    <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="timeline">
+                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Calendrier</span>
+                  </TabsTrigger>
                 </TabsList>
               </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Gestion</span>
-                <TabsList className="bg-white border border-neutral-200">
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-neutral-50">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-neutral-500">Gestion</span>
+                <TabsList className="bg-white border border-neutral-200 shadow-sm">
                   <TabsTrigger value="devis">Devis</TabsTrigger>
                   <TabsTrigger value="sites">Mes chantiers</TabsTrigger>
                   <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
                 </TabsList>
               </div>
-            </div>
-          </Tabs>
-          <div className="flex items-center gap-2" ref={maintenanceRef}>
-            <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
-            <div className="relative">
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Options de maintenance"
-                onClick={() => setMaintenanceOpen((v) => !v)}
-              >
-                <Settings className="w-5 h-5" />
-              </Button>
-              {maintenanceOpen && (
-                <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-white shadow-lg p-2 space-y-1">
-                  <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Maintenance</div>
+              <div className="flex items-center gap-2" ref={maintenanceRef}>
+                <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
+                <div className="relative">
                   <Button
+                    size="icon"
                     variant="ghost"
-                    className="w-full justify-start gap-2"
-                    onClick={() => {
-                      refreshPlanning();
-                      setMaintenanceOpen(false);
-                    }}
-                    disabled={refreshing}
+                    aria-label="Options de maintenance"
+                    onClick={() => setMaintenanceOpen((v) => !v)}
                   >
-                    <RotateCcw className="w-4 h-4" /> Recharger le planning
+                    <Settings className="w-5 h-5" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start gap-2"
-                    onClick={() => {
-                      fileRef.current?.click();
-                      setMaintenanceOpen(false);
-                    }}
-                  >
-                    <Upload className="w-4 h-4" /> Importer JSON
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start gap-2"
-                    onClick={() => {
-                      exportJSON();
-                      setMaintenanceOpen(false);
-                    }}
-                  >
-                    <Download className="w-4 h-4" /> Exporter JSON
-                  </Button>
-                  {view === "hours" && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start gap-2"
-                      onClick={() => {
-                        exportHoursCSV();
-                        setMaintenanceOpen(false);
-                      }}
-                    >
-                      <Download className="w-4 h-4" /> Export heures CSV
-                    </Button>
+                  {maintenanceOpen && (
+                    <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-white shadow-lg p-2 space-y-1">
+                      <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Maintenance</div>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          refreshPlanning();
+                          setMaintenanceOpen(false);
+                        }}
+                        disabled={refreshing}
+                      >
+                        <RotateCcw className="w-4 h-4" /> Recharger le planning
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          fileRef.current?.click();
+                          setMaintenanceOpen(false);
+                        }}
+                      >
+                        <Upload className="w-4 h-4" /> Importer JSON
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          exportJSON();
+                          setMaintenanceOpen(false);
+                        }}
+                      >
+                        <Download className="w-4 h-4" /> Exporter JSON
+                      </Button>
+                      {view === "hours" && (
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start gap-2"
+                          onClick={() => {
+                            exportHoursCSV();
+                            setMaintenanceOpen(false);
+                          }}
+                        >
+                          <Download className="w-4 h-4" /> Export heures CSV
+                        </Button>
+                      )}
+                      <div className="px-2 pt-1 text-[11px] text-neutral-500">
+                        Centralise les exports/imports pour garder le planning propre et synchronisé.
+                      </div>
+                    </div>
                   )}
-                  <div className="px-2 pt-1 text-[11px] text-neutral-500">
-                    Centralise les exports/imports pour garder le planning propre et synchronisé.
-                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
-        </div>
+        </Tabs>
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
