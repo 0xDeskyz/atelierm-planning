@@ -3559,7 +3559,7 @@ useEffect(() => {
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
                   const isCurrent = wkKey === todayWeekKey;
-                  const sitesForWeek = sites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  const sitesForWeek = plannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
                   return (
                     <div
                       key={idx}
