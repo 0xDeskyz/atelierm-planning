@@ -26,14 +26,19 @@ import {
   Download,
   Edit3,
   Eraser,
+  Key,
   LayoutDashboard,
   ListChecks,
+  Lock,
+  LogOut,
   MapPin,
   Plus,
   RotateCcw,
   Settings,
+  ShieldCheck,
   Trash2,
   Upload,
+  UserRound,
   Users,
 } from "lucide-react";
 
@@ -314,6 +319,42 @@ const DEMO_QUOTES = [
   { id: "q3", title: "Création terrasse", client: "M. Karim", amount: 7600, status: "pending", sentAt: todayKey },
   { id: "q4", title: "Salle de réunion", client: "Startup Hexa", amount: 9200, status: "won", sentAt: todayKey },
 ];
+const DEMO_USERS = [
+  normalizeUserRecord({
+    id: "u-admin",
+    name: "Admin",
+    email: "admin@example.com",
+    role: "admin",
+    passwordHash: encodePassword("admin123"),
+  }),
+  normalizeUserRecord({
+    id: "u-plan",
+    name: "Planificateur",
+    email: "planif@example.com",
+    role: "planner",
+    passwordHash: encodePassword("planif123"),
+  }),
+  normalizeUserRecord({
+    id: "u-lecture",
+    name: "Lecture",
+    email: "lecture@example.com",
+    role: "viewer",
+    passwordHash: encodePassword("lecture123"),
+  }),
+];
+const ROLE_PERMISSIONS: Record<
+  string,
+  { canPlan: boolean; canManageSites: boolean; canManagePeople: boolean; canManageQuotes: boolean; canMaintain: boolean }
+> = {
+  admin: { canPlan: true, canManageSites: true, canManagePeople: true, canManageQuotes: true, canMaintain: true },
+  planner: { canPlan: true, canManageSites: true, canManagePeople: true, canManageQuotes: true, canMaintain: false },
+  viewer: { canPlan: false, canManageSites: false, canManagePeople: false, canManageQuotes: false, canMaintain: false },
+};
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrateur",
+  planner: "Planification",
+  viewer: "Lecture",
+};
 const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
 const mapWeekDates = (src: Date[], dest: Date[]) => {
@@ -337,6 +378,17 @@ const hashString = (s: string) => {
   }
   return h;
 };
+const encodePassword = (s: string) => {
+  if (!s) return "";
+  try {
+    // btoa côté client ; Buffer côté Node
+    // eslint-disable-next-line no-undef
+    return typeof btoa !== "undefined" ? btoa(s) : Buffer.from(s, "utf-8").toString("base64");
+  } catch {
+    return s;
+  }
+};
+const verifyPassword = (hash: string, candidate: string) => hash === encodePassword(candidate || "");
 const parseWeekList = (input: string, fallbackYear: number) => {
   const tokens = input
     .split(/[,\s;]+/)
@@ -389,6 +441,16 @@ const normalizeSiteRecord = (site: any) => {
     contactName:
       (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
     contactPhone: (base as any)?.contactPhone || "",
+  };
+};
+const normalizeUserRecord = (u: any) => {
+  const base = typeof u === "object" && u !== null ? u : {};
+  return {
+    id: (base as any).id || ensureId(String((base as any).email || (base as any).name || "user"), "user"),
+    name: (base as any).name || "Utilisateur",
+    email: (base as any).email || "",
+    role: (base as any).role || "viewer",
+    passwordHash: typeof (base as any).passwordHash === "string" ? (base as any).passwordHash : encodePassword("changeme"),
   };
 };
 // Helper format FR (jour mois année)
@@ -1559,20 +1621,26 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
 // ==================================
 // Small helpers
 // ==================================
-function AddPerson({ onAdd }: { onAdd: (name: string, color: string, extra?: any) => void }) {
+function AddPerson({ onAdd, disabled = false }: { onAdd: (name: string, color: string, extra?: any) => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
+      <Button size="sm" onClick={() => setOpen(true)} disabled={disabled}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
       <AddPersonDialog open={open} setOpen={setOpen} onAdd={onAdd} />
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string, color: string) => void }) {
+function AddSite({
+  onAdd,
+  disabled = false,
+}: {
+  onAdd: (name: string, startDate: string, endDate: string, color: string) => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)} disabled={disabled}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
       <AddSiteDialog open={open} setOpen={setOpen} onAdd={onAdd} />
     </>
   );
@@ -1591,12 +1659,17 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
+  const [users, setUsers] = useState<any[]>(() => DEMO_USERS.map(normalizeUserRecord));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [hasPickedUser, setHasPickedUser] = useState(false);
   const [weatherTargetSite, setWeatherTargetSite] = useState<string | null>(null);
   const [weatherCache, setWeatherCache] = useState<Record<string, { loading?: boolean; data?: WeatherPayload; error?: string }>>(
     {}
   );
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
@@ -1606,6 +1679,102 @@ export default function Page() {
       : `client-${Date.now()}`
   );
   const today = useMemo(() => new Date(), []);
+  const [loginUserId, setLoginUserId] = useState<string>("");
+  const [loginPassword, setLoginPassword] = useState<string>("");
+  const [passwordEdit, setPasswordEdit] = useState<{ userId: string; password: string }>({ userId: "", password: "" });
+  const [newUserDraft, setNewUserDraft] = useState({ name: "", email: "", role: "viewer", password: "" });
+  const safeUsers = useMemo(() => toArray(users, DEMO_USERS).map(normalizeUserRecord), [users]);
+  const currentUser = useMemo(() => {
+    if (!currentUserId && hasPickedUser) return null;
+    return safeUsers.find((u) => u.id === currentUserId) || safeUsers[0] || null;
+  }, [currentUserId, hasPickedUser, safeUsers]);
+  const permissions = useMemo(
+    () => ROLE_PERMISSIONS[currentUser?.role || "viewer"] || ROLE_PERMISSIONS.viewer,
+    [currentUser?.role]
+  );
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("btp-planner-current-user");
+      if (stored) {
+        setCurrentUserId(stored);
+        setHasPickedUser(true);
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (!loginUserId && safeUsers.length > 0) {
+      setLoginUserId(safeUsers[0].id);
+    }
+  }, [loginUserId, safeUsers]);
+  useEffect(() => {
+    if (safeUsers.length === 0) return;
+    if (!hasPickedUser && (!currentUserId || !safeUsers.some((u) => u.id === currentUserId))) {
+      setCurrentUserId(safeUsers[0].id);
+    }
+  }, [currentUserId, hasPickedUser, safeUsers]);
+  useEffect(() => {
+    try {
+      if (currentUserId) localStorage.setItem("btp-planner-current-user", currentUserId);
+      else localStorage.removeItem("btp-planner-current-user");
+    } catch {}
+  }, [currentUserId]);
+
+  const logout = () => {
+    setCurrentUserId(null);
+    setHasPickedUser(true);
+    setLoginPassword("");
+  };
+
+  const handleLogin = () => {
+    const target = safeUsers.find((u) => u.id === loginUserId);
+    if (!target) {
+      alert("Sélectionnez un compte pour vous connecter.");
+      return;
+    }
+    if (!verifyPassword(target.passwordHash, loginPassword)) {
+      alert("Mot de passe incorrect");
+      return;
+    }
+    setCurrentUserId(target.id);
+    setHasPickedUser(true);
+    setAuthOpen(false);
+    setLoginPassword("");
+  };
+
+  const savePassword = () => {
+    const targetId = passwordEdit.userId || currentUser?.id;
+    if (!targetId) return;
+    if (!passwordEdit.password || passwordEdit.password.length < 4) {
+      alert("Mot de passe trop court (4 caractères minimum)");
+      return;
+    }
+    setUsers((prev) => prev.map((u) => (u.id === targetId ? { ...u, passwordHash: encodePassword(passwordEdit.password) } : u)));
+    setPasswordEdit({ userId: "", password: "" });
+    setAuthOpen(false);
+  };
+
+  const addUser = () => {
+    if (!permissions.canMaintain) {
+      alert("Seul un administrateur peut créer un compte");
+      return;
+    }
+    if (!newUserDraft.name.trim() || !newUserDraft.password.trim()) {
+      alert("Nom et mot de passe requis");
+      return;
+    }
+    const user = normalizeUserRecord({
+      ...newUserDraft,
+      passwordHash: encodePassword(newUserDraft.password),
+    });
+    setUsers((prev) => [...prev, user]);
+    setNewUserDraft({ name: "", email: "", role: "viewer", password: "" });
+  };
+
+  const updateUserRole = (id: string, role: string) => {
+    if (!permissions.canMaintain) return;
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+  };
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -2186,21 +2355,23 @@ export default function Page() {
   }, []);
 
   const saveQuoteDetail = useCallback(() => {
+    if (!permissions.canManageQuotes) return;
     if (!quoteDetail) return;
     const normalized = normalizeQuoteForSave(quoteDetail);
     setQuotes((prev) => prev.map((q) => (q.id === normalized.id ? normalized : q)));
     upsertChantierFromQuote(normalized);
     setQuoteDetailOpen(false);
-  }, [normalizeQuoteForSave, quoteDetail, upsertChantierFromQuote]);
+  }, [normalizeQuoteForSave, permissions.canManageQuotes, quoteDetail, upsertChantierFromQuote]);
 
   const deleteQuote = useCallback(() => {
+    if (!permissions.canManageQuotes) return;
     if (!quoteDetail) return;
     const confirmed = confirm("Supprimer ce devis ?");
     if (!confirmed) return;
     setQuotes((prev) => prev.filter((q) => q.id !== quoteDetail.id));
     setQuoteDetailOpen(false);
     setQuoteDetail(null);
-  }, [quoteDetail]);
+  }, [permissions.canManageQuotes, quoteDetail]);
 
   useEffect(() => {
     if (!quoteDetail) return;
@@ -2218,6 +2389,10 @@ export default function Page() {
   }, [safeQuotes, upsertChantierFromQuote]);
 
   const addQuote = () => {
+    if (!permissions.canManageQuotes) {
+      alert("Accès restreint : vous n'avez pas les droits pour créer un devis.");
+      return;
+    }
     if (!newQuote.title.trim()) {
       alert("Nom du devis requis");
       return;
@@ -2238,6 +2413,7 @@ export default function Page() {
 
   const isAbsentOnWeek = (pid: string, wk: string) => Boolean(absencesByWeek[wk]?.[pid]);
   const toggleAbsentThisWeek = (pid: string) => {
+    if (!permissions.canManagePeople) return;
     setAbsencesByWeek((prev) => {
       const week = { ...(prev[currentWeekKey] || {}) };
       week[pid] = !week[pid];
@@ -2246,6 +2422,7 @@ export default function Page() {
   };
 
   const onDragEnd = (e: any) => {
+    if (!permissions.canPlan) return;
     const { active, over } = e;
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
@@ -2351,10 +2528,18 @@ export default function Page() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
-  const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
+  const openNote = (date: Date, site: any) => {
+    if (!permissions.canPlan) return;
+    setNoteKeyState(cellKey(site.id, toLocalKey(date)));
+    setNoteOpen(true);
+  };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
 
   const clearCurrentWeek = () => {
+    if (!permissions.canPlan) {
+      alert("Accès restreint : lecture seule");
+      return;
+    }
     const confirmClear = window.confirm(
       "Supprimer toutes les affectations, notes et absences de la semaine courante ?"
     );
@@ -2379,6 +2564,10 @@ export default function Page() {
   };
 
   const copyFromPreviousWeek = () => {
+    if (!permissions.canPlan) {
+      alert("Accès restreint : lecture seule");
+      return;
+    }
     const ok = window.confirm("Copier la semaine précédente vers celle-ci ?");
     if (!ok) return;
     const prevDates = previousWeek.slice(0, 5);
@@ -2436,6 +2625,7 @@ export default function Page() {
     setSites((s) => s.map((x) => (x.id === id ? { ...x, startDate, endDate } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
   const updateAssignment = (id: string, changes: { hours?: any; portion?: any }) => {
+    if (!permissions.canPlan) return;
     setAssignments((prev) =>
       prev.map((a) => {
         if (a.id !== id) return a;
@@ -2455,7 +2645,11 @@ export default function Page() {
       })
     );
   };
-  const addPerson = (name: string, color: string, extra: any = {}) =>
+  const addPerson = (name: string, color: string, extra: any = {}) => {
+    if (!permissions.canManagePeople) {
+      alert("Accès restreint : vous n'avez pas les droits pour ajouter des salariés.");
+      return;
+    }
     setPeople((p) => [
       ...p,
       normalizePersonRecord({
@@ -2468,12 +2662,21 @@ export default function Page() {
         ...extra,
       }),
     ]);
+  };
   const removePerson = (id: string) => {
+    if (!permissions.canManagePeople) {
+      alert("Accès restreint : vous n'avez pas les droits pour retirer un salarié.");
+      return;
+    }
     setPeople((p) => p.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string, startDate: string, endDate: string, color: string) =>
+  const addSite = (name: string, startDate: string, endDate: string, color: string) => {
+    if (!permissions.canManageSites) {
+      alert("Accès restreint : vous n'avez pas les droits pour ajouter un chantier.");
+      return;
+    }
     setSites((s) => [
       ...s,
       normalizeSiteRecord({
@@ -2485,7 +2688,12 @@ export default function Page() {
         status: "planned",
       }),
     ]);
+  };
   const removeSite = (id: string) => {
+    if (!permissions.canManageSites) {
+      alert("Accès restreint : vous n'avez pas les droits pour retirer ce chantier.");
+      return;
+    }
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
@@ -2539,6 +2747,7 @@ export default function Page() {
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
   const applyState = useCallback((state: any) => {
+    setUsers(toArray(state.users, DEMO_USERS).map(normalizeUserRecord));
     setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments));
@@ -2689,6 +2898,7 @@ useEffect(() => {
     siteWeekVisibility,
     hoursPerDay,
     quotes,
+    users,
     updatedAt: stamp,
     clientId: clientIdRef.current,
   };
@@ -2696,7 +2906,7 @@ useEffect(() => {
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
+}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes, users]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -2768,7 +2978,7 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, users };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2816,8 +3026,9 @@ useEffect(() => {
     URL.revokeObjectURL(url);
   };
   const onImport = (e: any) => {
+    if (!permissions.canMaintain) return;
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setUsers(toArray(data.users, DEMO_USERS).map(normalizeUserRecord)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -2865,7 +3076,45 @@ useEffect(() => {
                   <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
                 </TabsList>
               </div>
-              <div className="flex items-center gap-2" ref={maintenanceRef}>
+              <div className="flex flex-wrap items-center gap-3" ref={maintenanceRef}>
+                <div className="flex items-center gap-2">
+                  {currentUser ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 shadow-sm">
+                        <div className="w-9 h-9 rounded-full bg-neutral-900 text-white flex items-center justify-center font-semibold uppercase">
+                          {(currentUser.name || "?").slice(0, 2)}
+                        </div>
+                        <div className="leading-tight text-left">
+                          <div className="text-sm font-semibold text-neutral-900">{currentUser.name}</div>
+                          <div className="text-[11px] text-neutral-500">{ROLE_LABELS[currentUser.role] || "Lecture"}</div>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => {
+                          setPasswordEdit({ userId: currentUser.id, password: "" });
+                          setAuthOpen(true);
+                        }}
+                      >
+                        <Key className="w-4 h-4" /> Sécurité
+                      </Button>
+                      {permissions.canMaintain && (
+                        <Button size="sm" variant="ghost" className="gap-1" onClick={() => setAccessOpen(true)}>
+                          <ShieldCheck className="w-4 h-4" /> Accès
+                        </Button>
+                      )}
+                      <Button size="icon" variant="ghost" aria-label="Déconnexion" onClick={logout}>
+                        <LogOut className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button size="sm" className="gap-1" onClick={() => setAuthOpen(true)}>
+                      <Lock className="w-4 h-4" /> Connexion
+                    </Button>
+                  )}
+                </div>
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
                 <div className="relative">
                   <Button
@@ -2873,6 +3122,7 @@ useEffect(() => {
                     variant="ghost"
                     aria-label="Options de maintenance"
                     onClick={() => setMaintenanceOpen((v) => !v)}
+                    disabled={!permissions.canMaintain}
                   >
                     <Settings className="w-5 h-5" />
                   </Button>
@@ -2886,7 +3136,7 @@ useEffect(() => {
                           refreshPlanning();
                           setMaintenanceOpen(false);
                         }}
-                        disabled={refreshing}
+                        disabled={refreshing || !permissions.canMaintain}
                       >
                         <RotateCcw className="w-4 h-4" /> Recharger le planning
                       </Button>
@@ -2897,6 +3147,7 @@ useEffect(() => {
                           fileRef.current?.click();
                           setMaintenanceOpen(false);
                         }}
+                        disabled={!permissions.canMaintain}
                       >
                         <Upload className="w-4 h-4" /> Importer JSON
                       </Button>
@@ -2907,6 +3158,7 @@ useEffect(() => {
                           exportJSON();
                           setMaintenanceOpen(false);
                         }}
+                        disabled={!permissions.canMaintain}
                       >
                         <Download className="w-4 h-4" /> Exporter JSON
                       </Button>
@@ -2918,6 +3170,7 @@ useEffect(() => {
                             exportHoursCSV();
                             setMaintenanceOpen(false);
                           }}
+                          disabled={!permissions.canMaintain}
                         >
                           <Download className="w-4 h-4" /> Export heures CSV
                         </Button>
@@ -3445,7 +3698,7 @@ useEffect(() => {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">Salariés</div>
-                  <AddPerson onAdd={addPerson} />
+                      <AddPerson onAdd={addPerson} disabled={!permissions.canManagePeople} />
                 </div>
                 <div className="space-y-2">
                   {people.map((p) => (
@@ -3477,7 +3730,7 @@ useEffect(() => {
                       </span>
                     )}
                   </div>
-                  <AddSite onAdd={addSite} />
+                  <AddSite onAdd={addSite} disabled={!permissions.canManageSites} />
                 </div>
                 <div className="space-y-2">
                   {plannedSites.map((s) => (
@@ -3498,7 +3751,7 @@ useEffect(() => {
                           }}
                           aria-label={`Renommer ${s.name}`}
                         ><Edit3 className="w-4 h-4" /></Button>
-                        <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
+                        <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`} disabled={!permissions.canManageSites}><Trash2 className="w-4 h-4" /></Button>
                       </div>
                     </div>
                   ))}
@@ -4033,7 +4286,7 @@ useEffect(() => {
                           {safePeople.length} personne{safePeople.length > 1 ? "s" : ""}
                         </span>
                       </div>
-                      <AddPerson onAdd={addPerson} />
+                      <AddPerson onAdd={addPerson} disabled={!permissions.canManagePeople} />
                     </div>
                     <div className="grid md:grid-cols-2 gap-2">
                       {safePeople.map((p) => (
@@ -4238,6 +4491,180 @@ useEffect(() => {
           onSave={savePersonDetail}
         />
       )}
+
+      <Dialog open={authOpen} onOpenChange={setAuthOpen}>
+        <DialogContent className="max-w-lg space-y-3">
+          <DialogHeader>
+            <DialogTitle>Connexion & sécurité</DialogTitle>
+            <DialogDescription>
+              Sélectionnez un compte puis saisissez le mot de passe pour déverrouiller les actions réservées.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <div className="text-sm font-semibold">Compte</div>
+              <select
+                value={loginUserId}
+                onChange={(e) => setLoginUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-neutral-300 px-3"
+              >
+                {safeUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} · {ROLE_LABELS[u.role] || u.role}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid gap-1">
+              <div className="text-sm font-semibold">Mot de passe</div>
+              <Input
+                type="password"
+                value={loginPassword}
+                onChange={(e: any) => setLoginPassword(e.target.value)}
+                placeholder="••••••"
+              />
+            </div>
+            <Button onClick={handleLogin} className="w-full" disabled={!loginUserId || !loginPassword}>
+              Se connecter
+            </Button>
+          </div>
+
+          {currentUser && (
+            <div className="space-y-2 border-t pt-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <ShieldCheck className="w-4 h-4" /> Mise à jour du mot de passe
+              </div>
+              <div className="grid md:grid-cols-2 gap-2">
+                {permissions.canMaintain && (
+                  <div className="grid gap-1">
+                    <div className="text-xs text-neutral-600">Choisir le compte à mettre à jour</div>
+                    <select
+                      value={passwordEdit.userId || currentUser.id}
+                      onChange={(e) => setPasswordEdit((prev) => ({ ...prev, userId: e.target.value }))}
+                      className="h-9 rounded-md border border-neutral-300 px-3"
+                    >
+                      {safeUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({ROLE_LABELS[u.role] || u.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid gap-1">
+                  <div className="text-xs text-neutral-600">Nouveau mot de passe</div>
+                  <Input
+                    type="password"
+                    value={passwordEdit.password}
+                    onChange={(e: any) => setPasswordEdit((prev) => ({ ...prev, password: e.target.value }))}
+                    placeholder="Mettre à jour"
+                  />
+                  <Button onClick={savePassword} disabled={!passwordEdit.password} className="justify-center">
+                    Mettre à jour
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={accessOpen} onOpenChange={setAccessOpen}>
+        <DialogContent className="max-w-3xl space-y-3">
+          <DialogHeader>
+            <DialogTitle>Gestion des accès</DialogTitle>
+            <DialogDescription>
+              Administrez les rôles et mots de passe pour contrôler qui peut modifier le planning.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="space-y-2 max-h-96 overflow-auto pr-1">
+              {safeUsers.map((u) => (
+                <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border bg-white p-3 shadow-sm">
+                  <div className="space-y-0.5">
+                    <div className="font-semibold flex items-center gap-2">
+                      <UserRound className="w-4 h-4 text-neutral-500" /> {u.name}
+                    </div>
+                    <div className="text-xs text-neutral-500">{u.email || "Email non renseigné"}</div>
+                    <div className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full inline-block">
+                      {ROLE_LABELS[u.role] || u.role}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={u.role}
+                      onChange={(e) => updateUserRole(u.id, e.target.value)}
+                      disabled={!permissions.canMaintain}
+                      className="h-9 rounded-md border border-neutral-300 px-2 text-sm"
+                    >
+                      {Object.keys(ROLE_LABELS).map((role) => (
+                        <option key={role} value={role}>
+                          {ROLE_LABELS[role]}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Changer le mot de passe"
+                      onClick={() => {
+                        setPasswordEdit({ userId: u.id, password: "" });
+                        setAccessOpen(false);
+                        setAuthOpen(true);
+                      }}
+                    >
+                      <Key className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {safeUsers.length === 0 && (
+                <div className="text-sm text-neutral-500">Aucun compte défini.</div>
+              )}
+            </div>
+            <div className="space-y-2 rounded-lg border bg-neutral-50 p-3">
+              <div className="font-semibold">Créer un nouveau compte</div>
+              <div className="text-xs text-neutral-600">Réservé aux administrateurs.</div>
+              <div className="grid gap-2">
+                <Input
+                  placeholder="Nom complet"
+                  value={newUserDraft.name}
+                  onChange={(e: any) => setNewUserDraft((p) => ({ ...p, name: e.target.value }))}
+                  disabled={!permissions.canMaintain}
+                />
+                <Input
+                  placeholder="Email (optionnel)"
+                  value={newUserDraft.email}
+                  onChange={(e: any) => setNewUserDraft((p) => ({ ...p, email: e.target.value }))}
+                  disabled={!permissions.canMaintain}
+                />
+                <select
+                  value={newUserDraft.role}
+                  onChange={(e) => setNewUserDraft((p) => ({ ...p, role: e.target.value }))}
+                  className="h-9 rounded-md border border-neutral-300 px-2 text-sm"
+                  disabled={!permissions.canMaintain}
+                >
+                  {Object.keys(ROLE_LABELS).map((role) => (
+                    <option key={role} value={role}>
+                      {ROLE_LABELS[role]}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  type="password"
+                  placeholder="Mot de passe provisoire"
+                  value={newUserDraft.password}
+                  onChange={(e: any) => setNewUserDraft((p) => ({ ...p, password: e.target.value }))}
+                  disabled={!permissions.canMaintain}
+                />
+                <Button onClick={addUser} disabled={!permissions.canMaintain} className="justify-center">
+                  Ajouter le compte
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
       <RenameDialog
