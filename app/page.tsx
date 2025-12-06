@@ -381,6 +381,7 @@ const normalizeSiteRecord = (site: any) => {
     color,
     status,
     planningWeeks,
+    city: (base as any)?.city?.trim?.() || (base as any)?.city || (base as any)?.cityOrPostal || "",
     address: (base as any)?.address?.trim?.() || (base as any)?.address || "",
     clientName: (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
     contactName:
@@ -411,7 +412,8 @@ const formatEUR = (val?: number) => {
     return `${val} €`;
   }
 };
-type WeatherDay = { date: string; min?: number; max?: number; rain?: number };
+type WeatherSegment = { label: string; rain?: number; hour?: string; temp?: number };
+type WeatherDay = { date: string; min?: number; max?: number; rain?: number; segments: WeatherSegment[] };
 type WeatherPayload = { location: string; days: WeatherDay[] };
 const normalizeAddressInput = (raw: string) =>
   raw
@@ -421,7 +423,7 @@ const normalizeAddressInput = (raw: string) =>
     .trim();
 async function fetchWeatherForRange(address: string, start: Date, end: Date): Promise<WeatherPayload> {
   const cleaned = normalizeAddressInput(address || "");
-  if (!cleaned) throw new Error("Adresse manquante pour ce chantier");
+  if (!cleaned) throw new Error("Lieu manquant (ville ou code postal)");
 
   const candidates = Array.from(
     new Set(
@@ -448,6 +450,7 @@ async function fetchWeatherForRange(address: string, start: Date, end: Date): Pr
   const wxUrl =
     `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto` +
+    `&hourly=temperature_2m,precipitation_probability` +
     `&start_date=${startDate}&end_date=${endDate}`;
   const wxResp = await fetch(wxUrl, { cache: "no-store" });
   if (!wxResp.ok) throw new Error("Météo indisponible");
@@ -455,11 +458,49 @@ async function fetchWeatherForRange(address: string, start: Date, end: Date): Pr
   const times: string[] = wxJson?.daily?.time || [];
   if (!times.length) throw new Error("Aucune donnée météo disponible");
 
+  const hourlyTimes: string[] = wxJson?.hourly?.time || [];
+  const hourlyRain: number[] = wxJson?.hourly?.precipitation_probability || [];
+  const hourlyTemp: number[] = wxJson?.hourly?.temperature_2m || [];
+  const byDate: Record<string, { hour: number; index: number }[]> = {};
+  hourlyTimes.forEach((iso, idx) => {
+    const [d, hRaw] = iso.split("T");
+    const hour = Number((hRaw || "00").slice(0, 2));
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push({ hour, index: idx });
+  });
+
+  const segmentsDef = [
+    { label: "Matin", start: 6, end: 11 },
+    { label: "Après-midi", start: 12, end: 17 },
+    { label: "Soir", start: 18, end: 23 },
+  ];
+
   const days: WeatherDay[] = times.map((date: string, idx: number) => ({
     date,
     min: wxJson?.daily?.temperature_2m_min?.[idx],
     max: wxJson?.daily?.temperature_2m_max?.[idx],
     rain: wxJson?.daily?.precipitation_probability_max?.[idx],
+    segments: segmentsDef.map((seg) => {
+      const hours = (byDate[date] || []).filter((h) => h.hour >= seg.start && h.hour <= seg.end);
+      const rainVals = hours
+        .map((h) => hourlyRain?.[h.index])
+        .filter((v) => v !== undefined && v !== null)
+        .map((v) => Number(v));
+      const tempVals = hours
+        .map((h) => hourlyTemp?.[h.index])
+        .filter((v) => Number.isFinite(v))
+        .map((v) => Number(v));
+      const rain = rainVals.length ? Math.max(...rainVals) : undefined;
+      const peakIdx = rain !== undefined ? rainVals.indexOf(rain) : -1;
+      const peakHour = peakIdx >= 0 ? hours[peakIdx]?.hour : undefined;
+      const temp = tempVals.length ? tempVals.reduce((sum, v) => sum + v, 0) / tempVals.length : undefined;
+      return {
+        label: seg.label,
+        rain,
+        hour: peakHour !== undefined ? `${String(peakHour).padStart(2, "0")}h` : undefined,
+        temp,
+      };
+    }),
   }));
 
   const location = [loc.name, loc.admin1, loc.country_code].filter(Boolean).join(" · ");
@@ -481,6 +522,7 @@ const normalizeQuoteRecord = (quote: any) => {
     dueDate: (base as any)?.dueDate || undefined,
     status,
     address: (base as any)?.address?.trim?.() || undefined,
+    city: (base as any)?.city?.trim?.() || (base as any)?.cityOrPostal || undefined,
     contactName: (base as any)?.contactName?.trim?.() || (base as any)?.client || undefined,
     contactPhone: (base as any)?.contactPhone?.trim?.() || undefined,
     plannedStart: (base as any)?.plannedStart || undefined,
@@ -1106,6 +1148,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
   const [endDate, setEndDate] = useState<string>("");
   const [clientName, setClientName] = useState<string>("");
   const [address, setAddress] = useState<string>("");
+  const [city, setCity] = useState<string>("");
   const [contactName, setContactName] = useState<string>("");
   const [contactPhone, setContactPhone] = useState<string>("");
   const [weeks, setWeeks] = useState<string>("");
@@ -1118,6 +1161,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
     setEndDate(site?.endDate || "");
     setClientName(site?.clientName || site?.quoteSnapshot?.client || "");
     setAddress(site?.address || "");
+    setCity(site?.city || "");
     setContactName(site?.contactName || site?.clientName || site?.quoteSnapshot?.client || "");
     setContactPhone(site?.contactPhone || "");
     setWeeks((site?.planningWeeks || []).join(", "));
@@ -1141,6 +1185,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
       endDate,
       clientName,
       address,
+      city,
       contactName,
       contactPhone,
       planningWeeks: parsedWeeks,
@@ -1201,6 +1246,10 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
             <label className="space-y-1">
               <span className="text-[11px] text-neutral-600">Client</span>
               <Input value={clientName} onChange={(e: any) => setClientName(e.target.value)} placeholder="Nom du client" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-neutral-600">Ville ou code postal</span>
+              <Input value={city} onChange={(e: any) => setCity(e.target.value)} placeholder="Ex: 75012 Paris" />
             </label>
             <label className="space-y-1">
               <span className="text-[11px] text-neutral-600">Adresse</span>
@@ -1754,10 +1803,11 @@ export default function Page() {
       if (!weatherTargetSite || !weatherKey) return;
       const site = sitesById[weatherTargetSite];
       if (!site) return;
-      if (!site.address) {
+      const locationInput = site.city || site.address;
+      if (!locationInput) {
         setWeatherCache((prev) => ({
           ...prev,
-          [weatherKey]: { loading: false, data: prev[weatherKey]?.data, error: "Adresse manquante pour ce chantier" },
+          [weatherKey]: { loading: false, data: prev[weatherKey]?.data, error: "Ville ou code postal manquant" },
         }));
         return;
       }
@@ -1765,7 +1815,7 @@ export default function Page() {
       if (weatherEntry?.data && !force) return;
       setWeatherCache((prev) => ({ ...prev, [weatherKey]: { ...(prev[weatherKey] || {}), loading: true, error: undefined } }));
       try {
-        const payload = await fetchWeatherForRange(site.address, weatherRange.start, weatherRange.end);
+        const payload = await fetchWeatherForRange(locationInput, weatherRange.start, weatherRange.end);
         setWeatherCache((prev) => ({ ...prev, [weatherKey]: { loading: false, data: payload } }));
       } catch (err: any) {
         setWeatherCache((prev) => ({
@@ -2036,6 +2086,7 @@ export default function Page() {
             startDate: existing.startDate || baseStart,
             endDate: existing.endDate || baseEnd,
             address: existing.address || normalizedQuote.address,
+            city: existing.city || normalizedQuote.city,
             clientName: existing.clientName || normalizedQuote.client,
             contactName: existing.contactName || normalizedQuote.contactName || normalizedQuote.client,
             contactPhone: existing.contactPhone || normalizedQuote.contactPhone,
@@ -2056,6 +2107,7 @@ export default function Page() {
           endDate: baseEnd,
           color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
           address: normalizedQuote.address,
+          city: normalizedQuote.city,
           clientName: normalizedQuote.client,
           contactName: normalizedQuote.contactName || normalizedQuote.client,
           contactPhone: normalizedQuote.contactPhone,
@@ -2937,103 +2989,126 @@ useEffect(() => {
       </div>
 
       {view === "planning" && (
-        <Card className="border-sky-100 bg-gradient-to-r from-sky-50 via-white to-white shadow-sm">
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="h-9 w-9 rounded-full bg-sky-600 text-white flex items-center justify-center shadow-inner">
-                  <CloudSunRain className="w-5 h-5" />
+        <div className="w-full flex justify-center">
+          <Card className="border-sky-100 bg-white/90 shadow-sm max-w-6xl w-full">
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-full bg-sky-600 text-white flex items-center justify-center shadow-inner">
+                    <CloudSunRain className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold">Météo du chantier</div>
+                    <div className="text-xs text-neutral-600">Prévisions par ville/code postal sur la période visible.</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-semibold">Météo du chantier</div>
-                  <div className="text-xs text-neutral-600">Prévisions sur la période affichée selon l'adresse du chantier.</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-9 rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 min-w-[200px]"
+                    value={weatherTargetSite || ""}
+                    onChange={(e) => setWeatherTargetSite(e.target.value || null)}
+                  >
+                    {(plannedSites.length ? plannedSites : safeSites).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                    {plannedSites.length === 0 && safeSites.length === 0 && (
+                      <option value="">Aucun chantier planifié</option>
+                    )}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refreshWeather(true)}
+                    disabled={!weatherTargetSite || weatherEntry?.loading}
+                  >
+                    <RotateCcw className="w-4 h-4 mr-1" /> Actualiser
+                  </Button>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="h-9 rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 min-w-[200px]"
-                  value={weatherTargetSite || ""}
-                  onChange={(e) => setWeatherTargetSite(e.target.value || null)}
-                >
-                  {(plannedSites.length ? plannedSites : safeSites).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                  {plannedSites.length === 0 && safeSites.length === 0 && (
-                    <option value="">Aucun chantier planifié</option>
-                  )}
-                </select>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => refreshWeather(true)}
-                  disabled={!weatherTargetSite || weatherEntry?.loading}
-                >
-                  <RotateCcw className="w-4 h-4 mr-1" /> Actualiser
-                </Button>
-              </div>
-            </div>
 
-            {weatherSite && (
-              <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-700">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                  <MapPin className="w-3 h-3 text-sky-600" />
-                  {weatherSite.address || "Adresse non renseignée"}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                  {weatherRangeLabel}
-                </span>
-                {weatherEntry?.data?.location && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-sky-800 border border-sky-200">
-                    Zone détectée : {weatherEntry.data.location}
+              {weatherSite && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
+                    <MapPin className="w-3 h-3 text-sky-600" />
+                    {weatherSite.city || weatherSite.address || "Ville non renseignée"}
                   </span>
-                )}
-              </div>
-            )}
+                  {weatherSite.address && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200 text-[11px] text-neutral-600">
+                      {weatherSite.address}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
+                    {weatherRangeLabel}
+                  </span>
+                  {weatherEntry?.data?.location && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-sky-800 border border-sky-200">
+                      Zone détectée : {weatherEntry.data.location}
+                    </span>
+                  )}
+                </div>
+              )}
 
-            {weatherEntry?.error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{weatherEntry.error}</div>
-            )}
-            {weatherEntry?.loading && (
-              <div className="text-sm text-neutral-600">Récupération de la météo en cours…</div>
-            )}
-            {!weatherEntry?.loading && !weatherEntry?.data && !weatherEntry?.error && (
-              <div className="text-sm text-neutral-600">
-                Sélectionnez un chantier planifié avec une adresse pour afficher la météo de la période.
-              </div>
-            )}
-            {weatherEntry?.data && (
-              <div className="grid gap-2 md:grid-cols-3">
-                {weatherDays.map((day) => {
-                  const date = fromLocalKey(day.date);
-                  const label = date.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
-                  return (
-                    <div key={day.date} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm space-y-1">
-                      <div className="flex items-center justify-between text-sm font-semibold">
-                        <span className="capitalize">{label}</span>
-                        {day.rain !== undefined && day.rain !== null && (
-                          <span className="text-[11px] text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">
-                            {Math.round(day.rain)}% pluie
+              {weatherEntry?.error && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{weatherEntry.error}</div>
+              )}
+              {weatherEntry?.loading && (
+                <div className="text-sm text-neutral-600">Récupération de la météo en cours…</div>
+              )}
+              {!weatherEntry?.loading && !weatherEntry?.data && !weatherEntry?.error && (
+                <div className="text-sm text-neutral-600">
+                  Sélectionnez un chantier planifié avec une ville ou un code postal pour afficher la météo.
+                </div>
+              )}
+              {weatherEntry?.data && (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                  {weatherDays.map((day) => {
+                    const date = fromLocalKey(day.date);
+                    const label = date.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+                    return (
+                      <div key={day.date} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm space-y-2 text-[12px]">
+                        <div className="flex items-center justify-between font-semibold">
+                          <span className="capitalize">{label}</span>
+                          {day.rain !== undefined && day.rain !== null && (
+                            <span className="text-[11px] text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">
+                              {Math.round(day.rain)}% pluie
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-neutral-800">
+                          <CloudSunRain className="w-4 h-4 text-sky-600" />
+                          <span>
+                            {day.min !== undefined ? `${Math.round(day.min)}°` : "–"} / {day.max !== undefined ? `${Math.round(day.max)}°` : "–"}
                           </span>
-                        )}
+                        </div>
+                        <div className="space-y-1">
+                          {day.segments.map((seg) => (
+                            <div key={`${day.date}-${seg.label}`} className="flex items-center justify-between text-[11px]">
+                              <span className="text-neutral-600">{seg.label}</span>
+                              {seg.rain !== undefined ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-700">
+                                  <span>{Math.round(seg.rain)}%</span>
+                                  {seg.hour && <span className="text-[10px] text-neutral-500">{seg.hour}</span>}
+                                  {seg.temp !== undefined && <span className="text-[10px] text-neutral-500">{Math.round(seg.temp)}°</span>}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400">–</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-neutral-800">
-                        <CloudSunRain className="w-4 h-4 text-sky-600" />
-                        <span>
-                          {day.min !== undefined ? `${Math.round(day.min)}°` : "–"} / {day.max !== undefined ? `${Math.round(day.max)}°` : "–"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {weatherDays.length === 0 && (
-                  <div className="text-sm text-neutral-600">Aucune journée ouvrée dans la période sélectionnée.</div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    );
+                  })}
+                  {weatherDays.length === 0 && (
+                    <div className="text-sm text-neutral-600">Aucune journée ouvrée dans la période sélectionnée.</div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {view === "dashboard" && (
@@ -3992,11 +4067,18 @@ useEffect(() => {
                   placeholder="Téléphone"
                 />
               </div>
-              <Input
-                value={quoteDetail.address || ""}
-                onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, address: e.target.value } : prev))}
-                placeholder="Adresse du chantier"
-              />
+              <div className="grid md:grid-cols-2 gap-2">
+                <Input
+                  value={quoteDetail.city || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, city: e.target.value } : prev))}
+                  placeholder="Ville ou code postal"
+                />
+                <Input
+                  value={quoteDetail.address || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, address: e.target.value } : prev))}
+                  placeholder="Adresse du chantier"
+                />
+              </div>
               <div className="grid md:grid-cols-2 gap-2">
                 <Input
                   type="date"
