@@ -736,6 +736,21 @@ function QuoteColumn({ col, items, onOpenQuote }: any) {
     id: `quote-col-${col.id}`,
     data: { type: "quote-column", status: col.id },
   });
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((quote: any) => {
+      const haystack = `${quote.title || ""} ${quote.client || ""} ${quote.note || ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [items, query]);
+
+  const limit = 10;
+  const visible = expanded ? filtered : filtered.slice(0, limit);
+  const hiddenCount = Math.max(0, filtered.length - visible.length);
 
   return (
     <div
@@ -747,22 +762,53 @@ function QuoteColumn({ col, items, onOpenQuote }: any) {
       )}
       ref={setNodeRef}
     >
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
           <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
           <div className="text-xs text-neutral-600">{col.hint}</div>
         </div>
-        <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>{items.length}</span>
+        <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>
+          {filtered.length}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-neutral-600">
+        <div className="flex-1 min-w-0">
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setExpanded(false);
+            }}
+            className="w-full rounded-lg border border-neutral-300 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-sky-300"
+            placeholder="Filtrer par client ou titre"
+          />
+        </div>
+        {filtered.length > limit && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="px-2 py-1 rounded-full border border-neutral-300 bg-white hover:bg-neutral-100"
+          >
+            {expanded ? "Réduire" : `+${hiddenCount} autres`}
+          </button>
+        )}
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[70vh]">
-        {items.length === 0 && (
+        {filtered.length === 0 && (
           <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
             Rien ici pour l'instant.
           </div>
         )}
-        {items.map((q: any) => (
+        {visible.map((q: any) => (
           <QuoteCard key={q.id} quote={q} tone={tone} onOpen={() => onOpenQuote(q)} />
         ))}
+        {!expanded && hiddenCount > 0 && (
+          <button
+            onClick={() => setExpanded(true)}
+            className="w-full text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg py-2 hover:bg-sky-100"
+          >
+            Afficher {hiddenCount} devis supplémentaires
+          </button>
+        )}
       </div>
     </div>
   );
