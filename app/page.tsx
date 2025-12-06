@@ -2600,7 +2600,7 @@ useEffect(() => {
       {/* Header */}
       <div className="space-y-3">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-          <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
+          <div className="relative rounded-2xl border bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-gradient-to-r from-neutral-50 to-white">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-semibold">BT</div>
@@ -2627,10 +2627,10 @@ useEffect(() => {
                 </TabsList>
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-neutral-50">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-neutral-50 border-t">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wide text-neutral-500">Gestion</span>
-                <TabsList className="bg-white border border-neutral-200 shadow-sm">
+                <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
                   <TabsTrigger value="devis">Devis</TabsTrigger>
                   <TabsTrigger value="sites">Mes chantiers</TabsTrigger>
                   <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
