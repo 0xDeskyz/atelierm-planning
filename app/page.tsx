@@ -2992,8 +2992,8 @@ useEffect(() => {
       </div>
 
       {view === "planning" && (
-        <div className="w-full flex justify-center">
-          <Card className="border-sky-100 bg-white/90 shadow-sm max-w-7xl w-full">
+        <div className="w-full">
+          <Card className="border-sky-100 bg-white/90 shadow-sm w-full">
             <CardContent className="space-y-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
