@@ -610,6 +610,44 @@ function QuoteCard({ quote, tone, onOpen }: any) {
   );
 }
 
+function QuoteColumn({ col, items, onOpenQuote }: any) {
+  const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
+  const { setNodeRef, isOver } = useDroppable({
+    id: `quote-col-${col.id}`,
+    data: { type: "quote-column", status: col.id },
+  });
+
+  return (
+    <div
+      className={cx(
+        "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] bg-white",
+        tone.bg,
+        tone.border,
+        isOver && "ring-2 ring-sky-300"
+      )}
+      ref={setNodeRef}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
+          <div className="text-xs text-neutral-600">{col.hint}</div>
+        </div>
+        <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>{items.length}</span>
+      </div>
+      <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[70vh]">
+        {items.length === 0 && (
+          <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
+            Rien ici pour l'instant.
+          </div>
+        )}
+        {items.map((q: any) => (
+          <QuoteCard key={q.id} quote={q} tone={tone} onOpen={() => onOpenQuote(q)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, getInfo }: any) {
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
@@ -2979,51 +3017,14 @@ useEffect(() => {
                       <div className="text-xs text-neutral-600">Toutes les colonnes sont visibles sans défilement horizontal. Les cartes affichent l'essentiel et s'ouvrent au clic pour le reste.</div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                        {QUOTE_COLUMNS.map((col) => {
-                          const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
-                          const items = quotesByColumn[col.id] || [];
-                          const { setNodeRef, isOver } = useDroppable({
-                            id: `quote-col-${col.id}`,
-                            data: { type: "quote-column", status: col.id },
-                          });
-                          return (
-                            <div
-                              key={col.id}
-                              className={cx(
-                                "rounded-xl border p-3 flex flex-col gap-2 min-h-[200px] bg-white",
-                                tone.bg,
-                                tone.border,
-                                isOver && "ring-2 ring-sky-300"
-                              )}
-                              ref={setNodeRef}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className={cx("text-sm font-semibold", tone.text)}>{col.label}</div>
-                                  <div className="text-xs text-neutral-600">{col.hint}</div>
-                                </div>
-                                <span className={cx("px-2 py-1 rounded-full text-xs font-semibold", tone.bg, tone.text, tone.border)}>
-                                  {items.length}
-                                </span>
-                              </div>
-                              <div className="flex-1 space-y-2 overflow-y-auto pr-1 max-h-[70vh]">
-                                {items.length === 0 && (
-                                  <div className="text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-lg px-2 py-4 text-center">
-                                    Rien ici pour l'instant.
-                                  </div>
-                                )}
-                                {items.map((q) => (
-                                  <QuoteCard
-                                    key={q.id}
-                                    quote={q}
-                                    tone={tone}
-                                    onOpen={() => openQuoteDetail(q)}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {QUOTE_COLUMNS.map((col) => (
+                          <QuoteColumn
+                            key={col.id}
+                            col={col}
+                            items={quotesByColumn[col.id] || []}
+                            onOpenQuote={openQuoteDetail}
+                          />
+                        ))}
                       </div>
                     </div>
                   </CardContent>
