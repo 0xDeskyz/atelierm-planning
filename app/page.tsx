@@ -242,7 +242,13 @@ function PersonChip({ person }: any) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`select-none touch-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}
+    >
       <Users className="w-4 h-4" /> {person.name}
     </div>
   );
@@ -258,7 +264,13 @@ function AssignmentChip({ a, person, onRemove }: any) {
   });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5 } : undefined;
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""}`}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none touch-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""}`}
+    >
       <span>{person.name}</span>
       <button className="ml-1 w-4 h-4 leading-none rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center" title="Retirer du jour" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
     </div>
@@ -510,8 +522,13 @@ export default function Page() {
 
   // DnD sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 180, tolerance: 6 },
+      onActivation: ({ event }: any) => {
+        if (event?.cancelable) event.preventDefault();
+      },
+    })
   );
 
   const isAbsentOnWeek = (pid: string, wk: string) => Boolean(absencesByWeek[wk]?.[pid]);
