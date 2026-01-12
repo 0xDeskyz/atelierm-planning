@@ -1,4 +1,4 @@
-﻿import { list, put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
 
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   const pathname = `planner/${params.key}.json`; // ex: planner/2025-W45.json
