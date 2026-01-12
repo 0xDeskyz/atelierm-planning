@@ -240,7 +240,9 @@ function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
 // ==================================
 function PersonChip({ person }: any) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: "none" }
+    : { touchAction: "none" };
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
       <Users className="w-4 h-4" /> {person.name}
@@ -256,7 +258,9 @@ function AssignmentChip({ a, person, onRemove }: any) {
     id: `assign-${a.id}`,
     data: { type: "assignment", assignmentId: a.id, personId: a.personId, from: { siteId: a.siteId, dateKey: a.date } },
   });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5 } : undefined;
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5, touchAction: "none" }
+    : { touchAction: "none" };
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""}`}>
       <span>{person.name}</span>
@@ -507,11 +511,12 @@ export default function Page() {
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
+  const bodyTouchAction = useRef<string | null>(null);
 
   // DnD sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   );
 
   const isAbsentOnWeek = (pid: string, wk: string) => Boolean(absencesByWeek[wk]?.[pid]);
@@ -558,6 +563,26 @@ export default function Page() {
       setAssignments((prev) => prev.map((a) => (a.id === assId ? { ...a, date: targetDateKey, siteId: targetSite.id } : a)));
       return;
     }
+  };
+  const resetBodyTouchAction = () => {
+    if (typeof document === "undefined") return;
+    if (bodyTouchAction.current === null) return;
+    document.body.style.touchAction = bodyTouchAction.current;
+    bodyTouchAction.current = null;
+  };
+  const onDragStart = () => {
+    if (typeof document === "undefined") return;
+    if (bodyTouchAction.current === null) {
+      bodyTouchAction.current = document.body.style.touchAction;
+    }
+    document.body.style.touchAction = "none";
+  };
+  const handleDragEnd = (e: any) => {
+    onDragEnd(e);
+    resetBodyTouchAction();
+  };
+  const handleDragCancel = () => {
+    resetBodyTouchAction();
   };
 
   const shift = (delta: number) => {
@@ -740,7 +765,13 @@ useEffect(() => {
       </div>
 
       {/* DnD provider */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={onDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
         <div className="grid grid-cols-12 gap-4">
           {/* Left column: People & Sites */}
           <div className="col-span-12 lg:col-span-3 space-y-4">
