@@ -1594,6 +1594,8 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
@@ -2551,6 +2553,8 @@ export default function Page() {
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     syncVersionRef.current = Number(state.updatedAt || 0);
+    setLastSavedAt(Number(state.updatedAt || 0) || null);
+    setSaveError(null);
     setIsDirty(false);
     dirtyRef.current = false;
     if (autosaveTimerRef.current) {
@@ -2626,6 +2630,7 @@ export default function Page() {
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
+    setSaveError(null);
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildPayload(stamp);
@@ -2638,15 +2643,19 @@ export default function Page() {
       });
       ok = res.ok;
       if (!res.ok) {
+        setSaveError(`Échec de sauvegarde (statut ${res.status}).`);
         console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
       }
-    } catch {}
+    } catch {
+      setSaveError("Erreur réseau pendant la sauvegarde.");
+    }
     finally {
       savingRef.current = false;
       setSaving(false);
       if (ok) {
         dirtyRef.current = false;
         setIsDirty(false);
+        setLastSavedAt(stamp);
       }
     }
   }, [buildPayload, currentWeekKey]);
@@ -2654,6 +2663,18 @@ export default function Page() {
   const savePlanning = useCallback(() => {
     void performSave();
   }, [performSave]);
+
+  const saveStatusLabel = useMemo(() => {
+    if (saving) return "Enregistrement en cours…";
+    if (saveError) return saveError;
+    if (lastSavedAt) {
+      return `Dernière sauvegarde : ${new Date(lastSavedAt).toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+    }
+    return "Aucune sauvegarde effectuée";
+  }, [lastSavedAt, saveError, saving]);
 
   // Sauvegarde de sécurité après inactivité
   useEffect(() => {
@@ -2982,6 +3003,10 @@ export default function Page() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col items-end text-xs text-neutral-500 min-w-[200px]">
+              <span className={saveError ? "text-red-600" : ""}>{saveStatusLabel}</span>
+              <span className="text-[10px] text-neutral-400">Pensez à actualiser l’autre écran après sauvegarde.</span>
+            </div>
             {view === "hours" && (
               <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
                 Heures/jour
