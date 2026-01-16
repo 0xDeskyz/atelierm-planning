@@ -32,6 +32,13 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
     return Response.json({ ok: true });
   } catch (error: any) {
-    return Response.json({ error: error?.message || "Unexpected error" }, { status: 500 });
+    console.error("Blob PUT failed", { key: params.key, message: error?.message, stack: error?.stack });
+    return Response.json(
+      {
+        error: error?.message || "Unexpected error",
+        hint: "Vérifiez BLOB_READ_WRITE_TOKEN, quotas Blob et permissions.",
+      },
+      { status: 500 }
+    );
   }
 }

@@ -2643,7 +2643,14 @@ export default function Page() {
       });
       ok = res.ok;
       if (!res.ok) {
-        setSaveError(`Échec de sauvegarde (statut ${res.status}).`);
+        let serverError = "";
+        try {
+          const data = await res.json();
+          if (data?.error) {
+            serverError = String(data.error);
+          }
+        } catch {}
+        setSaveError(`Échec de sauvegarde (statut ${res.status}). ${serverError}`.trim());
         console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
       }
     } catch {
