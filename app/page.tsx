@@ -544,7 +544,7 @@ const normalizeQuoteRecord = (quote: any) => {
 
   return patch;
 };
-const AUTO_SAVE_DELAY_MS = 15000;
+const AUTO_SAVE_DELAY_MS = 1000;
 
 // ==================================
 // Draggable Person Chip
