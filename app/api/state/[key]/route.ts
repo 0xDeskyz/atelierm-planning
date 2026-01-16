@@ -1,21 +1,29 @@
 ﻿import { list, put } from "@vercel/blob";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
     const pathname = `planner/${params.key}.json`; // ex: planner/2025-W45.json
     const entries = await list({ prefix: pathname, limit: 1 });
 
     const blob = entries.blobs.find((b) => b.pathname === pathname);
-    if (!blob) return Response.json(null);
+    if (!blob) return Response.json(null, { headers: { "Cache-Control": "no-store" } });
 
     const res = await fetch(blob.url, { cache: "no-store" });
     if (!res.ok) {
-      return Response.json({ error: "Blob fetch failed", status: res.status }, { status: 502 });
+      return Response.json(
+        { error: "Blob fetch failed", status: res.status },
+        { status: 502, headers: { "Cache-Control": "no-store" } }
+      );
     }
     const json = await res.json();
-    return Response.json(json);
+    return Response.json(json, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
-    return Response.json({ error: error?.message || "Unexpected error" }, { status: 500 });
+    return Response.json(
+      { error: error?.message || "Unexpected error" },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
 
@@ -39,7 +47,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
                 error: "Version plus récente détectée sur le serveur.",
                 serverUpdatedAt: existingUpdatedAt,
               },
-              { status: 409 }
+              { status: 409, headers: { "Cache-Control": "no-store" } }
             );
           }
         }
@@ -53,7 +61,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       addRandomSuffix: false, // nom stable par semaine
     });
 
-    return Response.json({ ok: true });
+    return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     console.error("Blob PUT failed", { key: params.key, message: error?.message, stack: error?.stack });
     return Response.json(
@@ -61,7 +69,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
         error: error?.message || "Unexpected error",
         hint: "Vérifiez BLOB_READ_WRITE_TOKEN, quotas Blob et permissions.",
       },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
