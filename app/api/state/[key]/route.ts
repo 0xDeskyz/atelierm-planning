@@ -32,6 +32,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     const body = await req.json(); // { people, sites, assignments, notes, absencesByWeek }
     const pathname = `planner/${params.key}.json`;
     const incomingUpdatedAt = Number(body?.updatedAt || 0);
+    let existingState: any = null;
 
     if (incomingUpdatedAt) {
       const entries = await list({ prefix: pathname, limit: 1 });
@@ -39,8 +40,8 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       if (existing) {
         const existingRes = await fetch(existing.url, { cache: "no-store" });
         if (existingRes.ok) {
-          const existingJson = await existingRes.json();
-          const existingUpdatedAt = Number(existingJson?.updatedAt || 0);
+          existingState = await existingRes.json();
+          const existingUpdatedAt = Number(existingState?.updatedAt || 0);
           if (existingUpdatedAt && existingUpdatedAt > incomingUpdatedAt) {
             return Response.json(
               {
@@ -54,7 +55,17 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
-    await put(pathname, JSON.stringify(body), {
+    const isPartial = body?.partial && body?.data && typeof body.data === "object";
+    const payload = isPartial
+      ? {
+          ...(existingState || {}),
+          ...body.data,
+          updatedAt: body.updatedAt,
+          clientId: body.clientId,
+        }
+      : body;
+
+    await put(pathname, JSON.stringify(payload), {
       access: "public",
       contentType: "application/json; charset=utf-8",
       allowOverwrite: true,
