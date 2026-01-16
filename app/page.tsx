@@ -2536,7 +2536,7 @@ export default function Page() {
   };
 
 // ==========================
-// Persistance serveur (Vercel Blob) + cache local
+// Persistance serveur (Vercel Blob)
 // ==========================
   const applyState = useCallback((state: any) => {
     setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
@@ -2576,26 +2576,8 @@ export default function Page() {
           }
         } catch {}
 
-        let localState: any = null;
-        try {
-          const raw = localStorage.getItem("btp-planner-state:v1");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (hasPayload(parsed)) {
-              localState = parsed;
-            }
-          }
-        } catch {}
-
-    const candidates = [remoteState, localState].filter(Boolean) as any[];
-    if (candidates.length > 0) {
-          const newest = candidates.reduce((best, cur) => {
-            const curTs = Number(cur.updatedAt || 0);
-            const bestTs = Number(best.updatedAt || 0);
-            if (curTs > bestTs) return cur;
-            return best;
-          }, candidates[0]);
-          applyState(newest);
+        if (remoteState) {
+          applyState(remoteState);
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
@@ -2660,7 +2642,7 @@ useEffect(() => {
   };
 }, [currentWeekKey, applyState]);
 
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
+// Charger depuis le serveur pour la semaine affichée
 useEffect(() => {
   loadWeekState(true);
 }, [currentWeekKey, loadWeekState]);
@@ -2692,8 +2674,6 @@ useEffect(() => {
     updatedAt: stamp,
     clientId: clientIdRef.current,
   };
-  // cache local (backup + rapidité)
-  try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
 }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
