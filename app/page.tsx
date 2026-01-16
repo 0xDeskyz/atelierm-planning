@@ -2570,9 +2570,13 @@ export default function Page() {
             },
             next: { revalidate: 0 },
           });
-          const srv = await res.json();
-          if (hasPayload(srv)) {
-            remoteState = srv;
+          if (!res.ok) {
+            console.error("Sync load failed", { status: res.status, wk });
+          } else {
+            const srv = await res.json();
+            if (hasPayload(srv)) {
+              remoteState = srv;
+            }
           }
         } catch {}
 
@@ -2608,16 +2612,20 @@ useEffect(() => {
         },
         next: { revalidate: 0 },
       });
-      const data = await res.json();
-      if (data && typeof data === "object" && !cancelled) {
-        const remoteVersion = Number((data as any).updatedAt || 0);
-        const remoteClient = (data as any).clientId;
-        const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
-        const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
-        const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
+      if (!res.ok) {
+        console.error("Sync poll failed", { status: res.status, wk: currentWeekKey });
+      } else {
+        const data = await res.json();
+        if (data && typeof data === "object" && !cancelled) {
+          const remoteVersion = Number((data as any).updatedAt || 0);
+          const remoteClient = (data as any).clientId;
+          const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
+          const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
+          const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
 
-        if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
-          applyState(data);
+          if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
+            applyState(data);
+          }
         }
       }
     } catch {}
@@ -2649,11 +2657,14 @@ useEffect(() => {
 
 const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   try {
-    await fetch(`/api/state/${wk}`, {
+    const res = await fetch(`/api/state/${wk}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      console.error("Sync save failed", { status: res.status, wk });
+    }
   } catch {}
 }, 600), []);
 
