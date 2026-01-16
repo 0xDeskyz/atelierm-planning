@@ -544,11 +544,7 @@ const normalizeQuoteRecord = (quote: any) => {
 
   return patch;
 };
-// Debounce helper for throttling remote saves
-function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
-  let t: any;
-  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
+const AUTO_SAVE_DELAY_MS = 15000;
 
 // ==================================
 // Draggable Person Chip
@@ -1596,9 +1592,15 @@ export default function Page() {
     {}
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const skipDirtyRef = useRef(false);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -2535,10 +2537,11 @@ export default function Page() {
     setPersonDetailOpen(false);
   };
 
-// ==========================
-// Persistance serveur (Vercel Blob)
-// ==========================
+  // ==========================
+  // Persistance serveur (Vercel Blob)
+  // ==========================
   const applyState = useCallback((state: any) => {
+    skipDirtyRef.current = true;
     setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments));
@@ -2548,6 +2551,12 @@ export default function Page() {
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     syncVersionRef.current = Number(state.updatedAt || 0);
+    setIsDirty(false);
+    dirtyRef.current = false;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
   }, []);
 
   const firstLoad = useRef(true);
@@ -2595,85 +2604,12 @@ export default function Page() {
     loadWeekState(false);
   }, [loadWeekState]);
 
-// Polling temps réel pour récupérer les mises à jour des autres utilisateurs
-useEffect(() => {
-  let cancelled = false;
-  let polling = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const poll = async () => {
-    if (polling) return;
-    polling = true;
-    try {
-      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
-        cache: "reload",
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
-        },
-        next: { revalidate: 0 },
-      });
-      if (!res.ok) {
-        console.error("Sync poll failed", { status: res.status, wk: currentWeekKey });
-      } else {
-        const data = await res.json();
-        if (data && typeof data === "object" && !cancelled) {
-          const remoteVersion = Number((data as any).updatedAt || 0);
-          const remoteClient = (data as any).clientId;
-          const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
-          const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
-          const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
+  // Charger depuis le serveur pour la semaine affichée
+  useEffect(() => {
+    loadWeekState(true);
+  }, [currentWeekKey, loadWeekState]);
 
-          if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
-            applyState(data);
-          }
-        }
-      }
-    } catch {}
-    finally {
-      polling = false;
-      if (!cancelled) timer = setTimeout(poll, 1000);
-    }
-  };
-  poll();
-  const onFocus = () => poll();
-  if (typeof window !== "undefined") {
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-  }
-  return () => {
-    cancelled = true;
-    if (timer) clearTimeout(timer);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-    }
-  };
-}, [currentWeekKey, applyState]);
-
-// Charger depuis le serveur pour la semaine affichée
-useEffect(() => {
-  loadWeekState(true);
-}, [currentWeekKey, loadWeekState]);
-
-const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
-  try {
-    const res = await fetch(`/api/state/${wk}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      console.error("Sync save failed", { status: res.status, wk });
-    }
-  } catch {}
-}, 600), []);
-
-// Sauvegarder à chaque modif
-useEffect(() => {
-  if (firstLoad.current) return;
-  const stamp = Date.now();
-  syncVersionRef.current = stamp;
-  const payload = {
+  const buildPayload = useCallback((stamp: number) => ({
     people,
     sites,
     assignments,
@@ -2684,13 +2620,68 @@ useEffect(() => {
     quotes,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  };
-  // serveur (par semaine)
-  saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes]);
 
-// ==========================
-// Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
+  const performSave = useCallback(async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const payload = buildPayload(stamp);
+    let ok = false;
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      ok = res.ok;
+      if (!res.ok) {
+        console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
+      }
+    } catch {}
+    finally {
+      savingRef.current = false;
+      setSaving(false);
+      if (ok) {
+        dirtyRef.current = false;
+        setIsDirty(false);
+      }
+    }
+  }, [buildPayload, currentWeekKey]);
+
+  const savePlanning = useCallback(() => {
+    void performSave();
+  }, [performSave]);
+
+  // Sauvegarde de sécurité après inactivité
+  useEffect(() => {
+    if (firstLoad.current) return;
+    if (skipDirtyRef.current) {
+      skipDirtyRef.current = false;
+      return;
+    }
+    setIsDirty(true);
+    dirtyRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    autosaveTimerRef.current = setTimeout(() => {
+      if (dirtyRef.current) {
+        void performSave();
+      }
+    }, AUTO_SAVE_DELAY_MS);
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes, performSave]);
+
+  // ==========================
+  // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
   // ==========================
   useEffect(() => {
     // existants
@@ -3024,6 +3015,14 @@ useEffect(() => {
                 </Button>
               </>
             )}
+            <Button
+              variant="default"
+              onClick={savePlanning}
+              disabled={saving || !isDirty}
+              title={isDirty ? "Enregistrer les modifications sur le serveur" : "Aucune modification à enregistrer"}
+            >
+              <Upload className="w-4 h-4 mr-1" /> {saving ? "Enregistrement..." : "Enregistrer"}
+            </Button>
           </div>
         </div>
       </div>
