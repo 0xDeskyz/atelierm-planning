@@ -545,7 +545,6 @@ const normalizeQuoteRecord = (quote: any) => {
   return patch;
 };
 const AUTO_SAVE_DELAY_MS = 1000;
-const POLL_INTERVAL_MS = 2000;
 
 // ==================================
 // Draggable Person Chip
@@ -1604,17 +1603,6 @@ export default function Page() {
   const savingRef = useRef(false);
   const dirtyRef = useRef(false);
   const skipDirtyRef = useRef(false);
-  const dirtySectionsRef = useRef(new Set<string>());
-  const prevStateRef = useRef({
-    people,
-    sites,
-    assignments,
-    notes,
-    absencesByWeek,
-    siteWeekVisibility,
-    hoursPerDay,
-    quotes,
-  });
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -2556,33 +2544,14 @@ export default function Page() {
   // ==========================
   const applyState = useCallback((state: any) => {
     skipDirtyRef.current = true;
-    const nextPeople = toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord);
-    const nextSites = toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord);
-    const nextAssignments = toArray(state.assignments);
-    const nextNotes = state.notes || {};
-    const nextAbsences = state.absencesByWeek || {};
-    const nextVisibility = state.siteWeekVisibility || {};
-    const nextHours = state.hoursPerDay ?? 8;
-    const nextQuotes = toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord);
-    setPeople(nextPeople);
-    setSites(nextSites);
-    setAssignments(nextAssignments);
-    setNotes(nextNotes);
-    setAbsencesByWeek(nextAbsences);
-    setSiteWeekVisibility(nextVisibility);
-    setHoursPerDay(nextHours);
-    setQuotes(nextQuotes);
-    prevStateRef.current = {
-      people: nextPeople,
-      sites: nextSites,
-      assignments: nextAssignments,
-      notes: nextNotes,
-      absencesByWeek: nextAbsences,
-      siteWeekVisibility: nextVisibility,
-      hoursPerDay: nextHours,
-      quotes: nextQuotes,
-    };
-    dirtySectionsRef.current.clear();
+    setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
+    setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
+    setAssignments(toArray(state.assignments));
+    setNotes(state.notes || {});
+    setAbsencesByWeek(state.absencesByWeek || {});
+    setSiteWeekVisibility(state.siteWeekVisibility || {});
+    setHoursPerDay(state.hoursPerDay ?? 8);
+    setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     syncVersionRef.current = Number(state.updatedAt || 0);
     setLastSavedAt(Number(state.updatedAt || 0) || null);
     setSaveError(null);
@@ -2644,39 +2613,18 @@ export default function Page() {
     loadWeekState(true);
   }, [currentWeekKey, loadWeekState]);
 
-  const buildPayload = useCallback((stamp: number, sections?: Set<string>) => {
-    const hasSections = sections && sections.size > 0;
-    if (!hasSections) {
-      return {
-        people,
-        sites,
-        assignments,
-        notes,
-        absencesByWeek,
-        siteWeekVisibility,
-        hoursPerDay,
-        quotes,
-        updatedAt: stamp,
-        clientId: clientIdRef.current,
-        partial: false,
-      };
-    }
-    const data: Record<string, any> = {};
-    if (sections?.has("people")) data.people = people;
-    if (sections?.has("sites")) data.sites = sites;
-    if (sections?.has("assignments")) data.assignments = assignments;
-    if (sections?.has("notes")) data.notes = notes;
-    if (sections?.has("absencesByWeek")) data.absencesByWeek = absencesByWeek;
-    if (sections?.has("siteWeekVisibility")) data.siteWeekVisibility = siteWeekVisibility;
-    if (sections?.has("hoursPerDay")) data.hoursPerDay = hoursPerDay;
-    if (sections?.has("quotes")) data.quotes = quotes;
-    return {
-      data,
-      updatedAt: stamp,
-      clientId: clientIdRef.current,
-      partial: true,
-    };
-  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes]);
+  const buildPayload = useCallback((stamp: number) => ({
+    people,
+    sites,
+    assignments,
+    notes,
+    absencesByWeek,
+    siteWeekVisibility,
+    hoursPerDay,
+    quotes,
+    updatedAt: stamp,
+    clientId: clientIdRef.current,
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes]);
 
   const performSave = useCallback(async () => {
     if (savingRef.current) return;
@@ -2711,15 +2659,9 @@ export default function Page() {
         return;
       }
     }
-    const sectionsToSave = new Set(dirtySectionsRef.current);
-    if (sectionsToSave.size === 0) {
-      savingRef.current = false;
-      setSaving(false);
-      return;
-    }
     const stamp = Date.now();
     syncVersionRef.current = stamp;
-    const payload = buildPayload(stamp, sectionsToSave);
+    const payload = buildPayload(stamp);
     let ok = false;
     try {
       const res = await fetch(`/api/state/${currentWeekKey}`, {
@@ -2752,7 +2694,6 @@ export default function Page() {
       if (ok) {
         dirtyRef.current = false;
         setIsDirty(false);
-        dirtySectionsRef.current.clear();
         setLastSavedAt(stamp);
       }
     }
@@ -2774,43 +2715,13 @@ export default function Page() {
     return "Aucune sauvegarde effectuée";
   }, [lastSavedAt, saveError, saving]);
 
-  // Sauvegarde automatique après inactivité
+  // Sauvegarde de sécurité après inactivité
   useEffect(() => {
     if (firstLoad.current) return;
     if (skipDirtyRef.current) {
       skipDirtyRef.current = false;
-      prevStateRef.current = {
-        people,
-        sites,
-        assignments,
-        notes,
-        absencesByWeek,
-        siteWeekVisibility,
-        hoursPerDay,
-        quotes,
-      };
       return;
     }
-    const prev = prevStateRef.current;
-    if (prev.people !== people) dirtySectionsRef.current.add("people");
-    if (prev.sites !== sites) dirtySectionsRef.current.add("sites");
-    if (prev.assignments !== assignments) dirtySectionsRef.current.add("assignments");
-    if (prev.notes !== notes) dirtySectionsRef.current.add("notes");
-    if (prev.absencesByWeek !== absencesByWeek) dirtySectionsRef.current.add("absencesByWeek");
-    if (prev.siteWeekVisibility !== siteWeekVisibility) dirtySectionsRef.current.add("siteWeekVisibility");
-    if (prev.hoursPerDay !== hoursPerDay) dirtySectionsRef.current.add("hoursPerDay");
-    if (prev.quotes !== quotes) dirtySectionsRef.current.add("quotes");
-    prevStateRef.current = {
-      people,
-      sites,
-      assignments,
-      notes,
-      absencesByWeek,
-      siteWeekVisibility,
-      hoursPerDay,
-      quotes,
-    };
-    if (dirtySectionsRef.current.size === 0) return;
     setIsDirty(true);
     dirtyRef.current = true;
     if (autosaveTimerRef.current) {
@@ -2828,15 +2739,6 @@ export default function Page() {
       }
     };
   }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes, performSave]);
-
-  // Rafraîchissement automatique quand il n'y a pas de modifications locales
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (dirtyRef.current || savingRef.current) return;
-      loadWeekState(false);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [currentWeekKey, loadWeekState]);
 
   // ==========================
   // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
