@@ -2631,6 +2631,34 @@ export default function Page() {
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    let serverState: any = null;
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+        next: { revalidate: 0 },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const hasPayload = data && typeof data === "object" && (Array.isArray(data.people) || Array.isArray(data.sites) || Array.isArray(data.assignments));
+        if (hasPayload) {
+          serverState = data;
+        }
+      }
+    } catch {}
+    if (serverState) {
+      const serverUpdatedAt = Number(serverState.updatedAt || 0);
+      if (serverUpdatedAt && serverUpdatedAt > syncVersionRef.current) {
+        applyState(serverState);
+        setSaveError("Mise à jour distante détectée : actualisation appliquée, merci de réenregistrer.");
+        savingRef.current = false;
+        setSaving(false);
+        return;
+      }
+    }
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildPayload(stamp);
