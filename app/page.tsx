@@ -544,11 +544,8 @@ const normalizeQuoteRecord = (quote: any) => {
 
   return patch;
 };
-// Debounce helper for throttling remote saves
-function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
-  let t: any;
-  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
+const AUTO_SAVE_DELAY_MS = 1000;
+const POLL_INTERVAL_MS = 2000;
 
 // ==================================
 // Draggable Person Chip
@@ -557,7 +554,7 @@ function PersonChip({ person }: any) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none touch-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
       <Users className="w-4 h-4" /> {person.name}
     </div>
   );
@@ -592,7 +589,7 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
+      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none touch-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
       title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
     >
       <span>{person.name}</span>
@@ -708,7 +705,7 @@ function QuoteCard({ quote, tone, onOpen }: any) {
       {...attributes}
       onClick={onOpen}
       className={cx(
-        "w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition",
+        "w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition touch-none",
         isDragging && "ring-2 ring-sky-300 opacity-90"
       )}
     >
@@ -1596,9 +1593,28 @@ export default function Page() {
     {}
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const skipDirtyRef = useRef(false);
+  const dirtySectionsRef = useRef(new Set<string>());
+  const prevStateRef = useRef({
+    people,
+    sites,
+    assignments,
+    notes,
+    absencesByWeek,
+    siteWeekVisibility,
+    hoursPerDay,
+    quotes,
+  });
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -2232,8 +2248,8 @@ export default function Page() {
 
   // DnD sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
   );
 
   const isAbsentOnWeek = (pid: string, wk: string) => Boolean(absencesByWeek[wk]?.[pid]);
@@ -2535,19 +2551,47 @@ export default function Page() {
     setPersonDetailOpen(false);
   };
 
-// ==========================
-// Persistance serveur (Vercel Blob) + cache local
-// ==========================
+  // ==========================
+  // Persistance serveur (Vercel Blob)
+  // ==========================
   const applyState = useCallback((state: any) => {
-    setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
-    setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
-    setAssignments(toArray(state.assignments));
-    setNotes(state.notes || {});
-    setAbsencesByWeek(state.absencesByWeek || {});
-    setSiteWeekVisibility(state.siteWeekVisibility || {});
-    setHoursPerDay(state.hoursPerDay ?? 8);
-    setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
+    skipDirtyRef.current = true;
+    const nextPeople = toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord);
+    const nextSites = toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord);
+    const nextAssignments = toArray(state.assignments);
+    const nextNotes = state.notes || {};
+    const nextAbsences = state.absencesByWeek || {};
+    const nextVisibility = state.siteWeekVisibility || {};
+    const nextHours = state.hoursPerDay ?? 8;
+    const nextQuotes = toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord);
+    setPeople(nextPeople);
+    setSites(nextSites);
+    setAssignments(nextAssignments);
+    setNotes(nextNotes);
+    setAbsencesByWeek(nextAbsences);
+    setSiteWeekVisibility(nextVisibility);
+    setHoursPerDay(nextHours);
+    setQuotes(nextQuotes);
+    prevStateRef.current = {
+      people: nextPeople,
+      sites: nextSites,
+      assignments: nextAssignments,
+      notes: nextNotes,
+      absencesByWeek: nextAbsences,
+      siteWeekVisibility: nextVisibility,
+      hoursPerDay: nextHours,
+      quotes: nextQuotes,
+    };
+    dirtySectionsRef.current.clear();
     syncVersionRef.current = Number(state.updatedAt || 0);
+    setLastSavedAt(Number(state.updatedAt || 0) || null);
+    setSaveError(null);
+    setIsDirty(false);
+    dirtyRef.current = false;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
   }, []);
 
   const firstLoad = useRef(true);
@@ -2570,32 +2614,18 @@ export default function Page() {
             },
             next: { revalidate: 0 },
           });
-          const srv = await res.json();
-          if (hasPayload(srv)) {
-            remoteState = srv;
-          }
-        } catch {}
-
-        let localState: any = null;
-        try {
-          const raw = localStorage.getItem("btp-planner-state:v1");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (hasPayload(parsed)) {
-              localState = parsed;
+          if (!res.ok) {
+            console.error("Sync load failed", { status: res.status, wk });
+          } else {
+            const srv = await res.json();
+            if (hasPayload(srv)) {
+              remoteState = srv;
             }
           }
         } catch {}
 
-    const candidates = [remoteState, localState].filter(Boolean) as any[];
-    if (candidates.length > 0) {
-          const newest = candidates.reduce((best, cur) => {
-            const curTs = Number(cur.updatedAt || 0);
-            const bestTs = Number(best.updatedAt || 0);
-            if (curTs > bestTs) return cur;
-            return best;
-          }, candidates[0]);
-          applyState(newest);
+        if (remoteState) {
+          applyState(remoteState);
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
@@ -2609,14 +2639,51 @@ export default function Page() {
     loadWeekState(false);
   }, [loadWeekState]);
 
-// Polling temps réel pour récupérer les mises à jour des autres utilisateurs
-useEffect(() => {
-  let cancelled = false;
-  let polling = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const poll = async () => {
-    if (polling) return;
-    polling = true;
+  // Charger depuis le serveur pour la semaine affichée
+  useEffect(() => {
+    loadWeekState(true);
+  }, [currentWeekKey, loadWeekState]);
+
+  const buildPayload = useCallback((stamp: number, sections?: Set<string>) => {
+    const hasSections = sections && sections.size > 0;
+    if (!hasSections) {
+      return {
+        people,
+        sites,
+        assignments,
+        notes,
+        absencesByWeek,
+        siteWeekVisibility,
+        hoursPerDay,
+        quotes,
+        updatedAt: stamp,
+        clientId: clientIdRef.current,
+        partial: false,
+      };
+    }
+    const data: Record<string, any> = {};
+    if (sections?.has("people")) data.people = people;
+    if (sections?.has("sites")) data.sites = sites;
+    if (sections?.has("assignments")) data.assignments = assignments;
+    if (sections?.has("notes")) data.notes = notes;
+    if (sections?.has("absencesByWeek")) data.absencesByWeek = absencesByWeek;
+    if (sections?.has("siteWeekVisibility")) data.siteWeekVisibility = siteWeekVisibility;
+    if (sections?.has("hoursPerDay")) data.hoursPerDay = hoursPerDay;
+    if (sections?.has("quotes")) data.quotes = quotes;
+    return {
+      data,
+      updatedAt: stamp,
+      clientId: clientIdRef.current,
+      partial: true,
+    };
+  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes]);
+
+  const performSave = useCallback(async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    let serverState: any = null;
     try {
       const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
         cache: "reload",
@@ -2626,80 +2693,153 @@ useEffect(() => {
         },
         next: { revalidate: 0 },
       });
-      const data = await res.json();
-      if (data && typeof data === "object" && !cancelled) {
-        const remoteVersion = Number((data as any).updatedAt || 0);
-        const remoteClient = (data as any).clientId;
-        const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
-        const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
-        const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
-
-        if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
-          applyState(data);
+      if (res.ok) {
+        const data = await res.json();
+        const hasPayload = data && typeof data === "object" && (Array.isArray(data.people) || Array.isArray(data.sites) || Array.isArray(data.assignments));
+        if (hasPayload) {
+          serverState = data;
         }
       }
     } catch {}
+    if (serverState) {
+      const serverUpdatedAt = Number(serverState.updatedAt || 0);
+      if (serverUpdatedAt && serverUpdatedAt > syncVersionRef.current) {
+        applyState(serverState);
+        setSaveError("Mise à jour distante détectée : actualisation appliquée, merci de réenregistrer.");
+        savingRef.current = false;
+        setSaving(false);
+        return;
+      }
+    }
+    const sectionsToSave = new Set(dirtySectionsRef.current);
+    if (sectionsToSave.size === 0) {
+      savingRef.current = false;
+      setSaving(false);
+      return;
+    }
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const payload = buildPayload(stamp, sectionsToSave);
+    let ok = false;
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      ok = res.ok;
+      if (!res.ok) {
+        let serverError = "";
+        try {
+          const data = await res.json();
+          if (data?.error) {
+            serverError = String(data.error);
+          }
+        } catch {}
+        if (res.status === 409) {
+          setSaveError("Conflit de version : actualisez le planning avant d’enregistrer.");
+        } else {
+          setSaveError(`Échec de sauvegarde (statut ${res.status}). ${serverError}`.trim());
+        }
+        console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
+      }
+    } catch {
+      setSaveError("Erreur réseau pendant la sauvegarde.");
+    }
     finally {
-      polling = false;
-      if (!cancelled) timer = setTimeout(poll, 1000);
+      savingRef.current = false;
+      setSaving(false);
+      if (ok) {
+        dirtyRef.current = false;
+        setIsDirty(false);
+        dirtySectionsRef.current.clear();
+        setLastSavedAt(stamp);
+      }
     }
-  };
-  poll();
-  const onFocus = () => poll();
-  if (typeof window !== "undefined") {
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-  }
-  return () => {
-    cancelled = true;
-    if (timer) clearTimeout(timer);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+  }, [buildPayload, currentWeekKey]);
+
+  const savePlanning = useCallback(() => {
+    void performSave();
+  }, [performSave]);
+
+  const saveStatusLabel = useMemo(() => {
+    if (saving) return "Enregistrement en cours…";
+    if (saveError) return saveError;
+    if (lastSavedAt) {
+      return `Dernière sauvegarde : ${new Date(lastSavedAt).toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
     }
-  };
-}, [currentWeekKey, applyState]);
+    return "Aucune sauvegarde effectuée";
+  }, [lastSavedAt, saveError, saving]);
 
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
-useEffect(() => {
-  loadWeekState(true);
-}, [currentWeekKey, loadWeekState]);
+  // Sauvegarde automatique après inactivité
+  useEffect(() => {
+    if (firstLoad.current) return;
+    if (skipDirtyRef.current) {
+      skipDirtyRef.current = false;
+      prevStateRef.current = {
+        people,
+        sites,
+        assignments,
+        notes,
+        absencesByWeek,
+        siteWeekVisibility,
+        hoursPerDay,
+        quotes,
+      };
+      return;
+    }
+    const prev = prevStateRef.current;
+    if (prev.people !== people) dirtySectionsRef.current.add("people");
+    if (prev.sites !== sites) dirtySectionsRef.current.add("sites");
+    if (prev.assignments !== assignments) dirtySectionsRef.current.add("assignments");
+    if (prev.notes !== notes) dirtySectionsRef.current.add("notes");
+    if (prev.absencesByWeek !== absencesByWeek) dirtySectionsRef.current.add("absencesByWeek");
+    if (prev.siteWeekVisibility !== siteWeekVisibility) dirtySectionsRef.current.add("siteWeekVisibility");
+    if (prev.hoursPerDay !== hoursPerDay) dirtySectionsRef.current.add("hoursPerDay");
+    if (prev.quotes !== quotes) dirtySectionsRef.current.add("quotes");
+    prevStateRef.current = {
+      people,
+      sites,
+      assignments,
+      notes,
+      absencesByWeek,
+      siteWeekVisibility,
+      hoursPerDay,
+      quotes,
+    };
+    if (dirtySectionsRef.current.size === 0) return;
+    setIsDirty(true);
+    dirtyRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    autosaveTimerRef.current = setTimeout(() => {
+      if (dirtyRef.current) {
+        void performSave();
+      }
+    }, AUTO_SAVE_DELAY_MS);
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes, performSave]);
 
-const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
-  try {
-    await fetch(`/api/state/${wk}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch {}
-}, 600), []);
+  // Rafraîchissement automatique quand il n'y a pas de modifications locales
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (dirtyRef.current || savingRef.current) return;
+      loadWeekState(false);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [currentWeekKey, loadWeekState]);
 
-// Sauvegarder à chaque modif
-useEffect(() => {
-  if (firstLoad.current) return;
-  const stamp = Date.now();
-  syncVersionRef.current = stamp;
-  const payload = {
-    people,
-    sites,
-    assignments,
-    notes,
-    absencesByWeek,
-    siteWeekVisibility,
-    hoursPerDay,
-    quotes,
-    updatedAt: stamp,
-    clientId: clientIdRef.current,
-  };
-  // cache local (backup + rapidité)
-  try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
-  // serveur (par semaine)
-  saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
-
-// ==========================
-// Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
+  // ==========================
+  // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
   // ==========================
   useEffect(() => {
     // existants
@@ -3000,6 +3140,10 @@ useEffect(() => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col items-end text-xs text-neutral-500 min-w-[200px]">
+              <span className={saveError ? "text-red-600" : ""}>{saveStatusLabel}</span>
+              <span className="text-[10px] text-neutral-400">Pensez à actualiser l’autre écran après sauvegarde.</span>
+            </div>
             {view === "hours" && (
               <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
                 Heures/jour
@@ -3033,6 +3177,14 @@ useEffect(() => {
                 </Button>
               </>
             )}
+            <Button
+              variant="default"
+              onClick={savePlanning}
+              disabled={saving || !isDirty}
+              title={isDirty ? "Enregistrer les modifications sur le serveur" : "Aucune modification à enregistrer"}
+            >
+              <Upload className="w-4 h-4 mr-1" /> {saving ? "Enregistrement..." : "Enregistrer"}
+            </Button>
           </div>
         </div>
       </div>
