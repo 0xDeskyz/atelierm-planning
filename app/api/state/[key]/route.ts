@@ -27,6 +27,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     await put(pathname, JSON.stringify(body), {
       access: "public",
       contentType: "application/json; charset=utf-8",
+      allowOverwrite: true,
       addRandomSuffix: false, // nom stable par semaine
     });
 
