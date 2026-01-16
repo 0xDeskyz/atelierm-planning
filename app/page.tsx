@@ -2650,7 +2650,11 @@ export default function Page() {
             serverError = String(data.error);
           }
         } catch {}
-        setSaveError(`Échec de sauvegarde (statut ${res.status}). ${serverError}`.trim());
+        if (res.status === 409) {
+          setSaveError("Conflit de version : actualisez le planning avant d’enregistrer.");
+        } else {
+          setSaveError(`Échec de sauvegarde (statut ${res.status}). ${serverError}`.trim());
+        }
         console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
       }
     } catch {

@@ -23,6 +23,28 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
   try {
     const body = await req.json(); // { people, sites, assignments, notes, absencesByWeek }
     const pathname = `planner/${params.key}.json`;
+    const incomingUpdatedAt = Number(body?.updatedAt || 0);
+
+    if (incomingUpdatedAt) {
+      const entries = await list({ prefix: pathname, limit: 1 });
+      const existing = entries.blobs.find((b) => b.pathname === pathname);
+      if (existing) {
+        const existingRes = await fetch(existing.url, { cache: "no-store" });
+        if (existingRes.ok) {
+          const existingJson = await existingRes.json();
+          const existingUpdatedAt = Number(existingJson?.updatedAt || 0);
+          if (existingUpdatedAt && existingUpdatedAt > incomingUpdatedAt) {
+            return Response.json(
+              {
+                error: "Version plus récente détectée sur le serveur.",
+                serverUpdatedAt: existingUpdatedAt,
+              },
+              { status: 409 }
+            );
+          }
+        }
+      }
+    }
 
     await put(pathname, JSON.stringify(body), {
       access: "public",
