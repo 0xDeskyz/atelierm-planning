@@ -2437,6 +2437,7 @@ export default function Page() {
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
+  const openOverviewNote = (weekKey: string) => { setNoteKeyState(`overview|${weekKey}`); setNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
 
   const clearCurrentWeek = () => {
@@ -3812,7 +3813,7 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="text-xs text-neutral-600">
-                  Vue compacte par semaine pour repérer rapidement les périodes chargées ou à planifier sans détailler les jours.
+                  Vue compacte par semaine pour repérer rapidement les périodes chargées ou à planifier sans détailler les jours. Cliquez sur une case pour ajouter un post-it.
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600">
                   <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-300" /> Planifié</span>
@@ -3830,6 +3831,9 @@ export default function Page() {
                           const planned = stats?.planned || 0;
                           const pending = stats?.pending || 0;
                           const total = stats?.total || 0;
+                          const noteKey = `overview|${week.key}`;
+                          const noteValue = notes[noteKey];
+                          const noteText = typeof noteValue === "string" ? noteValue : noteValue?.text;
                           const isMixed = planned > 0 && pending > 0;
                           const isPlanned = planned > 0 && pending === 0;
                           const isPending = pending > 0 && planned === 0;
@@ -3841,13 +3845,16 @@ export default function Page() {
                             ? "bg-amber-200 border-amber-300 text-amber-900"
                             : "bg-neutral-100 border-neutral-200 text-neutral-500";
                           return (
-                            <div
+                            <button
                               key={week.key}
-                              className={`h-8 w-8 rounded-md border text-[10px] font-semibold flex items-center justify-center ${bg}`}
-                              title={`${week.key} • ${total} chantier${total > 1 ? "s" : ""}`}
+                              type="button"
+                              onClick={() => openOverviewNote(week.key)}
+                              className={`relative h-8 w-8 rounded-md border text-[10px] font-semibold flex items-center justify-center ${bg}`}
+                              title={`${week.key} • ${total} chantier${total > 1 ? "s" : ""}${noteText ? ` • ${noteText}` : ""}`}
                             >
                               {week.week}
-                            </div>
+                              {noteText && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500" />}
+                            </button>
                           );
                         })}
                       </div>
