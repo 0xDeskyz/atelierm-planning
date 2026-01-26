@@ -3789,47 +3789,75 @@ useEffect(() => {
                 <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                   <Card className="overflow-hidden">
                     {calendarScope === "projection" ? (
-                      <div className="p-3">
-                        <div className="grid grid-cols-4 gap-3">
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between text-xs text-neutral-600">
+                          <span className="font-semibold text-neutral-700">Projection hebdomadaire</span>
+                          <span>4 semaines par ligne • Vue synthèse</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                           {projectionWeekSummaries.map((week) => (
-                            <div key={week.weekKey} className="rounded-lg border border-neutral-200 bg-white p-3 text-xs space-y-2">
+                            <div
+                              key={week.weekKey}
+                              className="rounded-xl border border-neutral-200 bg-white shadow-sm p-4 text-xs space-y-3"
+                            >
                               <div className="flex items-center justify-between">
-                                <div className="text-[11px] font-semibold text-neutral-700">
-                                  S{pad2(week.weekNum)}
-                                  <span className="text-neutral-400"> • </span>
-                                  {formatFR(week.start, true)}
+                                <div>
+                                  <div className="text-sm font-semibold text-neutral-900">
+                                    S{pad2(week.weekNum)}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500">
+                                    {formatFR(week.start, true)}
+                                  </div>
                                 </div>
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="icon"
-                                  className="h-6 w-6"
+                                  className="h-7 w-7"
                                   aria-label={`Ajouter un événement la semaine ${week.weekNum}`}
                                   onClick={() => openEventDialogForDate(toLocalKey(week.start))}
                                 >
-                                  <Plus className="h-3 w-3" />
+                                  <Plus className="h-3.5 w-3.5" />
                                 </Button>
+                              </div>
+                              <div className="flex flex-wrap gap-1 text-[11px]">
+                                <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
+                                  {week.planned.length} planifiés
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+                                  {week.pending.length} en attente
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">
+                                  {week.events.length} événement{week.events.length > 1 ? "s" : ""}
+                                </span>
+                                {week.absences.length > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
+                                    {week.absences.length} absence{week.absences.length > 1 ? "s" : ""}
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-1">
                                 {week.planned.slice(0, 4).map((site) => (
-                                  <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-1">
+                                  <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
                                     <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
                                     <span className="truncate">{site.name}</span>
                                   </div>
                                 ))}
                                 {week.events.slice(0, 3).map((event) => (
-                                  <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-1">
+                                  <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
                                     <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
                                     <span className="truncate">{event.title}</span>
                                   </div>
                                 ))}
                                 {week.pending.slice(0, 2).map((site) => (
-                                  <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-1 text-amber-700">
+                                  <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
                                     <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
                                     <span className="truncate">{site.name}</span>
                                   </div>
                                 ))}
                                 {week.absences.length > 0 && (
-                                  <div className="text-[11px] text-sky-700">{week.absences.slice(0, 3).join(", ")}{week.absences.length > 3 && "…"}
+                                  <div className="text-[11px] text-sky-700">
+                                    {week.absences.slice(0, 3).join(", ")}
+                                    {week.absences.length > 3 && "…"}
                                   </div>
                                 )}
                                 {(week.planned.length > 4 || week.events.length > 3 || week.pending.length > 2) && (
