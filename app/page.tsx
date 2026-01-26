@@ -206,6 +206,16 @@ const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
 const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
+const getISOWeekStart = (year: number, week: number) => {
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = (jan4.getDay() + 6) % 7;
+  const week1Start = new Date(jan4);
+  week1Start.setDate(jan4.getDate() - jan4Day);
+  const start = new Date(week1Start);
+  start.setDate(week1Start.getDate() + (week - 1) * 7);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -1639,10 +1649,11 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+    "dashboard" | "planning" | "overview" | "hours" | "timeline" | "devis" | "sites" | "salaries"
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
+  const [overviewScope, setOverviewScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -1768,6 +1779,76 @@ export default function Page() {
     if (!timelineWindow) return null;
     return { ...timelineWindow, start: timelineWindow.start, buckets: timelineWindow.buckets };
   }, [timelineWindow]);
+
+  const overviewYear = useMemo(() => anchor.getFullYear(), [anchor]);
+  const overviewWeeks = useMemo(() => {
+    const total = getISOWeeksInYear(overviewYear);
+    return Array.from({ length: total }, (_, idx) => {
+      const week = idx + 1;
+      const start = getISOWeekStart(overviewYear, week);
+      const monthIndex = start.getMonth();
+      const quarter = Math.floor(monthIndex / 3) + 1;
+      const key = `${overviewYear}-W${pad2(week)}`;
+      return {
+        key,
+        week,
+        start,
+        monthIndex,
+        monthLabel: start.toLocaleString("fr-FR", { month: "short" }),
+        quarterLabel: `T${quarter}`,
+      };
+    });
+  }, [overviewYear]);
+
+  const overviewSiteMap = useMemo(() => {
+    const map = new Map<string, { planned: number; pending: number; total: number }>();
+    const addWeek = (weekKey: string, status: string) => {
+      if (!map.has(weekKey)) {
+        map.set(weekKey, { planned: 0, pending: 0, total: 0 });
+      }
+      const entry = map.get(weekKey)!;
+      entry.total += 1;
+      if ((status || "planned") === "planned") entry.planned += 1;
+      else entry.pending += 1;
+    };
+    safeSites.forEach((site) => {
+      const status = site.status || "planned";
+      const weeks = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+      if (weeks.length > 0) {
+        weeks.forEach((wk) => addWeek(wk, status));
+        return;
+      }
+      if (site.startDate && site.endDate) {
+        const start = fromLocalKey(site.startDate);
+        const end = fromLocalKey(site.endDate);
+        if (start && end) {
+          const cursor = startOfISOWeekLocal(start);
+          while (cursor.getTime() <= end.getTime()) {
+            addWeek(weekKeyOf(cursor), status);
+            cursor.setDate(cursor.getDate() + 7);
+          }
+        }
+      }
+    });
+    return map;
+  }, [safeSites]);
+
+  const overviewGroups = useMemo(() => {
+    if (overviewScope === "year") {
+      return [{ label: String(overviewYear), weeks: overviewWeeks }];
+    }
+    if (overviewScope === "quarter") {
+      return [1, 2, 3, 4].map((q) => ({
+        label: `T${q}`,
+        weeks: overviewWeeks.filter((w) => w.quarterLabel === `T${q}`),
+      }));
+    }
+    const months = Array.from({ length: 12 }, (_, idx) => ({
+      label: new Date(overviewYear, idx, 1).toLocaleString("fr-FR", { month: "long" }),
+      weeks: overviewWeeks.filter((w) => w.monthIndex === idx),
+    }));
+    return months;
+  }, [overviewScope, overviewWeeks, overviewYear]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -2304,6 +2385,8 @@ export default function Page() {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
       else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
       else d.setFullYear(d.getFullYear() + delta);
+    } else if (view === "overview") {
+      d.setFullYear(d.getFullYear() + delta);
     } else {
       d.setDate(d.getDate() + delta * 7);
     }
@@ -2869,6 +2952,9 @@ export default function Page() {
                   <TabsTrigger value="planning">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
                   </TabsTrigger>
+                  <TabsTrigger value="overview">
+                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Sommaire</span>
+                  </TabsTrigger>
                   <TabsTrigger value="hours">
                     <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
                   </TabsTrigger>
@@ -2969,7 +3055,7 @@ export default function Page() {
                 </div>
               </div>
             )}
-            {["planning", "hours", "timeline"].includes(view) && (
+            {["planning", "overview", "hours", "timeline"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -2994,6 +3080,14 @@ export default function Page() {
                       <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
                       <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
                         Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {view === "overview" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{`Sommaire ${overviewScope === "month" ? "mensuel" : overviewScope === "quarter" ? "trimestriel" : "annuel"} • ${overviewYear}`}</span>
+                      <span className="text-xs font-semibold text-indigo-700 bg-indigo-100 px-2 py-1 rounded-full">
+                        52 semaines
                       </span>
                     </div>
                   )}
@@ -3695,6 +3789,71 @@ export default function Page() {
                   );
                 })}
 
+              </div>
+            )}
+
+            {view === "overview" && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Sommaire hebdomadaire</span>
+                    <span className="text-xs text-neutral-600">{overviewYear}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant={overviewScope === "month" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("month")}>
+                      Mensuel
+                    </Button>
+                    <Button variant={overviewScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("quarter")}>
+                      Trimestre
+                    </Button>
+                    <Button variant={overviewScope === "year" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("year")}>
+                      Année
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-600">
+                  Vue compacte par semaine pour repérer rapidement les périodes chargées ou à planifier sans détailler les jours.
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600">
+                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-300" /> Planifié</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-200 border border-amber-300" /> À planifier</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-violet-200 border border-violet-300" /> Mixte</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-neutral-100 border border-neutral-200" /> Vide</span>
+                </div>
+                <div className="space-y-4">
+                  {overviewGroups.map((group) => (
+                    <div key={group.label} className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{group.label}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.weeks.map((week) => {
+                          const stats = overviewSiteMap.get(week.key);
+                          const planned = stats?.planned || 0;
+                          const pending = stats?.pending || 0;
+                          const total = stats?.total || 0;
+                          const isMixed = planned > 0 && pending > 0;
+                          const isPlanned = planned > 0 && pending === 0;
+                          const isPending = pending > 0 && planned === 0;
+                          const bg = isMixed
+                            ? "bg-violet-200 border-violet-300 text-violet-900"
+                            : isPlanned
+                            ? "bg-emerald-200 border-emerald-300 text-emerald-900"
+                            : isPending
+                            ? "bg-amber-200 border-amber-300 text-amber-900"
+                            : "bg-neutral-100 border-neutral-200 text-neutral-500";
+                          return (
+                            <div
+                              key={week.key}
+                              className={`h-8 w-8 rounded-md border text-[10px] font-semibold flex items-center justify-center ${bg}`}
+                              title={`${week.key} • ${total} chantier${total > 1 ? "s" : ""}`}
+                            >
+                              {week.week}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
