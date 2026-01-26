@@ -1666,6 +1666,16 @@ export default function Page() {
   });
   const [calendarDraft, setCalendarDraft] = useState({ name: "", color: COLORS[3] });
   const [calendarEditTarget, setCalendarEditTarget] = useState<null | { id: string; isDefault?: boolean }>(null);
+  const eventCalendarsById = useMemo(() => {
+    const map: Record<string, { id: string; name: string; color: string; visible: boolean; isDefault?: boolean }> = {};
+    eventCalendars.forEach((cal) => {
+      map[cal.id] = cal;
+    });
+    return map;
+  }, [eventCalendars]);
+  const plannedCalendarVisible = eventCalendarsById["cal-planned"]?.visible !== false;
+  const pendingCalendarVisible = eventCalendarsById["cal-pending"]?.visible !== false;
+  const absencesCalendarVisible = eventCalendarsById["cal-leave"]?.visible !== false;
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -1777,8 +1787,16 @@ export default function Page() {
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
-  const timelinePlannedSites = plannedSites;
-  const timelinePendingSites = pendingSites;
+  const visiblePlannedSites = useMemo(
+    () => (plannedCalendarVisible ? plannedSites : []),
+    [plannedCalendarVisible, plannedSites]
+  );
+  const visiblePendingSites = useMemo(
+    () => (pendingCalendarVisible ? pendingSites : []),
+    [pendingCalendarVisible, pendingSites]
+  );
+  const timelinePlannedSites = visiblePlannedSites;
+  const timelinePendingSites = visiblePendingSites;
 
   const earliestTimelineStart = useMemo(
     () =>
@@ -1799,8 +1817,8 @@ export default function Page() {
   const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
   const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
   const sitesForCurrentWeek = useMemo(
-    () => plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
-    [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+    () => visiblePlannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
+    [visiblePlannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
   );
 
   const getCellMeta = useCallback(
@@ -1902,66 +1920,81 @@ export default function Page() {
     return weeks;
   }, [calendarWindow.end, calendarWindow.start]);
 
-  const calendarEventMap = useMemo(() => {
-    const plannedMap: Record<string, any[]> = {};
-    const pendingMap: Record<string, any[]> = {};
-    const absencesMap: Record<string, string[]> = {};
-    const allDays = calendarWeeks.flat();
-
-    allDays.forEach((day) => {
-      const key = toLocalKey(day);
-      plannedMap[key] = plannedSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey);
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
-        return isDateWithin(day, start, end);
-      });
-      pendingMap[key] = pendingSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey);
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
-        return isDateWithin(day, start, end);
-      });
-      const weekKey = weekKeyOf(day);
-      const names = absencesWeekPeople[weekKey] || [];
-      if (names.length) absencesMap[key] = names;
-    });
-
-    return { plannedMap, pendingMap, absencesMap };
-  }, [absencesWeekPeople, calendarWeeks, pendingSites, plannedSites, todayKey]);
-
   const calendarPlannedInMonth = useMemo(
     () =>
-      plannedSites.filter((site) => {
+      visiblePlannedSites.filter((site) => {
         const start = fromLocalKey(site.startDate || todayKey);
         const end = fromLocalKey(site.endDate || site.startDate || todayKey);
         return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
-    [calendarWindow.end, calendarWindow.start, plannedSites, todayKey]
+    [calendarWindow.end, calendarWindow.start, visiblePlannedSites, todayKey]
   );
   const calendarPendingInMonth = useMemo(
     () =>
-      pendingSites.filter((site) => {
+      visiblePendingSites.filter((site) => {
         const start = fromLocalKey(site.startDate || todayKey);
         const end = fromLocalKey(site.endDate || site.startDate || todayKey);
         return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
-    [calendarWindow.end, calendarWindow.start, pendingSites, todayKey]
+    [calendarWindow.end, calendarWindow.start, visiblePendingSites, todayKey]
   );
   const calendarAbsenceWeeks = useMemo(() => {
+    if (!absencesCalendarVisible) return [];
     const weeks = new Set<string>();
     calendarWeeks.flat().forEach((day) => {
       const wk = weekKeyOf(day);
       if (absencesWeekPeople[wk]?.length) weeks.add(wk);
     });
     return Array.from(weeks).sort();
-  }, [absencesWeekPeople, calendarWeeks]);
+  }, [absencesCalendarVisible, absencesWeekPeople, calendarWeeks]);
 
-  const eventCalendarsById = useMemo(() => {
-    const map: Record<string, { id: string; name: string; color: string; visible: boolean; isDefault?: boolean }> = {};
-    eventCalendars.forEach((cal) => {
-      map[cal.id] = cal;
+  const calendarEventMap = useMemo(() => {
+    const plannedMap: Record<string, any[]> = {};
+    const pendingMap: Record<string, any[]> = {};
+    const absencesMap: Record<string, string[]> = {};
+    const allDays = calendarWeeks.flat();
+    const plannedVisible = plannedCalendarVisible;
+    const pendingVisible = pendingCalendarVisible;
+    const absencesVisible = absencesCalendarVisible;
+
+    allDays.forEach((day) => {
+      const key = toLocalKey(day);
+      if (plannedVisible) {
+        plannedMap[key] = visiblePlannedSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      } else {
+        plannedMap[key] = [];
+      }
+      if (pendingVisible) {
+        pendingMap[key] = visiblePendingSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      } else {
+        pendingMap[key] = [];
+      }
+      if (absencesVisible) {
+        const weekKey = weekKeyOf(day);
+        const names = absencesWeekPeople[weekKey] || [];
+        if (names.length) absencesMap[key] = names;
+      }
     });
-    return map;
-  }, [eventCalendars]);
+
+    return { plannedMap, pendingMap, absencesMap };
+  }, [
+    absencesCalendarVisible,
+    absencesWeekPeople,
+    calendarWeeks,
+    pendingCalendarVisible,
+    plannedCalendarVisible,
+    visiblePendingSites,
+    visiblePlannedSites,
+    todayKey,
+  ]);
 
   const calendarEventsByDay = useMemo(() => {
     const map: Record<string, { id: string; title: string; color: string; calendarName?: string }[]> = {};
@@ -1996,6 +2029,7 @@ export default function Page() {
 
   const timelineAbsences = useMemo(() => {
     if (!timelineView) return [];
+    if (!absencesCalendarVisible) return [];
     const entries: { weekKey: string; start: Date; people: string[] }[] = [];
     const cursor = startOfISOWeekLocal(timelineView.start);
     const end = new Date(timelineView.end);
@@ -2011,7 +2045,7 @@ export default function Page() {
       cursor.setDate(cursor.getDate() + 7);
     }
     return entries;
-  }, [absencesByWeek, peopleById, timelineView]);
+  }, [absencesByWeek, absencesCalendarVisible, peopleById, timelineView]);
 
   const sitesById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -2266,10 +2300,10 @@ export default function Page() {
 
   const pendingSiteHighlights = useMemo(
     () =>
-      [...pendingSites]
+      [...visiblePendingSites]
         .sort((a, b) => fromLocalKey(a.startDate || todayKey).getTime() - fromLocalKey(b.startDate || todayKey).getTime())
         .slice(0, 4),
-    [pendingSites]
+    [visiblePendingSites, todayKey]
   );
 
   const weekSiteHighlights = useMemo(() => sitesForCurrentWeek.slice(0, 4), [sitesForCurrentWeek]);
@@ -3355,13 +3389,13 @@ useEffect(() => {
                     value={weatherTargetSite || ""}
                     onChange={(e) => setWeatherTargetSite(e.target.value || null)}
                   >
-                    {(plannedSites.length ? plannedSites : safeSites).map((s) => (
+                    {visiblePlannedSites.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
-                    {plannedSites.length === 0 && safeSites.length === 0 && (
-                      <option value="">Aucun chantier planifié</option>
+                    {visiblePlannedSites.length === 0 && (
+                      <option value="">Aucun chantier visible</option>
                     )}
                   </select>
                   <Button
@@ -3499,7 +3533,7 @@ useEffect(() => {
                   <span>Chantiers à planifier</span>
                   <ListChecks className="w-4 h-4" />
                 </div>
-                <div className="text-3xl font-bold">{pendingSites.length}</div>
+                <div className="text-3xl font-bold">{visiblePendingSites.length}</div>
                 <div className="text-xs text-neutral-600">
                   {pendingSiteHighlights.length > 0
                     ? `Prochain : ${formatFR(fromLocalKey(pendingSiteHighlights[0].startDate || todayKey))}`
@@ -3555,7 +3589,7 @@ useEffect(() => {
                     <div className="text-xs text-neutral-600">Chantiers issus des devis validés.</div>
                   </div>
                   <span className="text-[11px] px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100">
-                    {pendingSites.length} en file d'attente
+                    {visiblePendingSites.length} en file d'attente
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -3769,16 +3803,16 @@ useEffect(() => {
                 <div className="flex items-center justify-between">
                   <div className="font-medium flex items-center gap-2">
                     Chantiers
-                    {pendingSites.length > 0 && (
+                    {visiblePendingSites.length > 0 && (
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
-                        {pendingSites.length} à planifier
+                        {visiblePendingSites.length} à planifier
                       </span>
                     )}
                   </div>
                   <AddSite onAdd={addSite} />
                 </div>
                 <div className="space-y-2">
-                  {plannedSites.map((s) => (
+                  {visiblePlannedSites.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2">
                         <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
@@ -3903,7 +3937,7 @@ useEffect(() => {
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
                   const isCurrent = wkKey === todayWeekKey;
-                  const sitesForWeek = plannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  const sitesForWeek = visiblePlannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
                   return (
                     <div
                       key={idx}
@@ -4257,13 +4291,13 @@ useEffect(() => {
                 <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-3 text-xs">
                   <span className="uppercase tracking-wide text-neutral-500 font-semibold">Aperçu</span>
                   <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
-                    {plannedSites.length} planifiés
+                    {visiblePlannedSites.length} planifiés
                   </span>
                   <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                    {pendingSites.length} non planifiés
+                    {visiblePendingSites.length} non planifiés
                   </span>
                   <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
-                    {Object.keys(absencesByWeek).length} sem. absences
+                    {absencesCalendarVisible ? Object.keys(absencesByWeek).length : 0} sem. absences
                   </span>
                 </div>
                 <div className="text-xs text-neutral-600">
