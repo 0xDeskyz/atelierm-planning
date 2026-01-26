@@ -2247,6 +2247,20 @@ export default function Page() {
     }));
     setEventDialogOpen(false);
   }, [anchor, eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.durationDays, eventDraft.endDateKey, eventDraft.notes, eventDraft.title, eventDraft.weekList]);
+  const openEventDialogForDate = useCallback((dateKey: string) => {
+    setEventDraft((prev) => ({
+      ...prev,
+      title: "",
+      dateKey,
+      endDateKey: "",
+      durationDays: "",
+      weekList: "",
+      notes: "",
+      color: "",
+      calendarId: prev.calendarId || DEFAULT_EVENT_CALENDARS[0]?.id || "",
+    }));
+    setEventDialogOpen(true);
+  }, []);
 
   // Gestion des devis (kanban)
   const normalizeQuoteForSave = useCallback((quote: any) => normalizeQuoteRecord(quote), []);
@@ -3757,7 +3771,21 @@ useEffect(() => {
                                     )}
                                   >
                                     <div className="flex items-center justify-between text-[11px] font-semibold">
-                                      <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
+                                      <div className="flex items-center gap-1">
+                                        <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          aria-label={`Ajouter un événement le ${day.toLocaleDateString("fr-FR")}`}
+                                          onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                                            event.stopPropagation();
+                                            openEventDialogForDate(dayKey);
+                                          }}
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                      </div>
                                       {absenceItems.length > 0 && (
                                         <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">
                                           {absenceItems.length} abs.
