@@ -3849,10 +3849,18 @@ export default function Page() {
                               key={week.key}
                               type="button"
                               onClick={() => openOverviewNote(week.key)}
-                              className={`relative h-8 w-8 rounded-md border text-[10px] font-semibold flex items-center justify-center ${bg}`}
+                              className={`relative h-14 w-20 rounded-lg border px-2 py-1 text-[10px] font-semibold flex flex-col items-start justify-between ${bg}`}
                               title={`${week.key} • ${total} chantier${total > 1 ? "s" : ""}${noteText ? ` • ${noteText}` : ""}`}
                             >
-                              {week.week}
+                              <div className="flex w-full items-center justify-between text-[11px] font-semibold">
+                                <span>S{pad2(week.week)}</span>
+                                {total > 0 && (
+                                  <span className="text-[10px] font-semibold">{total}</span>
+                                )}
+                              </div>
+                              <div className="w-full text-left text-[9px] font-medium leading-tight text-neutral-700">
+                                {noteText ? noteText : "—"}
+                              </div>
                               {noteText && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500" />}
                             </button>
                           );
