@@ -294,6 +294,12 @@ const DEMO_SITES = [
   { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
   { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
 ];
+const DEFAULT_EVENT_CALENDARS = [
+  { id: "cal-leave", name: "Congés", color: "bg-sky-500", visible: true },
+  { id: "cal-planned", name: "Chantiers planifiés", color: "bg-emerald-500", visible: true },
+  { id: "cal-pending", name: "Chantiers non planifiés", color: "bg-amber-500", visible: true },
+  { id: "cal-meeting", name: "Réunions", color: "bg-violet-500", visible: true },
+];
 const QUOTE_COLUMNS = [
   { id: "todo", label: "À réaliser", hint: "Devis à préparer", tone: "sky" },
   { id: "draft", label: "Préparé, pas envoyé", hint: "Brouillons prêts", tone: "amber" },
@@ -1647,6 +1653,20 @@ export default function Page() {
     pending: true,
     absences: true,
   });
+  const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
+  const [calendarEvents, setCalendarEvents] = useState<
+    { id: string; title: string; dateKey: string; calendarId?: string; color?: string; notes?: string }[]
+  >([]);
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
+  const [calendarDialogOpen, setCalendarDialogOpen] = useState(false);
+  const [eventDraft, setEventDraft] = useState({
+    title: "",
+    dateKey: todayKey,
+    calendarId: DEFAULT_EVENT_CALENDARS[0]?.id || "",
+    color: "",
+    notes: "",
+  });
+  const [calendarDraft, setCalendarDraft] = useState({ name: "", color: COLORS[3] });
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -1948,6 +1968,36 @@ export default function Page() {
     return Array.from(weeks).sort();
   }, [absencesWeekPeople, calendarWeeks]);
 
+  const eventCalendarsById = useMemo(() => {
+    const map: Record<string, { id: string; name: string; color: string; visible: boolean }> = {};
+    eventCalendars.forEach((cal) => {
+      map[cal.id] = cal;
+    });
+    return map;
+  }, [eventCalendars]);
+
+  const calendarEventsByDay = useMemo(() => {
+    const map: Record<string, { id: string; title: string; color: string; calendarName?: string }[]> = {};
+    const start = calendarWindow.start.getTime();
+    const end = calendarWindow.end.getTime();
+    calendarEvents.forEach((event) => {
+      const date = fromLocalKey(event.dateKey);
+      const time = date.getTime();
+      if (time < start || time > end) return;
+      const cal = event.calendarId ? eventCalendarsById[event.calendarId] : undefined;
+      if (event.calendarId && cal && !cal.visible) return;
+      const colorClass = event.color || cal?.color || "bg-neutral-400";
+      if (!map[event.dateKey]) map[event.dateKey] = [];
+      map[event.dateKey].push({
+        id: event.id,
+        title: event.title,
+        color: colorClass,
+        calendarName: cal?.name,
+      });
+    });
+    return map;
+  }, [calendarEvents, calendarWindow.end, calendarWindow.start, eventCalendarsById]);
+
   const timelineAbsences = useMemo(() => {
     if (!timelineView || !calendarFilters.absences) return [];
     const entries: { weekKey: string; start: Date; people: string[] }[] = [];
@@ -2242,6 +2292,40 @@ export default function Page() {
     }
     return { color: "#10b981", softBg: "bg-emerald-50", softText: "text-emerald-700", border: "border-emerald-100" };
   }, []);
+
+  const createCalendar = useCallback(() => {
+    const name = calendarDraft.name.trim();
+    if (!name) return;
+    const id = ensureId(name, "cal");
+    setEventCalendars((prev) => [...prev, { id, name, color: calendarDraft.color || COLORS[0], visible: true }]);
+    setCalendarDraft({ name: "", color: COLORS[3] });
+    setCalendarDialogOpen(false);
+  }, [calendarDraft.color, calendarDraft.name]);
+
+  const createCalendarEvent = useCallback(() => {
+    const title = eventDraft.title.trim();
+    if (!title || !eventDraft.dateKey) return;
+    const id = ensureId(`${title}-${eventDraft.dateKey}`, "evt");
+    setCalendarEvents((prev) => [
+      ...prev,
+      {
+        id,
+        title,
+        dateKey: eventDraft.dateKey,
+        calendarId: eventDraft.calendarId || undefined,
+        color: eventDraft.color || undefined,
+        notes: eventDraft.notes || undefined,
+      },
+    ]);
+    setEventDraft((prev) => ({
+      ...prev,
+      title: "",
+      notes: "",
+      dateKey: prev.dateKey || todayKey,
+      color: "",
+    }));
+    setEventDialogOpen(false);
+  }, [eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.notes, eventDraft.title]);
 
   // Gestion des devis (kanban)
   const normalizeQuoteForSave = useCallback((quote: any) => normalizeQuoteRecord(quote), []);
@@ -3861,6 +3945,12 @@ useEffect(() => {
                     </label>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setEventDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-1" /> Nouvel événement
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setCalendarDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-1" /> Nouveau calendrier
+                    </Button>
                     <Button variant={calendarScope === "month" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("month")}>
                       Mensuel
                     </Button>
@@ -3938,6 +4028,12 @@ useEffect(() => {
                                             <span className="truncate">{site.name}</span>
                                           </div>
                                         ))}
+                                      {calendarEventsByDay[dayKey]?.slice(0, 2).map((event) => (
+                                        <div key={`evt-${event.id}`} className="flex items-center gap-1">
+                                          <span className={cx("w-2 h-2 rounded-full border", event.color, event.color ? "border-black/10" : "border-neutral-200")} />
+                                          <span className="truncate">{event.title}</span>
+                                        </div>
+                                      ))}
                                       {calendarFilters.pending &&
                                         pendingItems.slice(0, 2).map((site) => (
                                           <div key={`${site.id}-pending-${dayKey}`} className="flex items-center gap-1 text-amber-700">
@@ -3952,9 +4048,10 @@ useEffect(() => {
                                         </div>
                                       )}
                                       {(calendarFilters.planned && plannedItems.length > 3) ||
-                                      (calendarFilters.pending && pendingItems.length > 2) ? (
+                                      (calendarFilters.pending && pendingItems.length > 2) ||
+                                      (calendarEventsByDay[dayKey]?.length ?? 0) > 2 ? (
                                         <div className="text-[11px] text-neutral-500">
-                                          +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2)} autre(s)
+                                          +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2) + Math.max(0, (calendarEventsByDay[dayKey]?.length || 0) - 2)} autre(s)
                                         </div>
                                       ) : null}
                                     </div>
@@ -3989,6 +4086,42 @@ useEffect(() => {
                           <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
                             {calendarAbsenceWeeks.length}
                           </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-semibold">Calendriers</div>
+                          <Button size="sm" variant="ghost" onClick={() => setCalendarDialogOpen(true)}>
+                            <Plus className="w-3 h-3 mr-1" /> Ajouter
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          {eventCalendars.map((cal) => (
+                            <label key={cal.id} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cal.visible}
+                                  onChange={() =>
+                                    setEventCalendars((prev) =>
+                                      prev.map((c) => (c.id === cal.id ? { ...c, visible: !c.visible } : c))
+                                    )
+                                  }
+                                />
+                                <span className={cx("w-2.5 h-2.5 rounded-full border", cal.color, cal.color ? "border-black/10" : "border-neutral-200")} />
+                                {cal.name}
+                              </span>
+                              <span className="text-[11px] text-neutral-500">
+                                {calendarEvents.filter((evt) => evt.calendarId === cal.id).length}
+                              </span>
+                            </label>
+                          ))}
+                          {eventCalendars.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucun calendrier personnalisé.</div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -4732,6 +4865,103 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Créer un événement</DialogTitle>
+            <DialogDescription>Ajoutez un événement et choisissez le calendrier ou une couleur personnalisée.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={eventDraft.title}
+              onChange={(e: any) => setEventDraft((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Titre de l'événement"
+            />
+            <div className="grid md:grid-cols-2 gap-2">
+              <Input
+                type="date"
+                value={eventDraft.dateKey}
+                onChange={(e: any) => setEventDraft((prev) => ({ ...prev, dateKey: e.target.value }))}
+              />
+              <select
+                value={eventDraft.calendarId}
+                onChange={(e) => setEventDraft((prev) => ({ ...prev, calendarId: e.target.value }))}
+                className="border rounded-md px-2 py-1 text-sm w-full"
+              >
+                <option value="">Couleur personnalisée</option>
+                {eventCalendars.map((cal) => (
+                  <option key={cal.id} value={cal.id}>
+                    {cal.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Couleur (optionnelle)</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.slice(0, 12).map((c) => (
+                  <button
+                    key={c}
+                    className={cx("w-6 h-6 rounded-full border", c, eventDraft.color === c && "ring-2 ring-black")}
+                    onClick={() => setEventDraft((prev) => ({ ...prev, color: prev.color === c ? "" : c }))}
+                    type="button"
+                    aria-label={`Couleur ${c}`}
+                  />
+                ))}
+              </div>
+              <p className="text-[11px] text-neutral-500">Si une couleur est choisie, elle remplace celle du calendrier.</p>
+            </div>
+            <Textarea
+              value={eventDraft.notes}
+              onChange={(e: any) => setEventDraft((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Notes"
+              className="text-sm"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEventDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={createCalendarEvent}>Créer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={calendarDialogOpen} onOpenChange={setCalendarDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Créer un calendrier</DialogTitle>
+            <DialogDescription>Définissez un nom et une couleur pour le nouveau calendrier.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={calendarDraft.name}
+              onChange={(e: any) => setCalendarDraft((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Nom du calendrier"
+            />
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Couleur</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.slice(0, 12).map((c) => (
+                  <button
+                    key={c}
+                    className={cx("w-6 h-6 rounded-full border", c, calendarDraft.color === c && "ring-2 ring-black")}
+                    onClick={() => setCalendarDraft((prev) => ({ ...prev, color: c }))}
+                    type="button"
+                    aria-label={`Couleur ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCalendarDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={createCalendar}>Créer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <RenameDialog
         open={renameOpen}
         setOpen={setRenameOpen}
