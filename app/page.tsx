@@ -544,11 +544,6 @@ const normalizeQuoteRecord = (quote: any) => {
 
   return patch;
 };
-// Debounce helper for throttling remote saves
-function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
-  let t: any;
-  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
 
 // ==================================
 // Draggable Person Chip
@@ -557,7 +552,7 @@ function PersonChip({ person }: any) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none touch-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
       <Users className="w-4 h-4" /> {person.name}
     </div>
   );
@@ -592,7 +587,7 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
+      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none touch-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
       title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
     >
       <span>{person.name}</span>
@@ -708,7 +703,7 @@ function QuoteCard({ quote, tone, onOpen }: any) {
       {...attributes}
       onClick={onOpen}
       className={cx(
-        "w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition",
+        "w-full text-left rounded-lg border bg-white/90 p-3 shadow-sm space-y-2 hover:border-neutral-400 hover:shadow transition touch-none",
         isDragging && "ring-2 ring-sky-300 opacity-90"
       )}
     >
@@ -1556,6 +1551,53 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   );
 }
 
+function WeekNoteDialog({ open, setOpen, value, onSave }: any) {
+  const initial = value || {};
+  const [text, setText] = useState<string>(initial.text || "");
+  const [phase, setPhase] = useState<string>(initial.phase || "mid");
+
+  useEffect(() => {
+    const next = value || {};
+    setText(next.text || "");
+    setPhase(next.phase || "mid");
+  }, [value]);
+
+  const handleSave = () => {
+    onSave({ text: text.trim(), phase });
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setOpen(false); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Post-it de la semaine</DialogTitle>
+          <DialogDescription>Ajoutez une annotation liée au début, milieu ou fin de semaine.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Moment de la semaine</div>
+            <select
+              className="h-9 w-full rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              value={phase}
+              onChange={(e) => setPhase(e.target.value)}
+            >
+              <option value="start">Début de semaine</option>
+              <option value="mid">Milieu de semaine</option>
+              <option value="end">Fin de semaine</option>
+            </select>
+          </div>
+          <Textarea value={text} onChange={(e: any) => setText(e.target.value)} placeholder="Note, post-it, infos chantier..." />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
+          <Button onClick={handleSave}>Enregistrer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ==================================
 // Small helpers
 // ==================================
@@ -1596,9 +1638,16 @@ export default function Page() {
     {}
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
+  const savingRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const skipDirtyRef = useRef(false);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
@@ -1637,7 +1686,7 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+    "dashboard" | "planning" | "weeks" | "hours" | "timeline" | "devis" | "sites" | "salaries"
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
@@ -1658,6 +1707,7 @@ export default function Page() {
     return getWeekDatesLocal(d);
   }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const weeksYear = useMemo(() => anchor.getFullYear(), [anchor]);
   const isWeekend = useCallback((d: Date) => {
     const day = d.getDay();
     return day === 0 || day === 6;
@@ -1766,6 +1816,53 @@ export default function Page() {
     if (!timelineWindow) return null;
     return { ...timelineWindow, start: timelineWindow.start, buckets: timelineWindow.buckets };
   }, [timelineWindow]);
+
+  const weeksCalendar = useMemo(() => {
+    const total = getISOWeeksInYear(weeksYear);
+    return Array.from({ length: total }, (_, idx) => {
+      const week = idx + 1;
+      const start = getISOWeekStart(weeksYear, week);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      return {
+        key: `${weeksYear}-W${pad2(week)}`,
+        week,
+        start,
+        end,
+      };
+    });
+  }, [weeksYear]);
+
+  const weekSiteMap = useMemo(() => {
+    const map = new Map<string, { planned: any[]; pending: any[] }>();
+    const ensure = (weekKey: string) => {
+      if (!map.has(weekKey)) map.set(weekKey, { planned: [], pending: [] });
+      return map.get(weekKey)!;
+    };
+    safeSites.forEach((site) => {
+      const status = site.status || "planned";
+      const target = status === "planned" ? "planned" : "pending";
+      const weeks = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+      if (weeks.length > 0) {
+        weeks.forEach((wk) => {
+          ensure(wk)[target].push(site);
+        });
+        return;
+      }
+      if (site.startDate && site.endDate) {
+        const start = fromLocalKey(site.startDate);
+        const end = fromLocalKey(site.endDate);
+        if (start && end) {
+          const cursor = startOfISOWeekLocal(start);
+          while (cursor.getTime() <= end.getTime()) {
+            ensure(weekKeyOf(cursor))[target].push(site);
+            cursor.setDate(cursor.getDate() + 7);
+          }
+        }
+      }
+    });
+    return map;
+  }, [safeSites]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -2232,8 +2329,8 @@ export default function Page() {
 
   // DnD sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
   );
 
   const isAbsentOnWeek = (pid: string, wk: string) => Boolean(absencesByWeek[wk]?.[pid]);
@@ -2302,6 +2399,8 @@ export default function Page() {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
       else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
       else d.setFullYear(d.getFullYear() + delta);
+    } else if (view === "weeks") {
+      d.setFullYear(d.getFullYear() + delta);
     } else {
       d.setDate(d.getDate() + delta * 7);
     }
@@ -2350,9 +2449,14 @@ export default function Page() {
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
+  const [weekNoteOpen, setWeekNoteOpen] = useState(false);
+  const [weekNoteKey, setWeekNoteKey] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
+  const currentWeekNoteValue = weekNoteKey ? (notes[weekNoteKey] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
+  const openWeekNote = (weekKey: string) => { setWeekNoteKey(`week|${weekKey}`); setWeekNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
+  const saveWeekNote = (val: any) => { if (!weekNoteKey) return; setNotes((prev) => ({ ...prev, [weekNoteKey]: val })); };
 
   const clearCurrentWeek = () => {
     const confirmClear = window.confirm(
@@ -2535,10 +2639,11 @@ export default function Page() {
     setPersonDetailOpen(false);
   };
 
-// ==========================
-// Persistance serveur (Vercel Blob) + cache local
-// ==========================
+  // ==========================
+  // Persistance serveur (Vercel Blob)
+  // ==========================
   const applyState = useCallback((state: any) => {
+    skipDirtyRef.current = true;
     setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments));
@@ -2548,6 +2653,10 @@ export default function Page() {
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     syncVersionRef.current = Number(state.updatedAt || 0);
+    setLastSavedAt(Number(state.updatedAt || 0) || null);
+    setSaveError(null);
+    setIsDirty(false);
+    dirtyRef.current = false;
   }, []);
 
   const firstLoad = useRef(true);
@@ -2570,32 +2679,18 @@ export default function Page() {
             },
             next: { revalidate: 0 },
           });
-          const srv = await res.json();
-          if (hasPayload(srv)) {
-            remoteState = srv;
-          }
-        } catch {}
-
-        let localState: any = null;
-        try {
-          const raw = localStorage.getItem("btp-planner-state:v1");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (hasPayload(parsed)) {
-              localState = parsed;
+          if (!res.ok) {
+            console.error("Sync load failed", { status: res.status, wk });
+          } else {
+            const srv = await res.json();
+            if (hasPayload(srv)) {
+              remoteState = srv;
             }
           }
         } catch {}
 
-    const candidates = [remoteState, localState].filter(Boolean) as any[];
-    if (candidates.length > 0) {
-          const newest = candidates.reduce((best, cur) => {
-            const curTs = Number(cur.updatedAt || 0);
-            const bestTs = Number(best.updatedAt || 0);
-            if (curTs > bestTs) return cur;
-            return best;
-          }, candidates[0]);
-          applyState(newest);
+        if (remoteState) {
+          applyState(remoteState);
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
@@ -2609,78 +2704,12 @@ export default function Page() {
     loadWeekState(false);
   }, [loadWeekState]);
 
-// Polling temps réel pour récupérer les mises à jour des autres utilisateurs
-useEffect(() => {
-  let cancelled = false;
-  let polling = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const poll = async () => {
-    if (polling) return;
-    polling = true;
-    try {
-      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
-        cache: "reload",
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
-        },
-        next: { revalidate: 0 },
-      });
-      const data = await res.json();
-      if (data && typeof data === "object" && !cancelled) {
-        const remoteVersion = Number((data as any).updatedAt || 0);
-        const remoteClient = (data as any).clientId;
-        const fromOther = !remoteClient || remoteClient !== clientIdRef.current;
-        const hasVersion = Number.isFinite(remoteVersion) && remoteVersion > 0;
-        const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
+  // Charger depuis le serveur pour la semaine affichée
+  useEffect(() => {
+    loadWeekState(true);
+  }, [currentWeekKey, loadWeekState]);
 
-        if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
-          applyState(data);
-        }
-      }
-    } catch {}
-    finally {
-      polling = false;
-      if (!cancelled) timer = setTimeout(poll, 1000);
-    }
-  };
-  poll();
-  const onFocus = () => poll();
-  if (typeof window !== "undefined") {
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-  }
-  return () => {
-    cancelled = true;
-    if (timer) clearTimeout(timer);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-    }
-  };
-}, [currentWeekKey, applyState]);
-
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
-useEffect(() => {
-  loadWeekState(true);
-}, [currentWeekKey, loadWeekState]);
-
-const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
-  try {
-    await fetch(`/api/state/${wk}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch {}
-}, 600), []);
-
-// Sauvegarder à chaque modif
-useEffect(() => {
-  if (firstLoad.current) return;
-  const stamp = Date.now();
-  syncVersionRef.current = stamp;
-  const payload = {
+  const buildPayload = useCallback((stamp: number) => ({
     people,
     sites,
     assignments,
@@ -2691,15 +2720,110 @@ useEffect(() => {
     quotes,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  };
-  // cache local (backup + rapidité)
-  try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
-  // serveur (par semaine)
-  saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes]);
 
-// ==========================
-// Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
+  const performSave = useCallback(async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    let serverState: any = null;
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
+        cache: "reload",
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+        next: { revalidate: 0 },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const hasPayload = data && typeof data === "object" && (Array.isArray(data.people) || Array.isArray(data.sites) || Array.isArray(data.assignments));
+        if (hasPayload) {
+          serverState = data;
+        }
+      }
+    } catch {}
+    if (serverState) {
+      const serverUpdatedAt = Number(serverState.updatedAt || 0);
+      if (serverUpdatedAt && serverUpdatedAt > syncVersionRef.current) {
+        applyState(serverState);
+        setSaveError("Mise à jour distante détectée : actualisation appliquée, merci de réenregistrer.");
+        savingRef.current = false;
+        setSaving(false);
+        return;
+      }
+    }
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const payload = buildPayload(stamp);
+    let ok = false;
+    try {
+      const res = await fetch(`/api/state/${currentWeekKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      ok = res.ok;
+      if (!res.ok) {
+        let serverError = "";
+        try {
+          const data = await res.json();
+          if (data?.error) {
+            serverError = String(data.error);
+          }
+        } catch {}
+        if (res.status === 409) {
+          setSaveError("Conflit de version : actualisez le planning avant d’enregistrer.");
+        } else {
+          setSaveError(`Échec de sauvegarde (statut ${res.status}). ${serverError}`.trim());
+        }
+        console.error("Sync save failed", { status: res.status, wk: currentWeekKey });
+      }
+    } catch {
+      setSaveError("Erreur réseau pendant la sauvegarde.");
+    }
+    finally {
+      savingRef.current = false;
+      setSaving(false);
+      if (ok) {
+        dirtyRef.current = false;
+        setIsDirty(false);
+        setLastSavedAt(stamp);
+      }
+    }
+  }, [buildPayload, currentWeekKey]);
+
+  const savePlanning = useCallback(() => {
+    void performSave();
+  }, [performSave]);
+
+  const saveStatusLabel = useMemo(() => {
+    if (saving) return "Enregistrement en cours…";
+    if (saveError) return saveError;
+    if (lastSavedAt) {
+      return `Dernière sauvegarde : ${new Date(lastSavedAt).toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+    }
+    return "Aucune sauvegarde effectuée";
+  }, [lastSavedAt, saveError, saving]);
+
+  // Marquer l'état comme modifié pour la sauvegarde manuelle
+  useEffect(() => {
+    if (firstLoad.current) return;
+    if (skipDirtyRef.current) {
+      skipDirtyRef.current = false;
+      return;
+    }
+    setIsDirty(true);
+    dirtyRef.current = true;
+  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes]);
+
+  // ==========================
+  // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
   // ==========================
   useEffect(() => {
     // existants
@@ -2847,6 +2971,9 @@ useEffect(() => {
                   <TabsTrigger value="planning">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
                   </TabsTrigger>
+                  <TabsTrigger value="weeks">
+                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Semaines</span>
+                  </TabsTrigger>
                   <TabsTrigger value="hours">
                     <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
                   </TabsTrigger>
@@ -2879,17 +3006,6 @@ useEffect(() => {
                   {maintenanceOpen && (
                     <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-white shadow-lg p-2 space-y-1">
                       <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Maintenance</div>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          refreshPlanning();
-                          setMaintenanceOpen(false);
-                        }}
-                        disabled={refreshing}
-                      >
-                        <RotateCcw className="w-4 h-4" /> Recharger le planning
-                      </Button>
                       <Button
                         variant="ghost"
                         className="w-full justify-start gap-2"
@@ -2958,7 +3074,7 @@ useEffect(() => {
                 </div>
               </div>
             )}
-            {["planning", "hours", "timeline"].includes(view) && (
+            {["planning", "weeks", "hours", "timeline"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -2986,6 +3102,14 @@ useEffect(() => {
                       </span>
                     </div>
                   )}
+                  {view === "weeks" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{`Calendrier des semaines • ${weeksYear}`}</span>
+                      <span className="text-xs font-semibold text-indigo-700 bg-indigo-100 px-2 py-1 rounded-full">
+                        52 semaines
+                      </span>
+                    </div>
+                  )}
                   {view === "timeline" && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{timelineScopeLabel}</span>
@@ -3000,6 +3124,10 @@ useEffect(() => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col items-end text-xs text-neutral-500 min-w-[200px]">
+              <span className={saveError ? "text-red-600" : ""}>{saveStatusLabel}</span>
+              <span className="text-[10px] text-neutral-400">Pensez à actualiser l’autre écran après sauvegarde.</span>
+            </div>
             {view === "hours" && (
               <label className="text-sm font-medium flex items-center gap-2" title="Heures appliquées par défaut à chaque affectation">
                 Heures/jour
@@ -3033,6 +3161,24 @@ useEffect(() => {
                 </Button>
               </>
             )}
+            <Button
+              variant="default"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={savePlanning}
+              disabled={saving || !isDirty}
+              title={isDirty ? "Enregistrer les modifications sur le serveur" : "Aucune modification à enregistrer"}
+            >
+              <Upload className="w-4 h-4 mr-1" /> {saving ? "Enregistrement..." : "Enregistrer"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-sky-600 text-sky-700 hover:bg-sky-50"
+              onClick={refreshPlanning}
+              disabled={refreshing}
+              title="Recharger le planning depuis le serveur"
+            >
+              <RotateCcw className="w-4 h-4 mr-1" /> Recharger le planning
+            </Button>
           </div>
         </div>
       </div>
@@ -3665,6 +3811,92 @@ useEffect(() => {
               </div>
             )}
 
+            {view === "weeks" && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Calendrier 52 semaines</span>
+                    <span className="text-xs text-neutral-600">{weeksYear}</span>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-600">
+                  Cliquez sur une semaine pour ajouter un post-it (début, milieu ou fin de semaine). Les chantiers planifiés et en attente apparaissent directement dans la case.
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {weeksCalendar.map((week) => {
+                    const plan = weekSiteMap.get(week.key) || { planned: [], pending: [] };
+                    const noteKey = `week|${week.key}`;
+                    const note = notes[noteKey] || {};
+                    const noteText = typeof note === "string" ? note : note?.text;
+                    const phase = typeof note === "string" ? "mid" : note?.phase || "";
+                    const phaseLabel = phase === "start" ? "Début" : phase === "end" ? "Fin" : phase ? "Milieu" : "";
+                    const phaseStyle =
+                      phase === "start"
+                        ? "bg-sky-100 text-sky-700 border-sky-200"
+                        : phase === "end"
+                        ? "bg-rose-100 text-rose-700 border-rose-200"
+                        : phase === "mid"
+                        ? "bg-amber-100 text-amber-700 border-amber-200"
+                        : "bg-neutral-100 text-neutral-500 border-neutral-200";
+                    return (
+                      <button
+                        key={week.key}
+                        type="button"
+                        onClick={() => openWeekNote(week.key)}
+                        className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm hover:border-neutral-300"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-semibold">S{pad2(week.week)}</div>
+                          <div className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${phaseStyle}`}>
+                            {phaseLabel || "Semaine"}
+                          </div>
+                        </div>
+                        <div className="text-xs text-neutral-600">
+                          {formatFR(week.start)} → {formatFR(week.end)}
+                        </div>
+                        <div className="text-xs font-semibold text-neutral-700">
+                          {noteText ? noteText : "Post-it à compléter"}
+                        </div>
+                        <div className="space-y-1 text-[11px]">
+                          {plan.planned.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {plan.planned.slice(0, 4).map((site: any) => (
+                                <span key={`${week.key}-p-${site.id}`} className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-800">
+                                  {site.name}
+                                </span>
+                              ))}
+                              {plan.planned.length > 4 && (
+                                <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                                  +{plan.planned.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {plan.pending.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {plan.pending.slice(0, 4).map((site: any) => (
+                                <span key={`${week.key}-u-${site.id}`} className="rounded-md bg-amber-100 px-2 py-0.5 text-amber-800">
+                                  {site.name}
+                                </span>
+                              ))}
+                              {plan.pending.length > 4 && (
+                                <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">
+                                  +{plan.pending.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {plan.planned.length === 0 && plan.pending.length === 0 && (
+                            <div className="text-neutral-500">Aucun chantier</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* TIMELINE / CALENDRIER GANTT */}
             {view === "timeline" && timelineView && (
               <div className="space-y-3">
@@ -4240,6 +4472,7 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <WeekNoteDialog open={weekNoteOpen} setOpen={setWeekNoteOpen} value={currentWeekNoteValue} onSave={saveWeekNote} />
       <RenameDialog
         open={renameOpen}
         setOpen={setRenameOpen}
