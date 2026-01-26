@@ -21,14 +21,12 @@ import {
   ChevronRight,
   ChevronUp,
   Clock3,
-  CloudSunRain,
   Copy,
   Download,
   Edit3,
   Eraser,
   LayoutDashboard,
   ListChecks,
-  MapPin,
   Plus,
   RotateCcw,
   Settings,
@@ -420,100 +418,6 @@ const formatEUR = (val?: number) => {
     return `${val} €`;
   }
 };
-type WeatherSegment = { label: string; rain?: number; hour?: string; temp?: number };
-type WeatherDay = { date: string; min?: number; max?: number; rain?: number; segments: WeatherSegment[] };
-type WeatherPayload = { location: string; days: WeatherDay[] };
-const normalizeAddressInput = (raw: string) =>
-  raw
-    .replace(/[\s,]+/g, (m) => (m.includes(",") ? ", " : " "))
-    .replace(/,\s*,+/g, ", ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-async function fetchWeatherForRange(address: string, start: Date, end: Date): Promise<WeatherPayload> {
-  const cleaned = normalizeAddressInput(address || "");
-  if (!cleaned) throw new Error("Lieu manquant (ville ou code postal)");
-
-  const candidates = Array.from(
-    new Set(
-      [cleaned, `${cleaned}, France`, `${cleaned}, FR`].filter(
-        (a) => a && a.length > 3 && a.length <= 200
-      )
-    )
-  );
-
-  let loc: any = null;
-  for (const query of candidates) {
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=3&language=fr&format=json`;
-    const geoResp = await fetch(geoUrl, { cache: "no-store" });
-    if (!geoResp.ok) continue;
-    const geoJson: any = await geoResp.json();
-    loc = geoJson?.results?.[0];
-    if (loc) break;
-  }
-
-  if (!loc) throw new Error("Adresse introuvable ou non reconnue");
-
-  const startDate = toLocalKey(start);
-  const endDate = toLocalKey(end);
-  const wxUrl =
-    `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
-    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto` +
-    `&hourly=temperature_2m,precipitation_probability` +
-    `&start_date=${startDate}&end_date=${endDate}`;
-  const wxResp = await fetch(wxUrl, { cache: "no-store" });
-  if (!wxResp.ok) throw new Error("Météo indisponible");
-  const wxJson: any = await wxResp.json();
-  const times: string[] = wxJson?.daily?.time || [];
-  if (!times.length) throw new Error("Aucune donnée météo disponible");
-
-  const hourlyTimes: string[] = wxJson?.hourly?.time || [];
-  const hourlyRain: number[] = wxJson?.hourly?.precipitation_probability || [];
-  const hourlyTemp: number[] = wxJson?.hourly?.temperature_2m || [];
-  const byDate: Record<string, { hour: number; index: number }[]> = {};
-  hourlyTimes.forEach((iso, idx) => {
-    const [d, hRaw] = iso.split("T");
-    const hour = Number((hRaw || "00").slice(0, 2));
-    if (!byDate[d]) byDate[d] = [];
-    byDate[d].push({ hour, index: idx });
-  });
-
-  const segmentsDef = [
-    { label: "Matin", start: 6, end: 11 },
-    { label: "Après-midi", start: 12, end: 17 },
-    { label: "Soir", start: 18, end: 23 },
-  ];
-
-  const days: WeatherDay[] = times.map((date: string, idx: number) => ({
-    date,
-    min: wxJson?.daily?.temperature_2m_min?.[idx],
-    max: wxJson?.daily?.temperature_2m_max?.[idx],
-    rain: wxJson?.daily?.precipitation_probability_max?.[idx],
-    segments: segmentsDef.map((seg) => {
-      const hours = (byDate[date] || []).filter((h) => h.hour >= seg.start && h.hour <= seg.end);
-      const rainVals = hours
-        .map((h) => hourlyRain?.[h.index])
-        .filter((v) => v !== undefined && v !== null)
-        .map((v) => Number(v));
-      const tempVals = hours
-        .map((h) => hourlyTemp?.[h.index])
-        .filter((v) => Number.isFinite(v))
-        .map((v) => Number(v));
-      const rain = rainVals.length ? Math.max(...rainVals) : undefined;
-      const peakIdx = rain !== undefined ? rainVals.indexOf(rain) : -1;
-      const peakHour = peakIdx >= 0 ? hours[peakIdx]?.hour : undefined;
-      const temp = tempVals.length ? tempVals.reduce((sum, v) => sum + v, 0) / tempVals.length : undefined;
-      return {
-        label: seg.label,
-        rain,
-        hour: peakHour !== undefined ? `${String(peakHour).padStart(2, "0")}h` : undefined,
-        temp,
-      };
-    }),
-  }));
-
-  const location = [loc.name, loc.admin1, loc.country_code].filter(Boolean).join(" · ");
-  return { location, days };
-}
 const normalizeQuoteRecord = (quote: any) => {
   const base = typeof quote === "object" && quote !== null ? quote : {};
   const todayKeyLocal = toLocalKey(new Date());
@@ -1597,13 +1501,8 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
-  const [weatherTargetSite, setWeatherTargetSite] = useState<string | null>(null);
-  const [weatherCache, setWeatherCache] = useState<Record<string, { loading?: boolean; data?: WeatherPayload; error?: string }>>(
-    {}
-  );
   const [refreshing, setRefreshing] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
-  const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
@@ -1622,18 +1521,6 @@ export default function Page() {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
-
-  useEffect(() => {
-    if (!sites.length) return;
-    if (!weatherTargetSite) {
-      setWeatherTargetSite(sites[0].id);
-      return;
-    }
-    const exists = sites.some((s) => s.id === weatherTargetSite);
-    if (!exists) {
-      setWeatherTargetSite(sites[0].id);
-    }
-  }, [sites, weatherTargetSite]);
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
@@ -1679,12 +1566,6 @@ export default function Page() {
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
-  const weatherRange = useMemo(() => {
-    if (planningView === "month") {
-      return { start: startOfMonthLocal(anchor), end: endOfMonthLocal(anchor) };
-    }
-    return { start: weekFull[0], end: weekFull[weekFull.length - 1] };
-  }, [anchor, planningView, weekFull]);
   const isPlanningWeek = view === "planning" && planningView === "week";
   const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
@@ -2054,56 +1935,6 @@ export default function Page() {
     return map;
   }, [sites]);
 
-  const weatherKey = useMemo(() => {
-    if (!weatherTargetSite) return "";
-    return `${weatherTargetSite}-${toLocalKey(weatherRange.start)}-${toLocalKey(weatherRange.end)}-${planningView}`;
-  }, [planningView, weatherRange.end, weatherRange.start, weatherTargetSite]);
-  const weatherEntry = weatherKey ? weatherCache[weatherKey] : undefined;
-  const weatherSite = weatherTargetSite ? sitesById[weatherTargetSite] : null;
-  const refreshWeather = useCallback(
-    async (force = false) => {
-      if (!weatherTargetSite || !weatherKey) return;
-      const site = sitesById[weatherTargetSite];
-      if (!site) return;
-      const locationInput = site.city || site.address;
-      if (!locationInput) {
-        setWeatherCache((prev) => ({
-          ...prev,
-          [weatherKey]: { loading: false, data: prev[weatherKey]?.data, error: "Ville ou code postal manquant" },
-        }));
-        return;
-      }
-      if (weatherEntry?.loading) return;
-      if (weatherEntry?.data && !force) return;
-      setWeatherCache((prev) => ({ ...prev, [weatherKey]: { ...(prev[weatherKey] || {}), loading: true, error: undefined } }));
-      try {
-        const payload = await fetchWeatherForRange(locationInput, weatherRange.start, weatherRange.end);
-        setWeatherCache((prev) => ({ ...prev, [weatherKey]: { loading: false, data: payload } }));
-      } catch (err: any) {
-        setWeatherCache((prev) => ({
-          ...prev,
-          [weatherKey]: { loading: false, error: err?.message || "Météo indisponible" },
-        }));
-      }
-    },
-    [weatherEntry, weatherKey, weatherRange.end, weatherRange.start, weatherTargetSite, sitesById]
-  );
-  useEffect(() => {
-    if (view === "planning" && weatherTargetSite) {
-      refreshWeather();
-    }
-  }, [refreshWeather, view, weatherKey, weatherTargetSite]);
-  const weatherDays = useMemo(() => {
-    const data = weatherEntry?.data?.days || [];
-    return data.filter((d) => {
-      const day = fromLocalKey(d.date).getDay();
-      return day !== 0 && day !== 6;
-    });
-  }, [weatherEntry]);
-  const weatherRangeLabel = useMemo(
-    () => `${formatFR(weatherRange.start, true)} → ${formatFR(weatherRange.end, true)}`,
-    [weatherRange.end, weatherRange.start]
-  );
 
   const exportableHours = useMemo(() => {
     const rows: {
@@ -3367,161 +3198,6 @@ useEffect(() => {
           </div>
         </div>
       </div>
-
-      {view === "planning" && (
-        <div className="w-full">
-          <Card className="border-sky-100 bg-white/90 shadow-sm w-full">
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-9 w-9 rounded-full bg-sky-600 text-white flex items-center justify-center shadow-inner">
-                    <CloudSunRain className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">Météo du chantier</div>
-                    <div className="text-xs text-neutral-600">Prévisions par ville/code postal sur la période visible.</div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className="h-9 rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 min-w-[200px]"
-                    value={weatherTargetSite || ""}
-                    onChange={(e) => setWeatherTargetSite(e.target.value || null)}
-                  >
-                    {plannedSites.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                    {plannedSites.length === 0 && (
-                      <option value="">Aucun chantier planifié</option>
-                    )}
-                  </select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => refreshWeather(true)}
-                    disabled={!weatherTargetSite || weatherEntry?.loading}
-                  >
-                    <RotateCcw className="w-4 h-4 mr-1" /> Actualiser
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-neutral-600"
-                    onClick={() => setWeatherCollapsed((v) => !v)}
-                  >
-                    {weatherCollapsed ? (
-                      <>
-                        <ChevronDown className="w-4 h-4 mr-1" /> Afficher
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="w-4 h-4 mr-1" /> Réduire
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-              {weatherCollapsed ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600">
-                  <span>Prévisions masquées pour libérer de la place.</span>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                      <MapPin className="w-3 h-3 text-sky-600" />
-                      {weatherSite?.city || weatherSite?.address || "Ville non renseignée"}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                      {weatherRangeLabel}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {weatherSite && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                        <MapPin className="w-3 h-3 text-sky-600" />
-                        {weatherSite.city || weatherSite.address || "Ville non renseignée"}
-                      </span>
-                      {weatherSite.address && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200 text-[11px] text-neutral-600">
-                          {weatherSite.address}
-                        </span>
-                      )}
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                        {weatherRangeLabel}
-                      </span>
-                      {weatherEntry?.data?.location && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-sky-800 border border-sky-200">
-                          Zone détectée : {weatherEntry.data.location}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {weatherEntry?.error && (
-                    <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{weatherEntry.error}</div>
-                  )}
-                  {weatherEntry?.loading && (
-                    <div className="text-sm text-neutral-600">Récupération de la météo en cours…</div>
-                  )}
-                  {!weatherEntry?.loading && !weatherEntry?.data && !weatherEntry?.error && (
-                    <div className="text-sm text-neutral-600">
-                      Sélectionnez un chantier planifié avec une ville ou un code postal pour afficher la météo.
-                    </div>
-                  )}
-                  {weatherEntry?.data && (
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-                      {weatherDays.map((day) => {
-                        const date = fromLocalKey(day.date);
-                        const label = date.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
-                        return (
-                          <div key={day.date} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm space-y-2 text-[12px]">
-                            <div className="flex items-center justify-between font-semibold">
-                              <span className="capitalize">{label}</span>
-                              {day.rain !== undefined && day.rain !== null && (
-                                <span className="text-[11px] text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">
-                                  {Math.round(day.rain)}% pluie
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 text-neutral-800">
-                              <CloudSunRain className="w-4 h-4 text-sky-600" />
-                              <span>
-                                {day.min !== undefined ? `${Math.round(day.min)}°` : "–"} / {day.max !== undefined ? `${Math.round(day.max)}°` : "–"}
-                              </span>
-                            </div>
-                            <div className="space-y-1">
-                              {day.segments.map((seg) => (
-                                <div key={`${day.date}-${seg.label}`} className="flex items-center justify-between text-[11px]">
-                                  <span className="text-neutral-600">{seg.label}</span>
-                                  {seg.rain !== undefined ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-700">
-                                      <span>{Math.round(seg.rain)}%</span>
-                                      {seg.hour && <span className="text-[10px] text-neutral-500">{seg.hour}</span>}
-                                      {seg.temp !== undefined && <span className="text-[10px] text-neutral-500">{Math.round(seg.temp)}°</span>}
-                                    </span>
-                                  ) : (
-                                    <span className="text-neutral-400">–</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {weatherDays.length === 0 && (
-                        <div className="text-sm text-neutral-600">Aucune journée ouvrée dans la période sélectionnée.</div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {view === "dashboard" && (
         <div className="space-y-4">
