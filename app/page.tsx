@@ -3835,34 +3835,47 @@ useEffect(() => {
                                   </span>
                                 )}
                               </div>
-                              <div className="space-y-1">
-                                {week.planned.slice(0, 4).map((site) => (
-                                  <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
-                                    <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
-                                    <span className="truncate">{site.name}</span>
-                                  </div>
-                                ))}
-                                {week.events.slice(0, 3).map((event) => (
-                                  <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
-                                    <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
-                                    <span className="truncate">{event.title}</span>
-                                  </div>
-                                ))}
-                                {week.pending.slice(0, 2).map((site) => (
-                                  <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
-                                    <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
-                                    <span className="truncate">{site.name}</span>
-                                  </div>
-                                ))}
+                              <div className="space-y-2">
+                                <div className="space-y-1 max-h-28 overflow-auto">
+                                  <div className="text-[10px] uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
+                                  {week.planned.length === 0 && (
+                                    <div className="text-[11px] text-neutral-400">Aucun chantier planifié.</div>
+                                  )}
+                                  {week.planned.map((site) => (
+                                    <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
+                                      <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                      <span className="truncate">{site.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="space-y-1 max-h-24 overflow-auto">
+                                  <div className="text-[10px] uppercase tracking-wide text-neutral-400">Événements</div>
+                                  {week.events.length === 0 && (
+                                    <div className="text-[11px] text-neutral-400">Aucun événement.</div>
+                                  )}
+                                  {week.events.map((event) => (
+                                    <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
+                                      <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
+                                      <span className="truncate">{event.title}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="space-y-1 max-h-20 overflow-auto">
+                                  <div className="text-[10px] uppercase tracking-wide text-neutral-400">En attente</div>
+                                  {week.pending.length === 0 && (
+                                    <div className="text-[11px] text-neutral-400">Aucun chantier en attente.</div>
+                                  )}
+                                  {week.pending.map((site) => (
+                                    <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
+                                      <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                      <span className="truncate">{site.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
                                 {week.absences.length > 0 && (
                                   <div className="text-[11px] text-sky-700">
-                                    {week.absences.slice(0, 3).join(", ")}
-                                    {week.absences.length > 3 && "…"}
-                                  </div>
-                                )}
-                                {(week.planned.length > 4 || week.events.length > 3 || week.pending.length > 2) && (
-                                  <div className="text-[11px] text-neutral-500">
-                                    +{Math.max(0, week.planned.length - 4) + Math.max(0, week.events.length - 3) + Math.max(0, week.pending.length - 2)} autre(s)
+                                    <div className="text-[10px] uppercase tracking-wide text-sky-400">Absences</div>
+                                    {week.absences.join(", ")}
                                   </div>
                                 )}
                               </div>
