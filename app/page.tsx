@@ -1637,10 +1637,15 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+    "dashboard" | "planning" | "hours" | "calendar" | "timeline" | "devis" | "sites" | "salaries"
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
+  const [calendarFilters, setCalendarFilters] = useState({
+    planned: true,
+    pending: true,
+    absences: true,
+  });
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -1752,14 +1757,22 @@ export default function Page() {
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
+  const timelinePlannedSites = useMemo(
+    () => (calendarFilters.planned ? plannedSites : []),
+    [calendarFilters.planned, plannedSites]
+  );
+  const timelinePendingSites = useMemo(
+    () => (calendarFilters.pending ? pendingSites : []),
+    [calendarFilters.pending, pendingSites]
+  );
 
-  const earliestChantierStart = useMemo(
+  const earliestTimelineStart = useMemo(
     () =>
-      plannedSites.reduce<Date | null>((min, site) => {
+      timelinePlannedSites.reduce<Date | null>((min, site) => {
         const s = fromLocalKey(site.startDate || todayKey);
         return !min || s.getTime() < min.getTime() ? s : min;
       }, null),
-    [plannedSites, todayKey]
+    [timelinePlannedSites, todayKey]
   );
 
   const timelineView = useMemo(() => {
@@ -1832,6 +1845,101 @@ export default function Page() {
     });
     return map;
   }, [people]);
+
+  const absencesWeekPeople = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    Object.entries(absencesByWeek || {}).forEach(([weekKey, entries]) => {
+      const names = Object.keys(entries || {})
+        .filter((id) => entries?.[id])
+        .map((id) => peopleById[id]?.name || id);
+      if (names.length > 0) {
+        map[weekKey] = names;
+      }
+    });
+    return map;
+  }, [absencesByWeek, peopleById]);
+
+  const calendarEventMap = useMemo(() => {
+    const plannedMap: Record<string, any[]> = {};
+    const pendingMap: Record<string, any[]> = {};
+    const absencesMap: Record<string, string[]> = {};
+    const allDays = monthWeeks.flat();
+
+    allDays.forEach((day) => {
+      const key = toLocalKey(day);
+      if (calendarFilters.planned) {
+        plannedMap[key] = plannedSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      }
+      if (calendarFilters.pending) {
+        pendingMap[key] = pendingSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      }
+      if (calendarFilters.absences) {
+        const weekKey = weekKeyOf(day);
+        const names = absencesWeekPeople[weekKey] || [];
+        if (names.length) absencesMap[key] = names;
+      }
+    });
+
+    return { plannedMap, pendingMap, absencesMap };
+  }, [absencesWeekPeople, calendarFilters.absences, calendarFilters.pending, calendarFilters.planned, monthWeeks, pendingSites, plannedSites, todayKey]);
+
+  const calendarMonthRange = useMemo(
+    () => ({ start: startOfMonthLocal(anchor), end: endOfMonthLocal(anchor) }),
+    [anchor]
+  );
+  const calendarPlannedInMonth = useMemo(
+    () =>
+      plannedSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey);
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        return start.getTime() <= calendarMonthRange.end.getTime() && end.getTime() >= calendarMonthRange.start.getTime();
+      }),
+    [calendarMonthRange.end, calendarMonthRange.start, plannedSites, todayKey]
+  );
+  const calendarPendingInMonth = useMemo(
+    () =>
+      pendingSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey);
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        return start.getTime() <= calendarMonthRange.end.getTime() && end.getTime() >= calendarMonthRange.start.getTime();
+      }),
+    [calendarMonthRange.end, calendarMonthRange.start, pendingSites, todayKey]
+  );
+  const calendarAbsenceWeeks = useMemo(() => {
+    const weeks = new Set<string>();
+    monthWeeks.flat().forEach((day) => {
+      const wk = weekKeyOf(day);
+      if (absencesWeekPeople[wk]?.length) weeks.add(wk);
+    });
+    return Array.from(weeks).sort();
+  }, [absencesWeekPeople, monthWeeks]);
+
+  const timelineAbsences = useMemo(() => {
+    if (!timelineView || !calendarFilters.absences) return [];
+    const entries: { weekKey: string; start: Date; people: string[] }[] = [];
+    const cursor = startOfISOWeekLocal(timelineView.start);
+    const end = new Date(timelineView.end);
+    while (cursor.getTime() <= end.getTime()) {
+      const wkKey = weekKeyOf(cursor);
+      const absentMap = absencesByWeek[wkKey] || {};
+      const peopleList = Object.keys(absentMap)
+        .filter((id) => absentMap[id])
+        .map((id) => peopleById[id]?.name || id);
+      if (peopleList.length > 0) {
+        entries.push({ weekKey: wkKey, start: new Date(cursor), people: peopleList });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return entries;
+  }, [absencesByWeek, calendarFilters.absences, peopleById, timelineView]);
 
   const sitesById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -1952,7 +2060,7 @@ export default function Page() {
 
     const totalDays = Math.max(1, countWorkingDaysInclusive(timelineView.start, timelineView.end));
 
-    const rows = plannedSites
+    const rows = timelinePlannedSites
       .map((site) => {
         const siteStart = fromLocalKey(site.startDate || todayKey);
         const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
@@ -1984,7 +2092,7 @@ export default function Page() {
       .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
 
     return { rows, totalDays };
-  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, plannedSites, timelineView, todayKey, workingDaysUntil]);
+  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, timelinePlannedSites, timelineView, todayKey, workingDaysUntil]);
 
   const timelineScopeLabel = useMemo(() => {
     if (!timelineView) return "";
@@ -2000,7 +2108,7 @@ export default function Page() {
     while (cursor.getTime() <= timelineView.end.getTime()) {
       if (!isWeekend(cursor)) {
         const dateKey = toLocalKey(cursor);
-        const count = plannedSites.reduce((acc, site) => {
+        const count = timelinePlannedSites.reduce((acc, site) => {
           const siteStart = fromLocalKey(site.startDate || todayKey);
           const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
           if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
@@ -2034,7 +2142,7 @@ export default function Page() {
       return ranges;
     };
 
-    const earliestWorkingStart = earliestChantierStart ? firstWorkingDayOnOrAfter(new Date(earliestChantierStart)) : null;
+    const earliestWorkingStart = earliestTimelineStart ? firstWorkingDayOnOrAfter(new Date(earliestTimelineStart)) : null;
 
     const gaps = findRanges((v) => v === 0)
       .map((r) => {
@@ -2063,7 +2171,7 @@ export default function Page() {
     });
 
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
-  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, plannedSites, timelineView, todayKey]);
+  }, [countWorkingDaysInclusive, earliestTimelineStart, firstWorkingDayOnOrAfter, isWeekend, timelinePlannedSites, timelineView, todayKey]);
 
   const actionableQuotes = useMemo(
     () => safeQuotes.filter((q) => q.status !== "won" && q.status !== "lost"),
@@ -2296,7 +2404,7 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (isPlanningMonth) {
+    if (isPlanningMonth || view === "calendar") {
       d.setMonth(d.getMonth() + delta);
     } else if (view === "timeline") {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
@@ -2850,8 +2958,11 @@ useEffect(() => {
                   <TabsTrigger value="hours">
                     <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
                   </TabsTrigger>
+                  <TabsTrigger value="calendar">
+                    <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Calendrier</span>
+                  </TabsTrigger>
                   <TabsTrigger value="timeline">
-                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Calendrier</span>
+                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Gantt</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -2958,7 +3069,7 @@ useEffect(() => {
                 </div>
               </div>
             )}
-            {["planning", "hours", "timeline"].includes(view) && (
+            {["planning", "hours", "timeline", "calendar"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -2983,6 +3094,14 @@ useEffect(() => {
                       <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
                       <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
                         Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {view === "calendar" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
+                      <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                        Calendrier mensuel filtrable
                       </span>
                     </div>
                   )}
@@ -3665,6 +3784,193 @@ useEffect(() => {
               </div>
             )}
 
+            {/* CALENDRIER MENSUEL */}
+            {view === "calendar" && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-4 text-xs">
+                  <span className="uppercase tracking-wide text-neutral-500 font-semibold">Filtres</span>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.planned}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, planned: e.target.checked }))}
+                    />
+                    Chantiers planifiés
+                    <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
+                      {calendarPlannedInMonth.length}
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.pending}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, pending: e.target.checked }))}
+                    />
+                    Chantiers non planifiés
+                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                      {calendarPendingInMonth.length}
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.absences}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, absences: e.target.checked }))}
+                    />
+                    Congés & absences
+                    <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                      {calendarAbsenceWeeks.length} sem.
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
+                  <Card className="overflow-hidden">
+                    <div className="grid grid-cols-7 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
+                      {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((label) => (
+                        <div key={label} className="px-3 py-2 text-center border-l first:border-l-0 border-neutral-200">
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 auto-rows-fr">
+                      {monthWeeks.flat().map((day) => {
+                        const dayKey = toLocalKey(day);
+                        const inMonth = day.getMonth() === anchor.getMonth();
+                        const isToday = dayKey === todayKey;
+                        const plannedItems = calendarEventMap.plannedMap[dayKey] || [];
+                        const pendingItems = calendarEventMap.pendingMap[dayKey] || [];
+                        const absenceItems = calendarEventMap.absencesMap[dayKey] || [];
+                        return (
+                          <div
+                            key={dayKey}
+                            className={cx(
+                              "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
+                              !inMonth && "bg-neutral-50 text-neutral-400",
+                              isToday && "bg-sky-50"
+                            )}
+                          >
+                            <div className="flex items-center justify-between text-[11px] font-semibold">
+                              <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
+                              {absenceItems.length > 0 && calendarFilters.absences && (
+                                <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">
+                                  {absenceItems.length} abs.
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              {calendarFilters.planned &&
+                                plannedItems.slice(0, 3).map((site) => (
+                                  <div key={`${site.id}-${dayKey}`} className="flex items-center gap-1">
+                                    <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                    <span className="truncate">{site.name}</span>
+                                  </div>
+                                ))}
+                              {calendarFilters.pending &&
+                                pendingItems.slice(0, 2).map((site) => (
+                                  <div key={`${site.id}-pending-${dayKey}`} className="flex items-center gap-1 text-amber-700">
+                                    <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                    <span className="truncate">{site.name}</span>
+                                  </div>
+                                ))}
+                              {calendarFilters.absences && absenceItems.length > 0 && (
+                                <div className="text-[11px] text-sky-700">
+                                  {absenceItems.slice(0, 2).join(", ")}
+                                  {absenceItems.length > 2 && "…"}
+                                </div>
+                              )}
+                              {(calendarFilters.planned && plannedItems.length > 3) ||
+                              (calendarFilters.pending && pendingItems.length > 2) ? (
+                                <div className="text-[11px] text-neutral-500">
+                                  +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2)} autre(s)
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+
+                  <div className="space-y-3">
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Résumé du mois</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers planifiés</span>
+                          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                            {calendarPlannedInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers non planifiés</span>
+                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                            {calendarPendingInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Semaines avec absences</span>
+                          <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
+                            {calendarAbsenceWeeks.length}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Chantiers non planifiés</div>
+                        {calendarFilters.pending ? (
+                          <div className="space-y-2">
+                            {calendarPendingInMonth.slice(0, 5).map((site) => (
+                              <div key={site.id} className="flex items-start gap-2 text-xs">
+                                <span className={cx("w-2.5 h-2.5 rounded-full mt-1 border", site.color || "bg-amber-400", site.color ? "border-black/10" : "border-neutral-200")} />
+                                <div>
+                                  <div className="font-semibold text-neutral-800">{site.name}</div>
+                                  <div className="text-[11px] text-neutral-500">
+                                    {site.clientName || site.quoteSnapshot?.client || "Client"}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            {calendarPendingInMonth.length === 0 && (
+                              <div className="text-xs text-neutral-500">Aucun chantier en attente ce mois-ci.</div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-neutral-500">Filtre désactivé.</div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Congés & absences</div>
+                        {calendarFilters.absences ? (
+                          <div className="space-y-2">
+                            {calendarAbsenceWeeks.map((weekKey) => {
+                              const names = absencesWeekPeople[weekKey] || [];
+                              return (
+                                <div key={weekKey} className="rounded-lg border border-sky-100 bg-sky-50/40 px-2 py-1">
+                                  <div className="text-[11px] font-semibold text-sky-700">{weekKey}</div>
+                                  <div className="text-[11px] text-neutral-700">{names.join(", ")}</div>
+                                </div>
+                              );
+                            })}
+                            {calendarAbsenceWeeks.length === 0 && (
+                              <div className="text-xs text-neutral-500">Aucune absence ce mois-ci.</div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-neutral-500">Filtre désactivé.</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TIMELINE / CALENDRIER GANTT */}
             {view === "timeline" && timelineView && (
               <div className="space-y-3">
@@ -3685,6 +3991,38 @@ useEffect(() => {
                     </Button>
                   </div>
                 </div>
+                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-4 text-xs">
+                  <span className="uppercase tracking-wide text-neutral-500 font-semibold">Filtres</span>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.planned}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, planned: e.target.checked }))}
+                    />
+                    Chantiers planifiés
+                    <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">{plannedSites.length}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.pending}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, pending: e.target.checked }))}
+                    />
+                    Chantiers non planifiés
+                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{pendingSites.length}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={calendarFilters.absences}
+                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, absences: e.target.checked }))}
+                    />
+                    Congés & absences
+                    <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                      {Object.keys(absencesByWeek).length} sem.
+                    </span>
+                  </label>
+                </div>
                 <div className="text-xs text-neutral-600">
                   Barres continues alignées sur les dates prévues des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
                 </div>
@@ -3704,11 +4042,15 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    {ganttTimeline.rows.length === 0 && (
+                    {!calendarFilters.planned && (
+                      <div className="text-sm text-neutral-500 px-2">Affichage des chantiers planifiés désactivé.</div>
+                    )}
+
+                    {calendarFilters.planned && ganttTimeline.rows.length === 0 && (
                       <div className="text-sm text-neutral-500 px-2">Aucun chantier planifié sur cette période.</div>
                     )}
 
-                    {ganttTimeline.rows.map((row) => (
+                    {calendarFilters.planned && ganttTimeline.rows.map((row) => (
                       <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
                         <div className="flex flex-col gap-1 px-2 text-sm">
                           <div className="flex items-center gap-2">
@@ -3736,6 +4078,80 @@ useEffect(() => {
                     ))}
                   </div>
                 </div>
+
+                {calendarFilters.pending ? (
+                  <Card>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">Chantiers non planifiés</div>
+                        <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                          {timelinePendingSites.length} à planifier
+                        </span>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-2">
+                        {timelinePendingSites.map((site) => (
+                          <div key={site.id} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3">
+                            <div className="flex items-start gap-2">
+                              <span className={cx("w-3 h-3 rounded-full mt-1 border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} />
+                              <div className="space-y-0.5">
+                                <div className="font-semibold text-neutral-900">{site.name}</div>
+                                <div className="text-[11px] text-neutral-600">
+                                  {site.clientName || site.quoteSnapshot?.client || "Client"}
+                                </div>
+                                {(site.startDate || site.endDate) && (
+                                  <div className="text-[11px] text-neutral-600">
+                                    {site.startDate ? formatFR(new Date(site.startDate)) : "Date à définir"}
+                                    {site.startDate && site.endDate ? " → " : ""}
+                                    {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {timelinePendingSites.length === 0 && (
+                          <div className="text-sm text-neutral-500">Aucun chantier non planifié sur cette période.</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="text-sm text-neutral-500">Affichage des chantiers non planifiés désactivé.</div>
+                )}
+
+                {calendarFilters.absences ? (
+                  <Card>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">Congés & absences</div>
+                        <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
+                          {timelineAbsences.length} semaine{timelineAbsences.length > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {timelineAbsences.map((entry) => (
+                          <div key={entry.weekKey} className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2">
+                            <div className="text-[11px] font-semibold text-sky-700">
+                              S{pad2(getISOWeek(entry.start))} • {formatFR(entry.start, true)}
+                            </div>
+                            <div className="text-xs text-neutral-700 mt-1 flex flex-wrap gap-1">
+                              {entry.people.map((name) => (
+                                <span key={name} className="px-2 py-0.5 rounded-full bg-white border border-sky-100 text-sky-700">
+                                  {name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {timelineAbsences.length === 0 && (
+                          <div className="text-sm text-neutral-500">Aucune absence enregistrée sur la période.</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="text-sm text-neutral-500">Affichage des congés désactivé.</div>
+                )}
 
                 <Card>
                   <CardContent className="space-y-3">
