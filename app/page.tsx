@@ -206,16 +206,6 @@ const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
 const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
-const getISOWeekStart = (year: number, week: number) => {
-  const jan4 = new Date(year, 0, 4);
-  const jan4Day = (jan4.getDay() + 6) % 7;
-  const week1Start = new Date(jan4);
-  week1Start.setDate(jan4.getDate() - jan4Day);
-  const start = new Date(week1Start);
-  start.setDate(week1Start.getDate() + (week - 1) * 7);
-  start.setHours(0, 0, 0, 0);
-  return start;
-};
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -1561,6 +1551,53 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   );
 }
 
+function WeekNoteDialog({ open, setOpen, value, onSave }: any) {
+  const initial = value || {};
+  const [text, setText] = useState<string>(initial.text || "");
+  const [phase, setPhase] = useState<string>(initial.phase || "mid");
+
+  useEffect(() => {
+    const next = value || {};
+    setText(next.text || "");
+    setPhase(next.phase || "mid");
+  }, [value]);
+
+  const handleSave = () => {
+    onSave({ text: text.trim(), phase });
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setOpen(false); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Post-it de la semaine</DialogTitle>
+          <DialogDescription>Ajoutez une annotation liée au début, milieu ou fin de semaine.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Moment de la semaine</div>
+            <select
+              className="h-9 w-full rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              value={phase}
+              onChange={(e) => setPhase(e.target.value)}
+            >
+              <option value="start">Début de semaine</option>
+              <option value="mid">Milieu de semaine</option>
+              <option value="end">Fin de semaine</option>
+            </select>
+          </div>
+          <Textarea value={text} onChange={(e: any) => setText(e.target.value)} placeholder="Note, post-it, infos chantier..." />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
+          <Button onClick={handleSave}>Enregistrer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ==================================
 // Small helpers
 // ==================================
@@ -1649,11 +1686,10 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "overview" | "hours" | "timeline" | "devis" | "sites" | "salaries"
+    "dashboard" | "planning" | "weeks" | "hours" | "timeline" | "devis" | "sites" | "salaries"
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
-  const [overviewScope, setOverviewScope] = useState<"month" | "quarter" | "year">("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
@@ -1671,6 +1707,7 @@ export default function Page() {
     return getWeekDatesLocal(d);
   }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const weeksYear = useMemo(() => anchor.getFullYear(), [anchor]);
   const isWeekend = useCallback((d: Date) => {
     const day = d.getDay();
     return day === 0 || day === 6;
@@ -1780,42 +1817,36 @@ export default function Page() {
     return { ...timelineWindow, start: timelineWindow.start, buckets: timelineWindow.buckets };
   }, [timelineWindow]);
 
-  const overviewYear = useMemo(() => anchor.getFullYear(), [anchor]);
-  const overviewWeeks = useMemo(() => {
-    const total = getISOWeeksInYear(overviewYear);
+  const weeksCalendar = useMemo(() => {
+    const total = getISOWeeksInYear(weeksYear);
     return Array.from({ length: total }, (_, idx) => {
       const week = idx + 1;
-      const start = getISOWeekStart(overviewYear, week);
-      const monthIndex = start.getMonth();
-      const quarter = Math.floor(monthIndex / 3) + 1;
-      const key = `${overviewYear}-W${pad2(week)}`;
+      const start = getISOWeekStart(weeksYear, week);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
       return {
-        key,
+        key: `${weeksYear}-W${pad2(week)}`,
         week,
         start,
-        monthIndex,
-        monthLabel: start.toLocaleString("fr-FR", { month: "short" }),
-        quarterLabel: `T${quarter}`,
+        end,
       };
     });
-  }, [overviewYear]);
+  }, [weeksYear]);
 
-  const overviewSiteMap = useMemo(() => {
-    const map = new Map<string, { planned: number; pending: number; total: number }>();
-    const addWeek = (weekKey: string, status: string) => {
-      if (!map.has(weekKey)) {
-        map.set(weekKey, { planned: 0, pending: 0, total: 0 });
-      }
-      const entry = map.get(weekKey)!;
-      entry.total += 1;
-      if ((status || "planned") === "planned") entry.planned += 1;
-      else entry.pending += 1;
+  const weekSiteMap = useMemo(() => {
+    const map = new Map<string, { planned: any[]; pending: any[] }>();
+    const ensure = (weekKey: string) => {
+      if (!map.has(weekKey)) map.set(weekKey, { planned: [], pending: [] });
+      return map.get(weekKey)!;
     };
     safeSites.forEach((site) => {
       const status = site.status || "planned";
+      const target = status === "planned" ? "planned" : "pending";
       const weeks = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
       if (weeks.length > 0) {
-        weeks.forEach((wk) => addWeek(wk, status));
+        weeks.forEach((wk) => {
+          ensure(wk)[target].push(site);
+        });
         return;
       }
       if (site.startDate && site.endDate) {
@@ -1824,7 +1855,7 @@ export default function Page() {
         if (start && end) {
           const cursor = startOfISOWeekLocal(start);
           while (cursor.getTime() <= end.getTime()) {
-            addWeek(weekKeyOf(cursor), status);
+            ensure(weekKeyOf(cursor))[target].push(site);
             cursor.setDate(cursor.getDate() + 7);
           }
         }
@@ -1832,23 +1863,6 @@ export default function Page() {
     });
     return map;
   }, [safeSites]);
-
-  const overviewGroups = useMemo(() => {
-    if (overviewScope === "year") {
-      return [{ label: String(overviewYear), weeks: overviewWeeks }];
-    }
-    if (overviewScope === "quarter") {
-      return [1, 2, 3, 4].map((q) => ({
-        label: `T${q}`,
-        weeks: overviewWeeks.filter((w) => w.quarterLabel === `T${q}`),
-      }));
-    }
-    const months = Array.from({ length: 12 }, (_, idx) => ({
-      label: new Date(overviewYear, idx, 1).toLocaleString("fr-FR", { month: "long" }),
-      weeks: overviewWeeks.filter((w) => w.monthIndex === idx),
-    }));
-    return months;
-  }, [overviewScope, overviewWeeks, overviewYear]);
   const currentWeekKey = useMemo(() => weekKeyOf(weekDays[0]), [weekDays]);
   const previousWeekKey = useMemo(() => weekKeyOf(previousWeek[0]), [previousWeek]);
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
@@ -2385,7 +2399,7 @@ export default function Page() {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
       else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
       else d.setFullYear(d.getFullYear() + delta);
-    } else if (view === "overview") {
+    } else if (view === "weeks") {
       d.setFullYear(d.getFullYear() + delta);
     } else {
       d.setDate(d.getDate() + delta * 7);
@@ -2435,10 +2449,14 @@ export default function Page() {
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
+  const [weekNoteOpen, setWeekNoteOpen] = useState(false);
+  const [weekNoteKey, setWeekNoteKey] = useState<string | null>(null);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
+  const currentWeekNoteValue = weekNoteKey ? (notes[weekNoteKey] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
-  const openOverviewNote = (weekKey: string) => { setNoteKeyState(`overview|${weekKey}`); setNoteOpen(true); };
+  const openWeekNote = (weekKey: string) => { setWeekNoteKey(`week|${weekKey}`); setWeekNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
+  const saveWeekNote = (val: any) => { if (!weekNoteKey) return; setNotes((prev) => ({ ...prev, [weekNoteKey]: val })); };
 
   const clearCurrentWeek = () => {
     const confirmClear = window.confirm(
@@ -2953,8 +2971,8 @@ export default function Page() {
                   <TabsTrigger value="planning">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
                   </TabsTrigger>
-                  <TabsTrigger value="overview">
-                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Sommaire</span>
+                  <TabsTrigger value="weeks">
+                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Semaines</span>
                   </TabsTrigger>
                   <TabsTrigger value="hours">
                     <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
@@ -3056,7 +3074,7 @@ export default function Page() {
                 </div>
               </div>
             )}
-            {["planning", "overview", "hours", "timeline"].includes(view) && (
+            {["planning", "weeks", "hours", "timeline"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -3084,9 +3102,9 @@ export default function Page() {
                       </span>
                     </div>
                   )}
-                  {view === "overview" && (
+                  {view === "weeks" && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span>{`Sommaire ${overviewScope === "month" ? "mensuel" : overviewScope === "quarter" ? "trimestriel" : "annuel"} • ${overviewYear}`}</span>
+                      <span>{`Calendrier des semaines • ${weeksYear}`}</span>
                       <span className="text-xs font-semibold text-indigo-700 bg-indigo-100 px-2 py-1 rounded-full">
                         52 semaines
                       </span>
@@ -3793,81 +3811,88 @@ export default function Page() {
               </div>
             )}
 
-            {view === "overview" && (
-              <div className="space-y-3">
+            {view === "weeks" && (
+              <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">Sommaire hebdomadaire</span>
-                    <span className="text-xs text-neutral-600">{overviewYear}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant={overviewScope === "month" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("month")}>
-                      Mensuel
-                    </Button>
-                    <Button variant={overviewScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("quarter")}>
-                      Trimestre
-                    </Button>
-                    <Button variant={overviewScope === "year" ? "default" : "outline"} size="sm" onClick={() => setOverviewScope("year")}>
-                      Année
-                    </Button>
+                    <span className="text-sm font-semibold">Calendrier 52 semaines</span>
+                    <span className="text-xs text-neutral-600">{weeksYear}</span>
                   </div>
                 </div>
                 <div className="text-xs text-neutral-600">
-                  Vue compacte par semaine pour repérer rapidement les périodes chargées ou à planifier sans détailler les jours. Cliquez sur une case pour ajouter un post-it.
+                  Cliquez sur une semaine pour ajouter un post-it (début, milieu ou fin de semaine). Les chantiers planifiés et en attente apparaissent directement dans la case.
                 </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600">
-                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-300" /> Planifié</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-amber-200 border border-amber-300" /> À planifier</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-violet-200 border border-violet-300" /> Mixte</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-neutral-100 border border-neutral-200" /> Vide</span>
-                </div>
-                <div className="space-y-4">
-                  {overviewGroups.map((group) => (
-                    <div key={group.label} className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{group.label}</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.weeks.map((week) => {
-                          const stats = overviewSiteMap.get(week.key);
-                          const planned = stats?.planned || 0;
-                          const pending = stats?.pending || 0;
-                          const total = stats?.total || 0;
-                          const noteKey = `overview|${week.key}`;
-                          const noteValue = notes[noteKey];
-                          const noteText = typeof noteValue === "string" ? noteValue : noteValue?.text;
-                          const isMixed = planned > 0 && pending > 0;
-                          const isPlanned = planned > 0 && pending === 0;
-                          const isPending = pending > 0 && planned === 0;
-                          const bg = isMixed
-                            ? "bg-violet-200 border-violet-300 text-violet-900"
-                            : isPlanned
-                            ? "bg-emerald-200 border-emerald-300 text-emerald-900"
-                            : isPending
-                            ? "bg-amber-200 border-amber-300 text-amber-900"
-                            : "bg-neutral-100 border-neutral-200 text-neutral-500";
-                          return (
-                            <button
-                              key={week.key}
-                              type="button"
-                              onClick={() => openOverviewNote(week.key)}
-                              className={`relative h-14 w-20 rounded-lg border px-2 py-1 text-[10px] font-semibold flex flex-col items-start justify-between ${bg}`}
-                              title={`${week.key} • ${total} chantier${total > 1 ? "s" : ""}${noteText ? ` • ${noteText}` : ""}`}
-                            >
-                              <div className="flex w-full items-center justify-between text-[11px] font-semibold">
-                                <span>S{pad2(week.week)}</span>
-                                {total > 0 && (
-                                  <span className="text-[10px] font-semibold">{total}</span>
-                                )}
-                              </div>
-                              <div className="w-full text-left text-[9px] font-medium leading-tight text-neutral-700">
-                                {noteText ? noteText : "—"}
-                              </div>
-                              {noteText && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {weeksCalendar.map((week) => {
+                    const plan = weekSiteMap.get(week.key) || { planned: [], pending: [] };
+                    const noteKey = `week|${week.key}`;
+                    const note = notes[noteKey] || {};
+                    const noteText = typeof note === "string" ? note : note?.text;
+                    const phase = typeof note === "string" ? "mid" : note?.phase || "";
+                    const phaseLabel = phase === "start" ? "Début" : phase === "end" ? "Fin" : phase ? "Milieu" : "";
+                    const phaseStyle =
+                      phase === "start"
+                        ? "bg-sky-100 text-sky-700 border-sky-200"
+                        : phase === "end"
+                        ? "bg-rose-100 text-rose-700 border-rose-200"
+                        : phase === "mid"
+                        ? "bg-amber-100 text-amber-700 border-amber-200"
+                        : "bg-neutral-100 text-neutral-500 border-neutral-200";
+                    return (
+                      <button
+                        key={week.key}
+                        type="button"
+                        onClick={() => openWeekNote(week.key)}
+                        className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm hover:border-neutral-300"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-semibold">S{pad2(week.week)}</div>
+                          <div className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${phaseStyle}`}>
+                            {phaseLabel || "Semaine"}
+                          </div>
+                        </div>
+                        <div className="text-xs text-neutral-600">
+                          {formatFR(week.start)} → {formatFR(week.end)}
+                        </div>
+                        <div className="text-xs font-semibold text-neutral-700">
+                          {noteText ? noteText : "Post-it à compléter"}
+                        </div>
+                        <div className="space-y-1 text-[11px]">
+                          {plan.planned.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {plan.planned.slice(0, 4).map((site: any) => (
+                                <span key={`${week.key}-p-${site.id}`} className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-800">
+                                  {site.name}
+                                </span>
+                              ))}
+                              {plan.planned.length > 4 && (
+                                <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                                  +{plan.planned.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {plan.pending.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {plan.pending.slice(0, 4).map((site: any) => (
+                                <span key={`${week.key}-u-${site.id}`} className="rounded-md bg-amber-100 px-2 py-0.5 text-amber-800">
+                                  {site.name}
+                                </span>
+                              ))}
+                              {plan.pending.length > 4 && (
+                                <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">
+                                  +{plan.pending.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {plan.planned.length === 0 && plan.pending.length === 0 && (
+                            <div className="text-neutral-500">Aucun chantier</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -4447,6 +4472,7 @@ export default function Page() {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <WeekNoteDialog open={weekNoteOpen} setOpen={setWeekNoteOpen} value={currentWeekNoteValue} onSave={saveWeekNote} />
       <RenameDialog
         open={renameOpen}
         setOpen={setRenameOpen}
