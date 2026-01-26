@@ -1641,6 +1641,7 @@ export default function Page() {
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
+  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year">("month");
   const [calendarFilters, setCalendarFilters] = useState({
     planned: true,
     pending: true,
@@ -1859,11 +1860,40 @@ export default function Page() {
     return map;
   }, [absencesByWeek, peopleById]);
 
+  const calendarWindow = useMemo(() => {
+    const base = new Date(anchor);
+    base.setHours(0, 0, 0, 0);
+
+    if (calendarScope === "quarter") {
+      return { start: startOfQuarterLocal(base), end: endOfQuarterLocal(base) };
+    }
+    if (calendarScope === "year") {
+      return { start: startOfYearLocal(base.getFullYear()), end: endOfYearLocal(base.getFullYear()) };
+    }
+    return { start: startOfMonthLocal(base), end: endOfMonthLocal(base) };
+  }, [anchor, calendarScope]);
+
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = [];
+    const cursor = startOfISOWeekLocal(calendarWindow.start);
+    const end = new Date(calendarWindow.end);
+    while (cursor.getTime() <= end.getTime()) {
+      const week = Array.from({ length: 7 }, (_, idx) => {
+        const day = new Date(cursor);
+        day.setDate(cursor.getDate() + idx);
+        return day;
+      });
+      weeks.push(week);
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return weeks;
+  }, [calendarWindow.end, calendarWindow.start]);
+
   const calendarEventMap = useMemo(() => {
     const plannedMap: Record<string, any[]> = {};
     const pendingMap: Record<string, any[]> = {};
     const absencesMap: Record<string, string[]> = {};
-    const allDays = monthWeeks.flat();
+    const allDays = calendarWeeks.flat();
 
     allDays.forEach((day) => {
       const key = toLocalKey(day);
@@ -1889,38 +1919,34 @@ export default function Page() {
     });
 
     return { plannedMap, pendingMap, absencesMap };
-  }, [absencesWeekPeople, calendarFilters.absences, calendarFilters.pending, calendarFilters.planned, monthWeeks, pendingSites, plannedSites, todayKey]);
+  }, [absencesWeekPeople, calendarFilters.absences, calendarFilters.pending, calendarFilters.planned, calendarWeeks, pendingSites, plannedSites, todayKey]);
 
-  const calendarMonthRange = useMemo(
-    () => ({ start: startOfMonthLocal(anchor), end: endOfMonthLocal(anchor) }),
-    [anchor]
-  );
   const calendarPlannedInMonth = useMemo(
     () =>
       plannedSites.filter((site) => {
         const start = fromLocalKey(site.startDate || todayKey);
         const end = fromLocalKey(site.endDate || site.startDate || todayKey);
-        return start.getTime() <= calendarMonthRange.end.getTime() && end.getTime() >= calendarMonthRange.start.getTime();
+        return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
-    [calendarMonthRange.end, calendarMonthRange.start, plannedSites, todayKey]
+    [calendarWindow.end, calendarWindow.start, plannedSites, todayKey]
   );
   const calendarPendingInMonth = useMemo(
     () =>
       pendingSites.filter((site) => {
         const start = fromLocalKey(site.startDate || todayKey);
         const end = fromLocalKey(site.endDate || site.startDate || todayKey);
-        return start.getTime() <= calendarMonthRange.end.getTime() && end.getTime() >= calendarMonthRange.start.getTime();
+        return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
-    [calendarMonthRange.end, calendarMonthRange.start, pendingSites, todayKey]
+    [calendarWindow.end, calendarWindow.start, pendingSites, todayKey]
   );
   const calendarAbsenceWeeks = useMemo(() => {
     const weeks = new Set<string>();
-    monthWeeks.flat().forEach((day) => {
+    calendarWeeks.flat().forEach((day) => {
       const wk = weekKeyOf(day);
       if (absencesWeekPeople[wk]?.length) weeks.add(wk);
     });
     return Array.from(weeks).sort();
-  }, [absencesWeekPeople, monthWeeks]);
+  }, [absencesWeekPeople, calendarWeeks]);
 
   const timelineAbsences = useMemo(() => {
     if (!timelineView || !calendarFilters.absences) return [];
@@ -2405,7 +2431,13 @@ export default function Page() {
   const shift = (delta: number) => {
     const d = new Date(anchor);
     if (isPlanningMonth || view === "calendar") {
-      d.setMonth(d.getMonth() + delta);
+      if (view === "calendar") {
+        if (calendarScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
+        else if (calendarScope === "year") d.setFullYear(d.getFullYear() + delta);
+        else d.setMonth(d.getMonth() + delta);
+      } else {
+        d.setMonth(d.getMonth() + delta);
+      }
     } else if (view === "timeline") {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
       else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
@@ -3099,9 +3131,13 @@ useEffect(() => {
                   )}
                   {view === "calendar" && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
+                      <span>
+                        {calendarScope === "month" && anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}
+                        {calendarScope === "quarter" && `T${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`}
+                        {calendarScope === "year" && `${anchor.getFullYear()}`}
+                      </span>
                       <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                        Calendrier mensuel filtrable
+                        Calendrier {calendarScope === "month" ? "mensuel" : calendarScope === "quarter" ? "trimestriel" : "annuel"} filtrable
                       </span>
                     </div>
                   )}
@@ -3787,56 +3823,69 @@ useEffect(() => {
             {/* CALENDRIER MENSUEL */}
             {view === "calendar" && (
               <div className="space-y-3">
-                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-4 text-xs">
-                  <span className="uppercase tracking-wide text-neutral-500 font-semibold">Filtres</span>
-                  <label className="flex items-center gap-2 text-neutral-700">
-                    <input
-                      type="checkbox"
-                      checked={calendarFilters.planned}
-                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, planned: e.target.checked }))}
-                    />
-                    Chantiers planifiés
-                    <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
-                      {calendarPlannedInMonth.length}
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 text-neutral-700">
-                    <input
-                      type="checkbox"
-                      checked={calendarFilters.pending}
-                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, pending: e.target.checked }))}
-                    />
-                    Chantiers non planifiés
-                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                      {calendarPendingInMonth.length}
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 text-neutral-700">
-                    <input
-                      type="checkbox"
-                      checked={calendarFilters.absences}
-                      onChange={(e) => setCalendarFilters((prev) => ({ ...prev, absences: e.target.checked }))}
-                    />
-                    Congés & absences
-                    <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
-                      {calendarAbsenceWeeks.length} sem.
-                    </span>
-                  </label>
+                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <span className="uppercase tracking-wide text-neutral-500 font-semibold">Filtres</span>
+                    <label className="flex items-center gap-2 text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={calendarFilters.planned}
+                        onChange={(e) => setCalendarFilters((prev) => ({ ...prev, planned: e.target.checked }))}
+                      />
+                      Chantiers planifiés
+                      <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
+                        {calendarPlannedInMonth.length}
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={calendarFilters.pending}
+                        onChange={(e) => setCalendarFilters((prev) => ({ ...prev, pending: e.target.checked }))}
+                      />
+                      Chantiers non planifiés
+                      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                        {calendarPendingInMonth.length}
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={calendarFilters.absences}
+                        onChange={(e) => setCalendarFilters((prev) => ({ ...prev, absences: e.target.checked }))}
+                      />
+                      Congés & absences
+                      <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                        {calendarAbsenceWeeks.length} sem.
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant={calendarScope === "month" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("month")}>
+                      Mensuel
+                    </Button>
+                    <Button variant={calendarScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("quarter")}>
+                      Trimestre
+                    </Button>
+                    <Button variant={calendarScope === "year" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("year")}>
+                      Année
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                   <Card className="overflow-hidden">
-                    <div className="grid grid-cols-7 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
-                      {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((label) => (
+                    <div className="grid grid-cols-5 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
+                      {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((label) => (
                         <div key={label} className="px-3 py-2 text-center border-l first:border-l-0 border-neutral-200">
                           {label}
                         </div>
                       ))}
                     </div>
-                    <div className="grid grid-cols-7 auto-rows-fr">
-                      {monthWeeks.flat().map((day) => {
+                    <div className="grid grid-cols-5 auto-rows-fr">
+                      {calendarWeeks.flatMap((week) => week.slice(0, 5)).map((day) => {
                         const dayKey = toLocalKey(day);
-                        const inMonth = day.getMonth() === anchor.getMonth();
+                        const inRange = day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime();
                         const isToday = dayKey === todayKey;
                         const plannedItems = calendarEventMap.plannedMap[dayKey] || [];
                         const pendingItems = calendarEventMap.pendingMap[dayKey] || [];
@@ -3846,7 +3895,7 @@ useEffect(() => {
                             key={dayKey}
                             className={cx(
                               "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
-                              !inMonth && "bg-neutral-50 text-neutral-400",
+                              !inRange && "bg-neutral-50 text-neutral-400",
                               isToday && "bg-sky-50"
                             )}
                           >
