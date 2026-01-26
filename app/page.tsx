@@ -204,6 +204,16 @@ const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
 const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
+const getISOWeekStart = (year: number, weekNum: number) => {
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = (jan4.getDay() + 6) % 7;
+  const week1Start = new Date(jan4);
+  week1Start.setDate(jan4.getDate() - jan4Day);
+  const weekStart = new Date(week1Start);
+  weekStart.setDate(week1Start.getDate() + (weekNum - 1) * 7);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+};
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -1534,7 +1544,7 @@ export default function Page() {
   >("dashboard");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
-  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year">("month");
+  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("month");
   const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -1779,7 +1789,7 @@ export default function Page() {
     if (calendarScope === "quarter") {
       return { start: startOfQuarterLocal(base), end: endOfQuarterLocal(base) };
     }
-    if (calendarScope === "year") {
+    if (calendarScope === "year" || calendarScope === "projection") {
       return { start: startOfYearLocal(base.getFullYear()), end: endOfYearLocal(base.getFullYear()) };
     }
     return { start: startOfMonthLocal(base), end: endOfMonthLocal(base) };
@@ -1800,6 +1810,55 @@ export default function Page() {
     }
     return weeks;
   }, [calendarWindow.end, calendarWindow.start]);
+  const projectionWeeks = useMemo(() => {
+    if (calendarScope !== "projection") return [];
+    const year = anchor.getFullYear();
+    const totalWeeks = getISOWeeksInYear(year);
+    return Array.from({ length: totalWeeks }, (_, idx) => {
+      const weekNum = idx + 1;
+      const start = getISOWeekStart(year, weekNum);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      return { weekKey: `${year}-W${pad2(weekNum)}`, weekNum, start, end };
+    });
+  }, [anchor, calendarScope]);
+  const projectionWeekSummaries = useMemo(() => {
+    if (calendarScope !== "projection") return [];
+    const visibleCalendarEvents = calendarEvents.filter((event) => {
+      const cal = event.calendarId ? eventCalendarsById[event.calendarId] : undefined;
+      return !cal || cal.visible;
+    });
+    return projectionWeeks.map((week) => {
+      const weekStart = week.start.getTime();
+      const weekEnd = week.end.getTime();
+      const planned = visiblePlannedSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey).getTime();
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      const pending = visiblePendingSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey).getTime();
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      const absences = absencesWeekPeople[week.weekKey] || [];
+      const events = visibleCalendarEvents.filter((event) => {
+        const start = fromLocalKey(event.dateKey).getTime();
+        const end = fromLocalKey(event.endDateKey || event.dateKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      return { ...week, planned, pending, absences, events };
+    });
+  }, [
+    absencesWeekPeople,
+    calendarEvents,
+    calendarScope,
+    eventCalendarsById,
+    projectionWeeks,
+    todayKey,
+    visiblePendingSites,
+    visiblePlannedSites,
+  ]);
 
   const calendarPlannedInMonth = useMemo(
     () =>
@@ -2187,12 +2246,7 @@ export default function Page() {
         const [yearRaw, weekRaw] = weekKey.split("-W");
         const year = Number(yearRaw);
         const weekNum = Number(weekRaw);
-        const jan4 = new Date(year, 0, 4);
-        const jan4Day = (jan4.getDay() + 6) % 7;
-        const week1Start = new Date(jan4);
-        week1Start.setDate(jan4.getDate() - jan4Day);
-        const weekStart = new Date(week1Start);
-        weekStart.setDate(week1Start.getDate() + (weekNum - 1) * 7);
+        const weekStart = getISOWeekStart(year, weekNum);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 4);
         return {
@@ -2452,7 +2506,7 @@ export default function Page() {
     if (isPlanningMonth || view === "calendar") {
       if (view === "calendar") {
         if (calendarScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
-        else if (calendarScope === "year") d.setFullYear(d.getFullYear() + delta);
+        else if (calendarScope === "year" || calendarScope === "projection") d.setFullYear(d.getFullYear() + delta);
         else d.setMonth(d.getMonth() + delta);
       } else {
         d.setMonth(d.getMonth() + delta);
@@ -3155,10 +3209,18 @@ useEffect(() => {
                       <span>
                         {calendarScope === "month" && anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}
                         {calendarScope === "quarter" && `T${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`}
-                        {calendarScope === "year" && `${anchor.getFullYear()}`}
+                        {(calendarScope === "year" || calendarScope === "projection") && `${anchor.getFullYear()}`}
                       </span>
                       <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                        Calendrier {calendarScope === "month" ? "mensuel" : calendarScope === "quarter" ? "trimestriel" : "annuel"} filtrable
+                        Calendrier{" "}
+                        {calendarScope === "month"
+                          ? "mensuel"
+                          : calendarScope === "quarter"
+                          ? "trimestriel"
+                          : calendarScope === "year"
+                          ? "annuel"
+                          : "projection"}{" "}
+                        filtrable
                       </span>
                     </div>
                   )}
@@ -3718,121 +3780,182 @@ useEffect(() => {
                     <Button variant={calendarScope === "year" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("year")}>
                       Année
                     </Button>
+                    <Button variant={calendarScope === "projection" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("projection")}>
+                      Projection
+                    </Button>
                   </div>
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                   <Card className="overflow-hidden">
-                    <div className="grid grid-cols-6 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
-                      <div className="px-2 py-2 text-center border-l first:border-l-0 border-neutral-200">S.</div>
-                      {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((label) => (
-                        <div key={label} className="px-3 py-2 text-center border-l first:border-l-0 border-neutral-200">
-                          {label}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid auto-rows-fr">
-                      {(() => {
-                        let lastMonthIndex: number | null = null;
-                        return calendarWeeks.map((week) => {
-                          const weekdays = week.slice(0, 5);
-                          const weekKey = weekKeyOf(week[0]);
-                          const weekInRangeDay = weekdays.find(
-                            (day) => day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime()
-                          );
-                          const weekMonthIndex = weekInRangeDay ? weekInRangeDay.getMonth() : null;
-                          const isNewMonth = weekMonthIndex !== null && weekMonthIndex !== lastMonthIndex;
-                          if (weekMonthIndex !== null) lastMonthIndex = weekMonthIndex;
-
-                          return (
-                            <div key={weekKey} className={cx("grid grid-cols-6", isNewMonth && "border-t-2 border-sky-200")}>
-                              <div className="border-l border-t border-neutral-200 px-2 py-2 text-[11px] text-neutral-600 bg-neutral-50/70 flex flex-col gap-1">
-                                {isNewMonth && weekMonthIndex !== null && weekInRangeDay && (
-                                  <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 text-[10px] font-semibold">
-                                    {new Date(weekInRangeDay.getFullYear(), weekMonthIndex, 1).toLocaleString("fr-FR", { month: "long" })}
-                                  </span>
-                                )}
-                                <span className="font-semibold text-neutral-700">S{pad2(getISOWeek(week[0]))}</span>
+                    {calendarScope === "projection" ? (
+                      <div className="p-3">
+                        <div className="grid grid-cols-4 gap-3">
+                          {projectionWeekSummaries.map((week) => (
+                            <div key={week.weekKey} className="rounded-lg border border-neutral-200 bg-white p-3 text-xs space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] font-semibold text-neutral-700">
+                                  S{pad2(week.weekNum)}
+                                  <span className="text-neutral-400"> • </span>
+                                  {formatFR(week.start, true)}
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  aria-label={`Ajouter un événement la semaine ${week.weekNum}`}
+                                  onClick={() => openEventDialogForDate(toLocalKey(week.start))}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
                               </div>
-                              {weekdays.map((day) => {
-                                const dayKey = toLocalKey(day);
-                                const inRange = day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime();
-                                const isToday = dayKey === todayKey;
-                                const plannedItems = calendarEventMap.plannedMap[dayKey] || [];
-                                const pendingItems = calendarEventMap.pendingMap[dayKey] || [];
-                                const absenceItems = calendarEventMap.absencesMap[dayKey] || [];
-                                return (
-                                  <div
-                                    key={dayKey}
-                                    className={cx(
-                                      "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
-                                      !inRange && "bg-neutral-50 text-neutral-400",
-                                      isToday && "bg-sky-50"
-                                    )}
-                                  >
-                                    <div className="flex items-center justify-between text-[11px] font-semibold">
-                                      <div className="flex items-center gap-1">
-                                        <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6"
-                                          aria-label={`Ajouter un événement le ${day.toLocaleDateString("fr-FR")}`}
-                                          onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
-                                            event.stopPropagation();
-                                            openEventDialogForDate(dayKey);
-                                          }}
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                        </Button>
-                                      </div>
-                                      {absenceItems.length > 0 && (
-                                        <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">
-                                          {absenceItems.length} abs.
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="space-y-1">
-                                      {plannedItems.slice(0, 3).map((site) => (
-                                        <div key={`${site.id}-${dayKey}`} className="flex items-center gap-1">
-                                          <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
-                                          <span className="truncate">{site.name}</span>
-                                        </div>
-                                      ))}
-                                      {calendarEventsByDay[dayKey]?.slice(0, 2).map((event) => (
-                                        <div key={`evt-${event.id}`} className="flex items-center gap-1">
-                                          <span className={cx("w-2 h-2 rounded-full border", event.color, event.color ? "border-black/10" : "border-neutral-200")} />
-                                          <span className="truncate">{event.title}</span>
-                                        </div>
-                                      ))}
-                                      {pendingItems.slice(0, 2).map((site) => (
-                                        <div key={`${site.id}-pending-${dayKey}`} className="flex items-center gap-1 text-amber-700">
-                                          <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
-                                          <span className="truncate">{site.name}</span>
-                                        </div>
-                                      ))}
-                                      {absenceItems.length > 0 && (
-                                        <div className="text-[11px] text-sky-700">
-                                          {absenceItems.slice(0, 2).join(", ")}
-                                          {absenceItems.length > 2 && "…"}
-                                        </div>
-                                      )}
-                                      {(plannedItems.length > 3) ||
-                                      (pendingItems.length > 2) ||
-                                      (calendarEventsByDay[dayKey]?.length ?? 0) > 2 ? (
-                                        <div className="text-[11px] text-neutral-500">
-                                          +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2) + Math.max(0, (calendarEventsByDay[dayKey]?.length || 0) - 2)} autre(s)
-                                        </div>
-                                      ) : null}
-                                    </div>
+                              <div className="space-y-1">
+                                {week.planned.slice(0, 4).map((site) => (
+                                  <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-1">
+                                    <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                    <span className="truncate">{site.name}</span>
                                   </div>
-                                );
-                              })}
+                                ))}
+                                {week.events.slice(0, 3).map((event) => (
+                                  <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-1">
+                                    <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
+                                    <span className="truncate">{event.title}</span>
+                                  </div>
+                                ))}
+                                {week.pending.slice(0, 2).map((site) => (
+                                  <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-1 text-amber-700">
+                                    <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                    <span className="truncate">{site.name}</span>
+                                  </div>
+                                ))}
+                                {week.absences.length > 0 && (
+                                  <div className="text-[11px] text-sky-700">{week.absences.slice(0, 3).join(", ")}{week.absences.length > 3 && "…"}
+                                  </div>
+                                )}
+                                {(week.planned.length > 4 || week.events.length > 3 || week.pending.length > 2) && (
+                                  <div className="text-[11px] text-neutral-500">
+                                    +{Math.max(0, week.planned.length - 4) + Math.max(0, week.events.length - 3) + Math.max(0, week.pending.length - 2)} autre(s)
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          );
-                        });
-                      })()}
-                    </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-6 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
+                          <div className="px-2 py-2 text-center border-l first:border-l-0 border-neutral-200">S.</div>
+                          {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((label) => (
+                            <div key={label} className="px-3 py-2 text-center border-l first:border-l-0 border-neutral-200">
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid auto-rows-fr">
+                          {(() => {
+                            let lastMonthIndex: number | null = null;
+                            return calendarWeeks.map((week) => {
+                              const weekdays = week.slice(0, 5);
+                              const weekKey = weekKeyOf(week[0]);
+                              const weekInRangeDay = weekdays.find(
+                                (day) => day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime()
+                              );
+                              const weekMonthIndex = weekInRangeDay ? weekInRangeDay.getMonth() : null;
+                              const isNewMonth = weekMonthIndex !== null && weekMonthIndex !== lastMonthIndex;
+                              if (weekMonthIndex !== null) lastMonthIndex = weekMonthIndex;
+
+                              return (
+                                <div key={weekKey} className={cx("grid grid-cols-6", isNewMonth && "border-t-2 border-sky-200")}>
+                                  <div className="border-l border-t border-neutral-200 px-2 py-2 text-[11px] text-neutral-600 bg-neutral-50/70 flex flex-col gap-1">
+                                    {isNewMonth && weekMonthIndex !== null && weekInRangeDay && (
+                                      <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 text-[10px] font-semibold">
+                                        {new Date(weekInRangeDay.getFullYear(), weekMonthIndex, 1).toLocaleString("fr-FR", { month: "long" })}
+                                      </span>
+                                    )}
+                                    <span className="font-semibold text-neutral-700">S{pad2(getISOWeek(week[0]))}</span>
+                                  </div>
+                                  {weekdays.map((day) => {
+                                    const dayKey = toLocalKey(day);
+                                    const inRange = day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime();
+                                    const isToday = dayKey === todayKey;
+                                    const plannedItems = calendarEventMap.plannedMap[dayKey] || [];
+                                    const pendingItems = calendarEventMap.pendingMap[dayKey] || [];
+                                    const absenceItems = calendarEventMap.absencesMap[dayKey] || [];
+                                    return (
+                                      <div
+                                        key={dayKey}
+                                        className={cx(
+                                          "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
+                                          !inRange && "bg-neutral-50 text-neutral-400",
+                                          isToday && "bg-sky-50"
+                                        )}
+                                      >
+                                        <div className="flex items-center justify-between text-[11px] font-semibold">
+                                          <div className="flex items-center gap-1">
+                                            <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              aria-label={`Ajouter un événement le ${day.toLocaleDateString("fr-FR")}`}
+                                              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                                                event.stopPropagation();
+                                                openEventDialogForDate(dayKey);
+                                              }}
+                                            >
+                                              <Plus className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                          {absenceItems.length > 0 && (
+                                            <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">
+                                              {absenceItems.length} abs.
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="space-y-1">
+                                          {plannedItems.slice(0, 3).map((site) => (
+                                            <div key={`${site.id}-${dayKey}`} className="flex items-center gap-1">
+                                              <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                              <span className="truncate">{site.name}</span>
+                                            </div>
+                                          ))}
+                                          {calendarEventsByDay[dayKey]?.slice(0, 2).map((event) => (
+                                            <div key={`evt-${event.id}`} className="flex items-center gap-1">
+                                              <span className={cx("w-2 h-2 rounded-full border", event.color, event.color ? "border-black/10" : "border-neutral-200")} />
+                                              <span className="truncate">{event.title}</span>
+                                            </div>
+                                          ))}
+                                          {pendingItems.slice(0, 2).map((site) => (
+                                            <div key={`${site.id}-pending-${dayKey}`} className="flex items-center gap-1 text-amber-700">
+                                              <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                              <span className="truncate">{site.name}</span>
+                                            </div>
+                                          ))}
+                                          {absenceItems.length > 0 && (
+                                            <div className="text-[11px] text-sky-700">
+                                              {absenceItems.slice(0, 2).join(", ")}
+                                              {absenceItems.length > 2 && "…"}
+                                            </div>
+                                          )}
+                                          {(plannedItems.length > 3) ||
+                                          (pendingItems.length > 2) ||
+                                          (calendarEventsByDay[dayKey]?.length ?? 0) > 2 ? (
+                                            <div className="text-[11px] text-neutral-500">
+                                              +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2) + Math.max(0, (calendarEventsByDay[dayKey]?.length || 0) - 2)} autre(s)
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </>
+                    )}
                   </Card>
 
                   <div className="space-y-3">
