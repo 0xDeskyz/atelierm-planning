@@ -544,7 +544,6 @@ const normalizeQuoteRecord = (quote: any) => {
 
   return patch;
 };
-const AUTO_SAVE_DELAY_MS = 1000;
 
 // ==================================
 // Draggable Person Chip
@@ -1599,7 +1598,6 @@ export default function Page() {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const dirtyRef = useRef(false);
   const skipDirtyRef = useRef(false);
@@ -2557,10 +2555,6 @@ export default function Page() {
     setSaveError(null);
     setIsDirty(false);
     dirtyRef.current = false;
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
-    }
   }, []);
 
   const firstLoad = useRef(true);
@@ -2715,7 +2709,7 @@ export default function Page() {
     return "Aucune sauvegarde effectuée";
   }, [lastSavedAt, saveError, saving]);
 
-  // Sauvegarde de sécurité après inactivité
+  // Marquer l'état comme modifié pour la sauvegarde manuelle
   useEffect(() => {
     if (firstLoad.current) return;
     if (skipDirtyRef.current) {
@@ -2724,21 +2718,7 @@ export default function Page() {
     }
     setIsDirty(true);
     dirtyRef.current = true;
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-    }
-    autosaveTimerRef.current = setTimeout(() => {
-      if (dirtyRef.current) {
-        void performSave();
-      }
-    }, AUTO_SAVE_DELAY_MS);
-    return () => {
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current);
-        autosaveTimerRef.current = null;
-      }
-    };
-  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes, performSave]);
+  }, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, hoursPerDay, quotes]);
 
   // ==========================
   // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -2925,17 +2905,6 @@ export default function Page() {
                         variant="ghost"
                         className="w-full justify-start gap-2"
                         onClick={() => {
-                          refreshPlanning();
-                          setMaintenanceOpen(false);
-                        }}
-                        disabled={refreshing}
-                      >
-                        <RotateCcw className="w-4 h-4" /> Recharger le planning
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
                           fileRef.current?.click();
                           setMaintenanceOpen(false);
                         }}
@@ -3081,11 +3050,21 @@ export default function Page() {
             )}
             <Button
               variant="default"
+              className="bg-emerald-600 hover:bg-emerald-700"
               onClick={savePlanning}
               disabled={saving || !isDirty}
               title={isDirty ? "Enregistrer les modifications sur le serveur" : "Aucune modification à enregistrer"}
             >
               <Upload className="w-4 h-4 mr-1" /> {saving ? "Enregistrement..." : "Enregistrer"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-sky-600 text-sky-700 hover:bg-sky-50"
+              onClick={refreshPlanning}
+              disabled={refreshing}
+              title="Recharger le planning depuis le serveur"
+            >
+              <RotateCcw className="w-4 h-4 mr-1" /> Recharger le planning
             </Button>
           </div>
         </div>
