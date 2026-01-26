@@ -3819,22 +3819,6 @@ useEffect(() => {
                                   <Plus className="h-3.5 w-3.5" />
                                 </Button>
                               </div>
-                              <div className="flex flex-wrap gap-1 text-[11px]">
-                                <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
-                                  {week.planned.length} planifiés
-                                </span>
-                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-                                  {week.pending.length} en attente
-                                </span>
-                                <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">
-                                  {week.events.length} événement{week.events.length > 1 ? "s" : ""}
-                                </span>
-                                {week.absences.length > 0 && (
-                                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100">
-                                    {week.absences.length} absence{week.absences.length > 1 ? "s" : ""}
-                                  </span>
-                                )}
-                              </div>
                               <div className="space-y-2">
                                 <div className="space-y-1 max-h-28 overflow-auto">
                                   <div className="text-[10px] uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
