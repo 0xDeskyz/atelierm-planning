@@ -1795,8 +1795,8 @@ export default function Page() {
     () => (pendingCalendarVisible ? pendingSites : []),
     [pendingCalendarVisible, pendingSites]
   );
-  const timelinePlannedSites = visiblePlannedSites;
-  const timelinePendingSites = visiblePendingSites;
+  const timelinePlannedSites = plannedSites;
+  const timelinePendingSites = pendingSites;
 
   const earliestTimelineStart = useMemo(
     () =>
@@ -1817,8 +1817,8 @@ export default function Page() {
   const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
   const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
   const sitesForCurrentWeek = useMemo(
-    () => visiblePlannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
-    [visiblePlannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
+    () => plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
+    [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
   );
 
   const getCellMeta = useCallback(
@@ -2029,7 +2029,6 @@ export default function Page() {
 
   const timelineAbsences = useMemo(() => {
     if (!timelineView) return [];
-    if (!absencesCalendarVisible) return [];
     const entries: { weekKey: string; start: Date; people: string[] }[] = [];
     const cursor = startOfISOWeekLocal(timelineView.start);
     const end = new Date(timelineView.end);
@@ -2045,7 +2044,7 @@ export default function Page() {
       cursor.setDate(cursor.getDate() + 7);
     }
     return entries;
-  }, [absencesByWeek, absencesCalendarVisible, peopleById, timelineView]);
+  }, [absencesByWeek, peopleById, timelineView]);
 
   const sitesById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -2300,10 +2299,10 @@ export default function Page() {
 
   const pendingSiteHighlights = useMemo(
     () =>
-      [...visiblePendingSites]
+      [...pendingSites]
         .sort((a, b) => fromLocalKey(a.startDate || todayKey).getTime() - fromLocalKey(b.startDate || todayKey).getTime())
         .slice(0, 4),
-    [visiblePendingSites, todayKey]
+    [pendingSites, todayKey]
   );
 
   const weekSiteHighlights = useMemo(() => sitesForCurrentWeek.slice(0, 4), [sitesForCurrentWeek]);
@@ -3389,13 +3388,13 @@ useEffect(() => {
                     value={weatherTargetSite || ""}
                     onChange={(e) => setWeatherTargetSite(e.target.value || null)}
                   >
-                    {visiblePlannedSites.map((s) => (
+                    {plannedSites.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
-                    {visiblePlannedSites.length === 0 && (
-                      <option value="">Aucun chantier visible</option>
+                    {plannedSites.length === 0 && (
+                      <option value="">Aucun chantier planifié</option>
                     )}
                   </select>
                   <Button
@@ -3533,7 +3532,7 @@ useEffect(() => {
                   <span>Chantiers à planifier</span>
                   <ListChecks className="w-4 h-4" />
                 </div>
-                <div className="text-3xl font-bold">{visiblePendingSites.length}</div>
+                <div className="text-3xl font-bold">{pendingSites.length}</div>
                 <div className="text-xs text-neutral-600">
                   {pendingSiteHighlights.length > 0
                     ? `Prochain : ${formatFR(fromLocalKey(pendingSiteHighlights[0].startDate || todayKey))}`
@@ -3589,7 +3588,7 @@ useEffect(() => {
                     <div className="text-xs text-neutral-600">Chantiers issus des devis validés.</div>
                   </div>
                   <span className="text-[11px] px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100">
-                    {visiblePendingSites.length} en file d'attente
+                    {pendingSites.length} en file d'attente
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -3803,16 +3802,16 @@ useEffect(() => {
                 <div className="flex items-center justify-between">
                   <div className="font-medium flex items-center gap-2">
                     Chantiers
-                    {visiblePendingSites.length > 0 && (
+                    {pendingSites.length > 0 && (
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
-                        {visiblePendingSites.length} à planifier
+                        {pendingSites.length} à planifier
                       </span>
                     )}
                   </div>
                   <AddSite onAdd={addSite} />
                 </div>
                 <div className="space-y-2">
-                  {visiblePlannedSites.map((s) => (
+                  {plannedSites.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2">
                         <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
@@ -3937,7 +3936,7 @@ useEffect(() => {
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
                   const isCurrent = wkKey === todayWeekKey;
-                  const sitesForWeek = visiblePlannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  const sitesForWeek = plannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
                   return (
                     <div
                       key={idx}
@@ -4291,13 +4290,13 @@ useEffect(() => {
                 <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-3 text-xs">
                   <span className="uppercase tracking-wide text-neutral-500 font-semibold">Aperçu</span>
                   <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
-                    {visiblePlannedSites.length} planifiés
+                    {plannedSites.length} planifiés
                   </span>
                   <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                    {visiblePendingSites.length} non planifiés
+                    {pendingSites.length} non planifiés
                   </span>
                   <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
-                    {absencesCalendarVisible ? Object.keys(absencesByWeek).length : 0} sem. absences
+                    {Object.keys(absencesByWeek).length} sem. absences
                   </span>
                 </div>
                 <div className="text-xs text-neutral-600">
