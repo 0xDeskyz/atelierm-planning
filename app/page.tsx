@@ -25,10 +25,10 @@ import {
   Download,
   Edit3,
   Eraser,
-  LayoutDashboard,
   ListChecks,
   Plus,
   RotateCcw,
+  Save,
   Settings,
   Trash2,
   Upload,
@@ -1512,6 +1512,7 @@ export default function Page() {
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
@@ -2881,12 +2882,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   } catch {}
 }, 600), []);
 
-// Sauvegarder à chaque modif
-useEffect(() => {
-  if (firstLoad.current) return;
-  const stamp = Date.now();
-  syncVersionRef.current = stamp;
-  const payload = {
+  const buildSyncPayload = useCallback((stamp: number) => ({
     people,
     sites,
     assignments,
@@ -2899,12 +2895,37 @@ useEffect(() => {
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  };
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+
+  const savePlanning = useCallback(async () => {
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const payload = buildSyncPayload(stamp);
+    try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
+    setSaving(true);
+    try {
+      await fetch(`/api/state/${currentWeekKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {}
+    finally {
+      setSaving(false);
+    }
+  }, [buildSyncPayload, currentWeekKey]);
+
+// Sauvegarder à chaque modif
+useEffect(() => {
+  if (firstLoad.current) return;
+  const stamp = Date.now();
+  syncVersionRef.current = stamp;
+  const payload = buildSyncPayload(stamp);
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+}, [buildSyncPayload, currentWeekKey, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -3071,6 +3092,22 @@ useEffect(() => {
                 </TabsList>
               </div>
               <div className="flex items-center gap-2" ref={maintenanceRef}>
+                <Button
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  onClick={savePlanning}
+                  disabled={saving}
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? "Enregistrement..." : "Enregistrer"}
+                </Button>
+                <Button
+                  className="bg-sky-600 text-white hover:bg-sky-700"
+                  onClick={refreshPlanning}
+                  disabled={refreshing}
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  {refreshing ? "Rechargement..." : "Recharger"}
+                </Button>
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
                 <div className="relative">
                   <Button
