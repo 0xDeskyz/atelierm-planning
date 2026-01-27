@@ -1555,12 +1555,12 @@ export default function Page() {
     title: "",
     dateKey: todayKey,
     endDateKey: "",
-    durationDays: "",
-    weekList: "",
+    weekKeys: [] as string[],
     calendarId: DEFAULT_EVENT_CALENDARS[0]?.id || "",
     color: "",
     notes: "",
   });
+  const [eventWeekYear, setEventWeekYear] = useState(() => getISOWeekYear(new Date()));
   const [calendarDraft, setCalendarDraft] = useState({ name: "", color: COLORS[3] });
   const [calendarEditTarget, setCalendarEditTarget] = useState<null | { id: string; isDefault?: boolean }>(null);
   const eventCalendarsById = useMemo(() => {
@@ -1859,6 +1859,13 @@ export default function Page() {
     visiblePendingSites,
     visiblePlannedSites,
   ]);
+  const eventWeekOptions = useMemo(() => {
+    const totalWeeks = getISOWeeksInYear(eventWeekYear);
+    return Array.from({ length: totalWeeks }, (_, idx) => {
+      const weekNum = idx + 1;
+      return `${eventWeekYear}-W${pad2(weekNum)}`;
+    });
+  }, [eventWeekYear]);
 
   const calendarPlannedInMonth = useMemo(
     () =>
@@ -2240,9 +2247,8 @@ export default function Page() {
   const createCalendarEvent = useCallback(() => {
     const title = eventDraft.title.trim();
     if (!title || !eventDraft.dateKey) return;
-    const weeks = eventDraft.weekList ? parseWeekList(eventDraft.weekList, getISOWeekYear(anchor)) : [];
-    if (weeks.length > 0) {
-      const eventsFromWeeks = weeks.map((weekKey) => {
+    if (eventDraft.weekKeys.length > 0) {
+      const eventsFromWeeks = eventDraft.weekKeys.map((weekKey) => {
         const [yearRaw, weekRaw] = weekKey.split("-W");
         const year = Number(yearRaw);
         const weekNum = Number(weekRaw);
@@ -2261,20 +2267,7 @@ export default function Page() {
       });
       setCalendarEvents((prev) => [...prev, ...eventsFromWeeks]);
     } else {
-      const baseStart = fromLocalKey(eventDraft.dateKey);
       let endKey = eventDraft.endDateKey;
-      if (!endKey && eventDraft.durationDays) {
-        const totalDays = Math.max(1, Number(eventDraft.durationDays));
-        let remaining = totalDays - 1;
-        const cursor = new Date(baseStart);
-        while (remaining > 0) {
-          cursor.setDate(cursor.getDate() + 1);
-          if (cursor.getDay() !== 0 && cursor.getDay() !== 6) {
-            remaining -= 1;
-          }
-        }
-        endKey = toLocalKey(cursor);
-      }
       const id = ensureId(`${title}-${eventDraft.dateKey}`, "evt");
       setCalendarEvents((prev) => [
         ...prev,
@@ -2293,22 +2286,22 @@ export default function Page() {
       ...prev,
       title: "",
       notes: "",
-      weekList: "",
-      durationDays: "",
+      weekKeys: [],
       endDateKey: "",
       dateKey: prev.dateKey || todayKey,
       color: "",
     }));
     setEventDialogOpen(false);
-  }, [anchor, eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.durationDays, eventDraft.endDateKey, eventDraft.notes, eventDraft.title, eventDraft.weekList]);
+  }, [eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.endDateKey, eventDraft.notes, eventDraft.title, eventDraft.weekKeys]);
   const openEventDialogForDate = useCallback((dateKey: string) => {
+    const parsedDate = fromLocalKey(dateKey);
+    setEventWeekYear(getISOWeekYear(parsedDate));
     setEventDraft((prev) => ({
       ...prev,
       title: "",
       dateKey,
       endDateKey: "",
-      durationDays: "",
-      weekList: "",
+      weekKeys: [],
       notes: "",
       color: "",
       calendarId: prev.calendarId || DEFAULT_EVENT_CALENDARS[0]?.id || "",
@@ -4785,7 +4778,13 @@ useEffect(() => {
               <Input
                 type="date"
                 value={eventDraft.dateKey}
-                onChange={(e: any) => setEventDraft((prev) => ({ ...prev, dateKey: e.target.value }))}
+                onChange={(e: any) => {
+                  const nextDate = e.target.value;
+                  setEventDraft((prev) => ({ ...prev, dateKey: nextDate }));
+                  if (nextDate) {
+                    setEventWeekYear(getISOWeekYear(fromLocalKey(nextDate)));
+                  }
+                }}
               />
               <Input
                 type="date"
@@ -4795,13 +4794,6 @@ useEffect(() => {
               />
             </div>
             <div className="grid md:grid-cols-2 gap-2 items-center">
-              <Input
-                type="number"
-                min={1}
-                value={eventDraft.durationDays}
-                onChange={(e: any) => setEventDraft((prev) => ({ ...prev, durationDays: e.target.value }))}
-                placeholder="Durée (jours ouvrés)"
-              />
               <select
                 value={eventDraft.calendarId}
                 onChange={(e) => setEventDraft((prev) => ({ ...prev, calendarId: e.target.value }))}
@@ -4815,14 +4807,56 @@ useEffect(() => {
                 ))}
               </select>
             </div>
-            <Input
-              value={eventDraft.weekList}
-              onChange={(e: any) => setEventDraft((prev) => ({ ...prev, weekList: e.target.value }))}
-              placeholder="Semaines (ex: 2025-W12, 2025-W13)"
-            />
-            <p className="text-[11px] text-neutral-500">
-              Si des semaines sont indiquées, elles remplacent les dates ci-dessus et créent un événement sur chaque semaine.
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-neutral-600">Semaines ciblées</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={eventWeekYear}
+                    onChange={(e) => setEventWeekYear(Number(e.target.value))}
+                    className="border rounded-md px-2 py-1 text-xs"
+                  >
+                    {[eventWeekYear - 1, eventWeekYear, eventWeekYear + 1].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEventDraft((prev) => ({ ...prev, weekKeys: [] }))}
+                  >
+                    Effacer
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-32 overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-2">
+                {eventWeekOptions.map((weekKey) => {
+                  const checked = eventDraft.weekKeys.includes(weekKey);
+                  return (
+                    <label key={weekKey} className="flex items-center gap-1 text-[11px] text-neutral-600">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setEventDraft((prev) => ({
+                            ...prev,
+                            weekKeys: checked
+                              ? prev.weekKeys.filter((wk) => wk !== weekKey)
+                              : [...prev.weekKeys, weekKey],
+                          }))
+                        }
+                      />
+                      {weekKey.replace(`${eventWeekYear}-W`, "S")}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                Sélectionner des semaines crée un événement par semaine et ignore les dates ci-dessus.
+              </p>
+            </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-neutral-600">Couleur (optionnelle)</label>
               <div className="flex flex-wrap gap-2">
