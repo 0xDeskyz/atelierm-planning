@@ -1540,8 +1540,8 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "hours" | "calendar" | "timeline" | "devis" | "sites" | "salaries"
-  >("dashboard");
+    "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries"
+  >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("month");
@@ -3049,9 +3049,6 @@ useEffect(() => {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wide text-neutral-500">Navigation</span>
                 <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
-                  <TabsTrigger value="dashboard">
-                    <span className="flex items-center gap-1.5 text-sm"><LayoutDashboard className="w-4 h-4" /> Tableau de bord</span>
-                  </TabsTrigger>
                   <TabsTrigger value="planning">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
                   </TabsTrigger>
@@ -3060,9 +3057,6 @@ useEffect(() => {
                   </TabsTrigger>
                   <TabsTrigger value="calendar">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Calendrier</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="timeline">
-                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Gantt</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
