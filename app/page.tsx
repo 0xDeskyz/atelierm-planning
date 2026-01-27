@@ -21,16 +21,14 @@ import {
   ChevronRight,
   ChevronUp,
   Clock3,
-  CloudSunRain,
   Copy,
   Download,
   Edit3,
   Eraser,
-  LayoutDashboard,
   ListChecks,
-  MapPin,
   Plus,
   RotateCcw,
+  Save,
   Settings,
   Trash2,
   Upload,
@@ -206,6 +204,16 @@ const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
 const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
 const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
 const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
+const getISOWeekStart = (year: number, weekNum: number) => {
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = (jan4.getDay() + 6) % 7;
+  const week1Start = new Date(jan4);
+  week1Start.setDate(jan4.getDate() - jan4Day);
+  const weekStart = new Date(week1Start);
+  weekStart.setDate(week1Start.getDate() + (weekNum - 1) * 7);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+};
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -293,6 +301,12 @@ const DEMO_PEOPLE = [
 const DEMO_SITES = [
   { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
   { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
+];
+const DEFAULT_EVENT_CALENDARS = [
+  { id: "cal-leave", name: "Congés", color: "bg-sky-500", visible: true, isDefault: true },
+  { id: "cal-planned", name: "Chantiers planifiés", color: "bg-emerald-500", visible: true, isDefault: true },
+  { id: "cal-pending", name: "Chantiers non planifiés", color: "bg-amber-500", visible: true, isDefault: true },
+  { id: "cal-meeting", name: "Réunions", color: "bg-violet-500", visible: true, isDefault: true },
 ];
 const QUOTE_COLUMNS = [
   { id: "todo", label: "À réaliser", hint: "Devis à préparer", tone: "sky" },
@@ -414,100 +428,6 @@ const formatEUR = (val?: number) => {
     return `${val} €`;
   }
 };
-type WeatherSegment = { label: string; rain?: number; hour?: string; temp?: number };
-type WeatherDay = { date: string; min?: number; max?: number; rain?: number; segments: WeatherSegment[] };
-type WeatherPayload = { location: string; days: WeatherDay[] };
-const normalizeAddressInput = (raw: string) =>
-  raw
-    .replace(/[\s,]+/g, (m) => (m.includes(",") ? ", " : " "))
-    .replace(/,\s*,+/g, ", ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-async function fetchWeatherForRange(address: string, start: Date, end: Date): Promise<WeatherPayload> {
-  const cleaned = normalizeAddressInput(address || "");
-  if (!cleaned) throw new Error("Lieu manquant (ville ou code postal)");
-
-  const candidates = Array.from(
-    new Set(
-      [cleaned, `${cleaned}, France`, `${cleaned}, FR`].filter(
-        (a) => a && a.length > 3 && a.length <= 200
-      )
-    )
-  );
-
-  let loc: any = null;
-  for (const query of candidates) {
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=3&language=fr&format=json`;
-    const geoResp = await fetch(geoUrl, { cache: "no-store" });
-    if (!geoResp.ok) continue;
-    const geoJson: any = await geoResp.json();
-    loc = geoJson?.results?.[0];
-    if (loc) break;
-  }
-
-  if (!loc) throw new Error("Adresse introuvable ou non reconnue");
-
-  const startDate = toLocalKey(start);
-  const endDate = toLocalKey(end);
-  const wxUrl =
-    `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
-    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto` +
-    `&hourly=temperature_2m,precipitation_probability` +
-    `&start_date=${startDate}&end_date=${endDate}`;
-  const wxResp = await fetch(wxUrl, { cache: "no-store" });
-  if (!wxResp.ok) throw new Error("Météo indisponible");
-  const wxJson: any = await wxResp.json();
-  const times: string[] = wxJson?.daily?.time || [];
-  if (!times.length) throw new Error("Aucune donnée météo disponible");
-
-  const hourlyTimes: string[] = wxJson?.hourly?.time || [];
-  const hourlyRain: number[] = wxJson?.hourly?.precipitation_probability || [];
-  const hourlyTemp: number[] = wxJson?.hourly?.temperature_2m || [];
-  const byDate: Record<string, { hour: number; index: number }[]> = {};
-  hourlyTimes.forEach((iso, idx) => {
-    const [d, hRaw] = iso.split("T");
-    const hour = Number((hRaw || "00").slice(0, 2));
-    if (!byDate[d]) byDate[d] = [];
-    byDate[d].push({ hour, index: idx });
-  });
-
-  const segmentsDef = [
-    { label: "Matin", start: 6, end: 11 },
-    { label: "Après-midi", start: 12, end: 17 },
-    { label: "Soir", start: 18, end: 23 },
-  ];
-
-  const days: WeatherDay[] = times.map((date: string, idx: number) => ({
-    date,
-    min: wxJson?.daily?.temperature_2m_min?.[idx],
-    max: wxJson?.daily?.temperature_2m_max?.[idx],
-    rain: wxJson?.daily?.precipitation_probability_max?.[idx],
-    segments: segmentsDef.map((seg) => {
-      const hours = (byDate[date] || []).filter((h) => h.hour >= seg.start && h.hour <= seg.end);
-      const rainVals = hours
-        .map((h) => hourlyRain?.[h.index])
-        .filter((v) => v !== undefined && v !== null)
-        .map((v) => Number(v));
-      const tempVals = hours
-        .map((h) => hourlyTemp?.[h.index])
-        .filter((v) => Number.isFinite(v))
-        .map((v) => Number(v));
-      const rain = rainVals.length ? Math.max(...rainVals) : undefined;
-      const peakIdx = rain !== undefined ? rainVals.indexOf(rain) : -1;
-      const peakHour = peakIdx >= 0 ? hours[peakIdx]?.hour : undefined;
-      const temp = tempVals.length ? tempVals.reduce((sum, v) => sum + v, 0) / tempVals.length : undefined;
-      return {
-        label: seg.label,
-        rain,
-        hour: peakHour !== undefined ? `${String(peakHour).padStart(2, "0")}h` : undefined,
-        temp,
-      };
-    }),
-  }));
-
-  const location = [loc.name, loc.admin1, loc.country_code].filter(Boolean).join(" · ");
-  return { location, days };
-}
 const normalizeQuoteRecord = (quote: any) => {
   const base = typeof quote === "object" && quote !== null ? quote : {};
   const todayKeyLocal = toLocalKey(new Date());
@@ -1591,13 +1511,9 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
-  const [weatherTargetSite, setWeatherTargetSite] = useState<string | null>(null);
-  const [weatherCache, setWeatherCache] = useState<Record<string, { loading?: boolean; data?: WeatherPayload; error?: string }>>(
-    {}
-  );
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
-  const [weatherCollapsed, setWeatherCollapsed] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const clientIdRef = useRef(
@@ -1617,18 +1533,6 @@ export default function Page() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  useEffect(() => {
-    if (!sites.length) return;
-    if (!weatherTargetSite) {
-      setWeatherTargetSite(sites[0].id);
-      return;
-    }
-    const exists = sites.some((s) => s.id === weatherTargetSite);
-    if (!exists) {
-      setWeatherTargetSite(sites[0].id);
-    }
-  }, [sites, weatherTargetSite]);
-
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
     if (!selection || selection.length === 0) return true;
@@ -1637,19 +1541,42 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "dashboard" | "planning" | "hours" | "timeline" | "devis" | "sites" | "salaries"
-  >("dashboard");
+    "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries"
+  >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
+  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("month");
+  const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
+  const [calendarEvents, setCalendarEvents] = useState<
+    { id: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
+  >([]);
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
+  const [calendarDialogOpen, setCalendarDialogOpen] = useState(false);
+  const [eventDraft, setEventDraft] = useState({
+    title: "",
+    dateKey: todayKey,
+    endDateKey: "",
+    weekKeys: [] as string[],
+    calendarId: DEFAULT_EVENT_CALENDARS[0]?.id || "",
+    color: "",
+    notes: "",
+  });
+  const [eventWeekYear, setEventWeekYear] = useState(() => getISOWeekYear(new Date()));
+  const [calendarDraft, setCalendarDraft] = useState({ name: "", color: COLORS[3] });
+  const [calendarEditTarget, setCalendarEditTarget] = useState<null | { id: string; isDefault?: boolean }>(null);
+  const eventCalendarsById = useMemo(() => {
+    const map: Record<string, { id: string; name: string; color: string; visible: boolean; isDefault?: boolean }> = {};
+    eventCalendars.forEach((cal) => {
+      map[cal.id] = cal;
+    });
+    return map;
+  }, [eventCalendars]);
+  const plannedCalendarVisible = eventCalendarsById["cal-planned"]?.visible !== false;
+  const pendingCalendarVisible = eventCalendarsById["cal-pending"]?.visible !== false;
+  const absencesCalendarVisible = eventCalendarsById["cal-leave"]?.visible !== false;
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
-  const weatherRange = useMemo(() => {
-    if (planningView === "month") {
-      return { start: startOfMonthLocal(anchor), end: endOfMonthLocal(anchor) };
-    }
-    return { start: weekFull[0], end: weekFull[weekFull.length - 1] };
-  }, [anchor, planningView, weekFull]);
   const isPlanningWeek = view === "planning" && planningView === "week";
   const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
@@ -1752,14 +1679,24 @@ export default function Page() {
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
+  const visiblePlannedSites = useMemo(
+    () => (plannedCalendarVisible ? plannedSites : []),
+    [plannedCalendarVisible, plannedSites]
+  );
+  const visiblePendingSites = useMemo(
+    () => (pendingCalendarVisible ? pendingSites : []),
+    [pendingCalendarVisible, pendingSites]
+  );
+  const timelinePlannedSites = plannedSites;
+  const timelinePendingSites = pendingSites;
 
-  const earliestChantierStart = useMemo(
+  const earliestTimelineStart = useMemo(
     () =>
-      plannedSites.reduce<Date | null>((min, site) => {
+      timelinePlannedSites.reduce<Date | null>((min, site) => {
         const s = fromLocalKey(site.startDate || todayKey);
         return !min || s.getTime() < min.getTime() ? s : min;
       }, null),
-    [plannedSites, todayKey]
+    [timelinePlannedSites, todayKey]
   );
 
   const timelineView = useMemo(() => {
@@ -1833,6 +1770,230 @@ export default function Page() {
     return map;
   }, [people]);
 
+  const absencesWeekPeople = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    Object.entries(absencesByWeek || {}).forEach(([weekKey, entries]) => {
+      const names = Object.keys(entries || {})
+        .filter((id) => entries?.[id])
+        .map((id) => peopleById[id]?.name || id);
+      if (names.length > 0) {
+        map[weekKey] = names;
+      }
+    });
+    return map;
+  }, [absencesByWeek, peopleById]);
+
+  const calendarWindow = useMemo(() => {
+    const base = new Date(anchor);
+    base.setHours(0, 0, 0, 0);
+
+    if (calendarScope === "quarter") {
+      return { start: startOfQuarterLocal(base), end: endOfQuarterLocal(base) };
+    }
+    if (calendarScope === "year" || calendarScope === "projection") {
+      return { start: startOfYearLocal(base.getFullYear()), end: endOfYearLocal(base.getFullYear()) };
+    }
+    return { start: startOfMonthLocal(base), end: endOfMonthLocal(base) };
+  }, [anchor, calendarScope]);
+
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = [];
+    const cursor = startOfISOWeekLocal(calendarWindow.start);
+    const end = new Date(calendarWindow.end);
+    while (cursor.getTime() <= end.getTime()) {
+      const week = Array.from({ length: 7 }, (_, idx) => {
+        const day = new Date(cursor);
+        day.setDate(cursor.getDate() + idx);
+        return day;
+      });
+      weeks.push(week);
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return weeks;
+  }, [calendarWindow.end, calendarWindow.start]);
+  const projectionWeeks = useMemo(() => {
+    if (calendarScope !== "projection") return [];
+    const year = anchor.getFullYear();
+    const totalWeeks = getISOWeeksInYear(year);
+    return Array.from({ length: totalWeeks }, (_, idx) => {
+      const weekNum = idx + 1;
+      const start = getISOWeekStart(year, weekNum);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      return { weekKey: `${year}-W${pad2(weekNum)}`, weekNum, start, end };
+    });
+  }, [anchor, calendarScope]);
+  const projectionWeekSummaries = useMemo(() => {
+    if (calendarScope !== "projection") return [];
+    const visibleCalendarEvents = calendarEvents.filter((event) => {
+      const cal = event.calendarId ? eventCalendarsById[event.calendarId] : undefined;
+      return !cal || cal.visible;
+    });
+    return projectionWeeks.map((week) => {
+      const weekStart = week.start.getTime();
+      const weekEnd = week.end.getTime();
+      const planned = visiblePlannedSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey).getTime();
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      const pending = visiblePendingSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey).getTime();
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      const absences = absencesWeekPeople[week.weekKey] || [];
+      const events = visibleCalendarEvents.filter((event) => {
+        const start = fromLocalKey(event.dateKey).getTime();
+        const end = fromLocalKey(event.endDateKey || event.dateKey).getTime();
+        return start <= weekEnd && end >= weekStart;
+      });
+      return { ...week, planned, pending, absences, events };
+    });
+  }, [
+    absencesWeekPeople,
+    calendarEvents,
+    calendarScope,
+    eventCalendarsById,
+    projectionWeeks,
+    todayKey,
+    visiblePendingSites,
+    visiblePlannedSites,
+  ]);
+  const eventWeekOptions = useMemo(() => {
+    const totalWeeks = getISOWeeksInYear(eventWeekYear);
+    return Array.from({ length: totalWeeks }, (_, idx) => {
+      const weekNum = idx + 1;
+      return `${eventWeekYear}-W${pad2(weekNum)}`;
+    });
+  }, [eventWeekYear]);
+
+  const calendarPlannedInMonth = useMemo(
+    () =>
+      visiblePlannedSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey);
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
+      }),
+    [calendarWindow.end, calendarWindow.start, visiblePlannedSites, todayKey]
+  );
+  const calendarPendingInMonth = useMemo(
+    () =>
+      visiblePendingSites.filter((site) => {
+        const start = fromLocalKey(site.startDate || todayKey);
+        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
+      }),
+    [calendarWindow.end, calendarWindow.start, visiblePendingSites, todayKey]
+  );
+  const calendarAbsenceWeeks = useMemo(() => {
+    if (!absencesCalendarVisible) return [];
+    const weeks = new Set<string>();
+    calendarWeeks.flat().forEach((day) => {
+      const wk = weekKeyOf(day);
+      if (absencesWeekPeople[wk]?.length) weeks.add(wk);
+    });
+    return Array.from(weeks).sort();
+  }, [absencesCalendarVisible, absencesWeekPeople, calendarWeeks]);
+
+  const calendarEventMap = useMemo(() => {
+    const plannedMap: Record<string, any[]> = {};
+    const pendingMap: Record<string, any[]> = {};
+    const absencesMap: Record<string, string[]> = {};
+    const allDays = calendarWeeks.flat();
+    const plannedVisible = plannedCalendarVisible;
+    const pendingVisible = pendingCalendarVisible;
+    const absencesVisible = absencesCalendarVisible;
+
+    allDays.forEach((day) => {
+      const key = toLocalKey(day);
+      if (plannedVisible) {
+        plannedMap[key] = visiblePlannedSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      } else {
+        plannedMap[key] = [];
+      }
+      if (pendingVisible) {
+        pendingMap[key] = visiblePendingSites.filter((site) => {
+          const start = fromLocalKey(site.startDate || todayKey);
+          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          return isDateWithin(day, start, end);
+        });
+      } else {
+        pendingMap[key] = [];
+      }
+      if (absencesVisible) {
+        const weekKey = weekKeyOf(day);
+        const names = absencesWeekPeople[weekKey] || [];
+        if (names.length) absencesMap[key] = names;
+      }
+    });
+
+    return { plannedMap, pendingMap, absencesMap };
+  }, [
+    absencesCalendarVisible,
+    absencesWeekPeople,
+    calendarWeeks,
+    pendingCalendarVisible,
+    plannedCalendarVisible,
+    visiblePendingSites,
+    visiblePlannedSites,
+    todayKey,
+  ]);
+
+  const calendarEventsByDay = useMemo(() => {
+    const map: Record<string, { id: string; title: string; color: string; calendarName?: string }[]> = {};
+    const start = calendarWindow.start.getTime();
+    const end = calendarWindow.end.getTime();
+    calendarEvents.forEach((event) => {
+      const startDate = fromLocalKey(event.dateKey);
+      const endDate = fromLocalKey(event.endDateKey || event.dateKey);
+      const cal = event.calendarId ? eventCalendarsById[event.calendarId] : undefined;
+      if (event.calendarId && cal && !cal.visible) return;
+      const colorClass = event.color || cal?.color || "bg-neutral-400";
+      const cursor = new Date(startDate);
+      while (cursor.getTime() <= endDate.getTime()) {
+        if (!isWeekend(cursor)) {
+          const time = cursor.getTime();
+          if (time >= start && time <= end) {
+            const key = toLocalKey(cursor);
+            if (!map[key]) map[key] = [];
+            map[key].push({
+              id: event.id,
+              title: event.title,
+              color: colorClass,
+              calendarName: cal?.name,
+            });
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    });
+    return map;
+  }, [calendarEvents, calendarWindow.end, calendarWindow.start, eventCalendarsById, isWeekend]);
+
+  const timelineAbsences = useMemo(() => {
+    if (!timelineView) return [];
+    const entries: { weekKey: string; start: Date; people: string[] }[] = [];
+    const cursor = startOfISOWeekLocal(timelineView.start);
+    const end = new Date(timelineView.end);
+    while (cursor.getTime() <= end.getTime()) {
+      const wkKey = weekKeyOf(cursor);
+      const absentMap = absencesByWeek[wkKey] || {};
+      const peopleList = Object.keys(absentMap)
+        .filter((id) => absentMap[id])
+        .map((id) => peopleById[id]?.name || id);
+      if (peopleList.length > 0) {
+        entries.push({ weekKey: wkKey, start: new Date(cursor), people: peopleList });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return entries;
+  }, [absencesByWeek, peopleById, timelineView]);
+
   const sitesById = useMemo(() => {
     const map: Record<string, any> = {};
     sites.forEach((s) => {
@@ -1841,56 +2002,6 @@ export default function Page() {
     return map;
   }, [sites]);
 
-  const weatherKey = useMemo(() => {
-    if (!weatherTargetSite) return "";
-    return `${weatherTargetSite}-${toLocalKey(weatherRange.start)}-${toLocalKey(weatherRange.end)}-${planningView}`;
-  }, [planningView, weatherRange.end, weatherRange.start, weatherTargetSite]);
-  const weatherEntry = weatherKey ? weatherCache[weatherKey] : undefined;
-  const weatherSite = weatherTargetSite ? sitesById[weatherTargetSite] : null;
-  const refreshWeather = useCallback(
-    async (force = false) => {
-      if (!weatherTargetSite || !weatherKey) return;
-      const site = sitesById[weatherTargetSite];
-      if (!site) return;
-      const locationInput = site.city || site.address;
-      if (!locationInput) {
-        setWeatherCache((prev) => ({
-          ...prev,
-          [weatherKey]: { loading: false, data: prev[weatherKey]?.data, error: "Ville ou code postal manquant" },
-        }));
-        return;
-      }
-      if (weatherEntry?.loading) return;
-      if (weatherEntry?.data && !force) return;
-      setWeatherCache((prev) => ({ ...prev, [weatherKey]: { ...(prev[weatherKey] || {}), loading: true, error: undefined } }));
-      try {
-        const payload = await fetchWeatherForRange(locationInput, weatherRange.start, weatherRange.end);
-        setWeatherCache((prev) => ({ ...prev, [weatherKey]: { loading: false, data: payload } }));
-      } catch (err: any) {
-        setWeatherCache((prev) => ({
-          ...prev,
-          [weatherKey]: { loading: false, error: err?.message || "Météo indisponible" },
-        }));
-      }
-    },
-    [weatherEntry, weatherKey, weatherRange.end, weatherRange.start, weatherTargetSite, sitesById]
-  );
-  useEffect(() => {
-    if (view === "planning" && weatherTargetSite) {
-      refreshWeather();
-    }
-  }, [refreshWeather, view, weatherKey, weatherTargetSite]);
-  const weatherDays = useMemo(() => {
-    const data = weatherEntry?.data?.days || [];
-    return data.filter((d) => {
-      const day = fromLocalKey(d.date).getDay();
-      return day !== 0 && day !== 6;
-    });
-  }, [weatherEntry]);
-  const weatherRangeLabel = useMemo(
-    () => `${formatFR(weatherRange.start, true)} → ${formatFR(weatherRange.end, true)}`,
-    [weatherRange.end, weatherRange.start]
-  );
 
   const exportableHours = useMemo(() => {
     const rows: {
@@ -1952,7 +2063,7 @@ export default function Page() {
 
     const totalDays = Math.max(1, countWorkingDaysInclusive(timelineView.start, timelineView.end));
 
-    const rows = plannedSites
+    const rows = timelinePlannedSites
       .map((site) => {
         const siteStart = fromLocalKey(site.startDate || todayKey);
         const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
@@ -1984,7 +2095,7 @@ export default function Page() {
       .filter(Boolean) as { site: any; bar: { days: number; offsetPct: number; widthPct: number; start: Date; end: Date }; bucketOverlap: { label: string; days: number; pct: number }[] }[];
 
     return { rows, totalDays };
-  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, plannedSites, timelineView, todayKey, workingDaysUntil]);
+  }, [countWorkingDaysInclusive, firstWorkingDayOnOrAfter, timelinePlannedSites, timelineView, todayKey, workingDaysUntil]);
 
   const timelineScopeLabel = useMemo(() => {
     if (!timelineView) return "";
@@ -2000,7 +2111,7 @@ export default function Page() {
     while (cursor.getTime() <= timelineView.end.getTime()) {
       if (!isWeekend(cursor)) {
         const dateKey = toLocalKey(cursor);
-        const count = plannedSites.reduce((acc, site) => {
+        const count = timelinePlannedSites.reduce((acc, site) => {
           const siteStart = fromLocalKey(site.startDate || todayKey);
           const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
           if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
@@ -2034,7 +2145,7 @@ export default function Page() {
       return ranges;
     };
 
-    const earliestWorkingStart = earliestChantierStart ? firstWorkingDayOnOrAfter(new Date(earliestChantierStart)) : null;
+    const earliestWorkingStart = earliestTimelineStart ? firstWorkingDayOnOrAfter(new Date(earliestTimelineStart)) : null;
 
     const gaps = findRanges((v) => v === 0)
       .map((r) => {
@@ -2063,7 +2174,7 @@ export default function Page() {
     });
 
     return { counts, labels, gaps, peaks, bucketStats, max, zeroDays, totalDays: days.length };
-  }, [countWorkingDaysInclusive, earliestChantierStart, firstWorkingDayOnOrAfter, isWeekend, plannedSites, timelineView, todayKey]);
+  }, [countWorkingDaysInclusive, earliestTimelineStart, firstWorkingDayOnOrAfter, isWeekend, timelinePlannedSites, timelineView, todayKey]);
 
   const actionableQuotes = useMemo(
     () => safeQuotes.filter((q) => q.status !== "won" && q.status !== "lost"),
@@ -2089,7 +2200,7 @@ export default function Page() {
       [...pendingSites]
         .sort((a, b) => fromLocalKey(a.startDate || todayKey).getTime() - fromLocalKey(b.startDate || todayKey).getTime())
         .slice(0, 4),
-    [pendingSites]
+    [pendingSites, todayKey]
   );
 
   const weekSiteHighlights = useMemo(() => sitesForCurrentWeek.slice(0, 4), [sitesForCurrentWeek]);
@@ -2107,6 +2218,96 @@ export default function Page() {
       return { color: "#f59e0b", softBg: "bg-amber-50", softText: "text-amber-700", border: "border-amber-100" };
     }
     return { color: "#10b981", softBg: "bg-emerald-50", softText: "text-emerald-700", border: "border-emerald-100" };
+  }, []);
+
+  const createCalendar = useCallback(() => {
+    const name = calendarDraft.name.trim();
+    if (!name) return;
+    const id = ensureId(name, "cal");
+    if (calendarEditTarget) {
+      setEventCalendars((prev) =>
+        prev.map((cal) =>
+          cal.id === calendarEditTarget.id
+            ? { ...cal, name, color: calendarDraft.color || cal.color }
+            : cal
+        )
+      );
+    } else {
+      setEventCalendars((prev) => [...prev, { id, name, color: calendarDraft.color || COLORS[0], visible: true }]);
+    }
+    setCalendarDraft({ name: "", color: COLORS[3] });
+    setCalendarEditTarget(null);
+    setCalendarDialogOpen(false);
+  }, [calendarDraft.color, calendarDraft.name, calendarEditTarget]);
+
+  const deleteCalendar = useCallback((id: string) => {
+    setEventCalendars((prev) => prev.filter((cal) => cal.id !== id));
+    setCalendarEvents((prev) => prev.filter((evt) => evt.calendarId !== id));
+  }, []);
+
+  const createCalendarEvent = useCallback(() => {
+    const title = eventDraft.title.trim();
+    if (!title || !eventDraft.dateKey) return;
+    if (eventDraft.weekKeys.length > 0) {
+      const eventsFromWeeks = eventDraft.weekKeys.map((weekKey) => {
+        const [yearRaw, weekRaw] = weekKey.split("-W");
+        const year = Number(yearRaw);
+        const weekNum = Number(weekRaw);
+        const weekStart = getISOWeekStart(year, weekNum);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 4);
+        return {
+          id: ensureId(`${title}-${weekKey}`, "evt"),
+          title,
+          dateKey: toLocalKey(weekStart),
+          endDateKey: toLocalKey(weekEnd),
+          calendarId: eventDraft.calendarId || undefined,
+          color: eventDraft.color || undefined,
+          notes: eventDraft.notes || undefined,
+        };
+      });
+      setCalendarEvents((prev) => [...prev, ...eventsFromWeeks]);
+    } else {
+      let endKey = eventDraft.endDateKey;
+      const id = ensureId(`${title}-${eventDraft.dateKey}`, "evt");
+      setCalendarEvents((prev) => [
+        ...prev,
+        {
+          id,
+          title,
+          dateKey: eventDraft.dateKey,
+          endDateKey: endKey || undefined,
+          calendarId: eventDraft.calendarId || undefined,
+          color: eventDraft.color || undefined,
+          notes: eventDraft.notes || undefined,
+        },
+      ]);
+    }
+    setEventDraft((prev) => ({
+      ...prev,
+      title: "",
+      notes: "",
+      weekKeys: [],
+      endDateKey: "",
+      dateKey: prev.dateKey || todayKey,
+      color: "",
+    }));
+    setEventDialogOpen(false);
+  }, [eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.endDateKey, eventDraft.notes, eventDraft.title, eventDraft.weekKeys]);
+  const openEventDialogForDate = useCallback((dateKey: string) => {
+    const parsedDate = fromLocalKey(dateKey);
+    setEventWeekYear(getISOWeekYear(parsedDate));
+    setEventDraft((prev) => ({
+      ...prev,
+      title: "",
+      dateKey,
+      endDateKey: "",
+      weekKeys: [],
+      notes: "",
+      color: "",
+      calendarId: prev.calendarId || DEFAULT_EVENT_CALENDARS[0]?.id || "",
+    }));
+    setEventDialogOpen(true);
   }, []);
 
   // Gestion des devis (kanban)
@@ -2296,8 +2497,14 @@ export default function Page() {
 
   const shift = (delta: number) => {
     const d = new Date(anchor);
-    if (isPlanningMonth) {
-      d.setMonth(d.getMonth() + delta);
+    if (isPlanningMonth || view === "calendar") {
+      if (view === "calendar") {
+        if (calendarScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
+        else if (calendarScope === "year" || calendarScope === "projection") d.setFullYear(d.getFullYear() + delta);
+        else d.setMonth(d.getMonth() + delta);
+      } else {
+        d.setMonth(d.getMonth() + delta);
+      }
     } else if (view === "timeline") {
       if (timelineScope === "month") d.setMonth(d.getMonth() + delta);
       else if (timelineScope === "quarter") d.setMonth(d.getMonth() + delta * 3);
@@ -2675,12 +2882,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   } catch {}
 }, 600), []);
 
-// Sauvegarder à chaque modif
-useEffect(() => {
-  if (firstLoad.current) return;
-  const stamp = Date.now();
-  syncVersionRef.current = stamp;
-  const payload = {
+  const buildSyncPayload = useCallback((stamp: number) => ({
     people,
     sites,
     assignments,
@@ -2689,14 +2891,41 @@ useEffect(() => {
     siteWeekVisibility,
     hoursPerDay,
     quotes,
+    eventCalendars,
+    calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  };
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+
+  const savePlanning = useCallback(async () => {
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const payload = buildSyncPayload(stamp);
+    try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
+    setSaving(true);
+    try {
+      await fetch(`/api/state/${currentWeekKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {}
+    finally {
+      setSaving(false);
+    }
+  }, [buildSyncPayload, currentWeekKey]);
+
+// Sauvegarder à chaque modif
+useEffect(() => {
+  if (firstLoad.current) return;
+  const stamp = Date.now();
+  syncVersionRef.current = stamp;
+  const payload = buildSyncPayload(stamp);
   // cache local (backup + rapidité)
   try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, currentWeekKey, saveRemote, hoursPerDay, quotes]);
+}, [buildSyncPayload, currentWeekKey, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -2768,7 +2997,7 @@ useEffect(() => {
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes };
+    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2817,7 +3046,7 @@ useEffect(() => {
   };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -2841,17 +3070,14 @@ useEffect(() => {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wide text-neutral-500">Navigation</span>
                 <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
-                  <TabsTrigger value="dashboard">
-                    <span className="flex items-center gap-1.5 text-sm"><LayoutDashboard className="w-4 h-4" /> Tableau de bord</span>
-                  </TabsTrigger>
                   <TabsTrigger value="planning">
                     <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
                   </TabsTrigger>
                   <TabsTrigger value="hours">
                     <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
                   </TabsTrigger>
-                  <TabsTrigger value="timeline">
-                    <span className="flex items-center gap-1.5 text-sm"><ListChecks className="w-4 h-4" /> Calendrier</span>
+                  <TabsTrigger value="calendar">
+                    <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Calendrier</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -2866,6 +3092,22 @@ useEffect(() => {
                 </TabsList>
               </div>
               <div className="flex items-center gap-2" ref={maintenanceRef}>
+                <Button
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  onClick={savePlanning}
+                  disabled={saving}
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? "Enregistrement..." : "Enregistrer"}
+                </Button>
+                <Button
+                  className="bg-sky-600 text-white hover:bg-sky-700"
+                  onClick={refreshPlanning}
+                  disabled={refreshing}
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  {refreshing ? "Rechargement..." : "Recharger"}
+                </Button>
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
                 <div className="relative">
                   <Button
@@ -2958,7 +3200,7 @@ useEffect(() => {
                 </div>
               </div>
             )}
-            {["planning", "hours", "timeline"].includes(view) && (
+            {["planning", "hours", "timeline", "calendar"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -2983,6 +3225,26 @@ useEffect(() => {
                       <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
                       <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
                         Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {view === "calendar" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>
+                        {calendarScope === "month" && anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}
+                        {calendarScope === "quarter" && `T${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`}
+                        {(calendarScope === "year" || calendarScope === "projection") && `${anchor.getFullYear()}`}
+                      </span>
+                      <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                        Calendrier{" "}
+                        {calendarScope === "month"
+                          ? "mensuel"
+                          : calendarScope === "quarter"
+                          ? "trimestriel"
+                          : calendarScope === "year"
+                          ? "annuel"
+                          : "projection"}{" "}
+                        filtrable
                       </span>
                     </div>
                   )}
@@ -3036,161 +3298,6 @@ useEffect(() => {
           </div>
         </div>
       </div>
-
-      {view === "planning" && (
-        <div className="w-full">
-          <Card className="border-sky-100 bg-white/90 shadow-sm w-full">
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-9 w-9 rounded-full bg-sky-600 text-white flex items-center justify-center shadow-inner">
-                    <CloudSunRain className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-semibold">Météo du chantier</div>
-                    <div className="text-xs text-neutral-600">Prévisions par ville/code postal sur la période visible.</div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className="h-9 rounded-md border border-neutral-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 min-w-[200px]"
-                    value={weatherTargetSite || ""}
-                    onChange={(e) => setWeatherTargetSite(e.target.value || null)}
-                  >
-                    {(plannedSites.length ? plannedSites : safeSites).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                    {plannedSites.length === 0 && safeSites.length === 0 && (
-                      <option value="">Aucun chantier planifié</option>
-                    )}
-                  </select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => refreshWeather(true)}
-                    disabled={!weatherTargetSite || weatherEntry?.loading}
-                  >
-                    <RotateCcw className="w-4 h-4 mr-1" /> Actualiser
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-neutral-600"
-                    onClick={() => setWeatherCollapsed((v) => !v)}
-                  >
-                    {weatherCollapsed ? (
-                      <>
-                        <ChevronDown className="w-4 h-4 mr-1" /> Afficher
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="w-4 h-4 mr-1" /> Réduire
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-              {weatherCollapsed ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600">
-                  <span>Prévisions masquées pour libérer de la place.</span>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                      <MapPin className="w-3 h-3 text-sky-600" />
-                      {weatherSite?.city || weatherSite?.address || "Ville non renseignée"}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                      {weatherRangeLabel}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {weatherSite && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                        <MapPin className="w-3 h-3 text-sky-600" />
-                        {weatherSite.city || weatherSite.address || "Ville non renseignée"}
-                      </span>
-                      {weatherSite.address && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200 text-[11px] text-neutral-600">
-                          {weatherSite.address}
-                        </span>
-                      )}
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-neutral-200">
-                        {weatherRangeLabel}
-                      </span>
-                      {weatherEntry?.data?.location && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-sky-800 border border-sky-200">
-                          Zone détectée : {weatherEntry.data.location}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {weatherEntry?.error && (
-                    <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{weatherEntry.error}</div>
-                  )}
-                  {weatherEntry?.loading && (
-                    <div className="text-sm text-neutral-600">Récupération de la météo en cours…</div>
-                  )}
-                  {!weatherEntry?.loading && !weatherEntry?.data && !weatherEntry?.error && (
-                    <div className="text-sm text-neutral-600">
-                      Sélectionnez un chantier planifié avec une ville ou un code postal pour afficher la météo.
-                    </div>
-                  )}
-                  {weatherEntry?.data && (
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-                      {weatherDays.map((day) => {
-                        const date = fromLocalKey(day.date);
-                        const label = date.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
-                        return (
-                          <div key={day.date} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm space-y-2 text-[12px]">
-                            <div className="flex items-center justify-between font-semibold">
-                              <span className="capitalize">{label}</span>
-                              {day.rain !== undefined && day.rain !== null && (
-                                <span className="text-[11px] text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">
-                                  {Math.round(day.rain)}% pluie
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 text-neutral-800">
-                              <CloudSunRain className="w-4 h-4 text-sky-600" />
-                              <span>
-                                {day.min !== undefined ? `${Math.round(day.min)}°` : "–"} / {day.max !== undefined ? `${Math.round(day.max)}°` : "–"}
-                              </span>
-                            </div>
-                            <div className="space-y-1">
-                              {day.segments.map((seg) => (
-                                <div key={`${day.date}-${seg.label}`} className="flex items-center justify-between text-[11px]">
-                                  <span className="text-neutral-600">{seg.label}</span>
-                                  {seg.rain !== undefined ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-700">
-                                      <span>{Math.round(seg.rain)}%</span>
-                                      {seg.hour && <span className="text-[10px] text-neutral-500">{seg.hour}</span>}
-                                      {seg.temp !== undefined && <span className="text-[10px] text-neutral-500">{Math.round(seg.temp)}°</span>}
-                                    </span>
-                                  ) : (
-                                    <span className="text-neutral-400">–</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {weatherDays.length === 0 && (
-                        <div className="text-sm text-neutral-600">Aucune journée ouvrée dans la période sélectionnée.</div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {view === "dashboard" && (
         <div className="space-y-4">
@@ -3665,6 +3772,374 @@ useEffect(() => {
               </div>
             )}
 
+            {/* CALENDRIER MENSUEL */}
+            {view === "calendar" && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <span className="uppercase tracking-wide text-neutral-500 font-semibold">Gestion</span>
+                    <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
+                      {calendarPlannedInMonth.length} planifiés
+                    </span>
+                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                      {calendarPendingInMonth.length} en attente
+                    </span>
+                    <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                      {calendarAbsenceWeeks.length} sem. absences
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setEventDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-1" /> Nouvel événement
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setCalendarDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-1" /> Nouveau calendrier
+                    </Button>
+                    <Button variant={calendarScope === "month" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("month")}>
+                      Mensuel
+                    </Button>
+                    <Button variant={calendarScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("quarter")}>
+                      Trimestre
+                    </Button>
+                    <Button variant={calendarScope === "year" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("year")}>
+                      Année
+                    </Button>
+                    <Button variant={calendarScope === "projection" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("projection")}>
+                      Projection
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
+                  <Card className="overflow-hidden">
+                    {calendarScope === "projection" ? (
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between text-xs text-neutral-600">
+                          <span className="font-semibold text-neutral-700">Projection hebdomadaire</span>
+                          <span>4 semaines par ligne • Vue synthèse</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                          {projectionWeekSummaries.map((week) => (
+                            <div
+                              key={week.weekKey}
+                              className="rounded-xl border border-neutral-200 bg-white shadow-sm p-4 text-xs space-y-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-semibold text-neutral-900">
+                                    S{pad2(week.weekNum)}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500">
+                                    {formatFR(week.start, true)}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  aria-label={`Ajouter un événement la semaine ${week.weekNum}`}
+                                  onClick={() => openEventDialogForDate(toLocalKey(week.start))}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                              <div className="space-y-2">
+                                {week.planned.length > 0 && (
+                                  <div className="space-y-1 max-h-28 overflow-auto">
+                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
+                                    {week.planned.map((site) => (
+                                      <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
+                                        <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                        <span className="truncate">{site.name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {week.events.length > 0 && (
+                                  <div className="space-y-1 max-h-24 overflow-auto">
+                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">Événements</div>
+                                    {week.events.map((event) => (
+                                      <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
+                                        <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
+                                        <span className="truncate">{event.title}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {week.pending.length > 0 && (
+                                  <div className="space-y-1 max-h-20 overflow-auto">
+                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">En attente</div>
+                                    {week.pending.map((site) => (
+                                      <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
+                                        <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                        <span className="truncate">{site.name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {week.absences.length > 0 && (
+                                  <div className="text-[11px] text-sky-700">
+                                    <div className="text-[10px] uppercase tracking-wide text-sky-400">Absences</div>
+                                    {week.absences.join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-6 bg-neutral-50 text-[11px] font-semibold text-neutral-600 uppercase tracking-wide border-b border-neutral-200">
+                          <div className="px-2 py-2 text-center border-l first:border-l-0 border-neutral-200">S.</div>
+                          {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((label) => (
+                            <div key={label} className="px-3 py-2 text-center border-l first:border-l-0 border-neutral-200">
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid auto-rows-fr">
+                          {(() => {
+                            let lastMonthIndex: number | null = null;
+                            return calendarWeeks.map((week) => {
+                              const weekdays = week.slice(0, 5);
+                              const weekKey = weekKeyOf(week[0]);
+                              const weekInRangeDay = weekdays.find(
+                                (day) => day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime()
+                              );
+                              const weekMonthIndex = weekInRangeDay ? weekInRangeDay.getMonth() : null;
+                              const isNewMonth = weekMonthIndex !== null && weekMonthIndex !== lastMonthIndex;
+                              if (weekMonthIndex !== null) lastMonthIndex = weekMonthIndex;
+
+                              return (
+                                <div key={weekKey} className={cx("grid grid-cols-6", isNewMonth && "border-t-2 border-sky-200")}>
+                                  <div className="border-l border-t border-neutral-200 px-2 py-2 text-[11px] text-neutral-600 bg-neutral-50/70 flex flex-col gap-1">
+                                    {isNewMonth && weekMonthIndex !== null && weekInRangeDay && (
+                                      <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 text-[10px] font-semibold">
+                                        {new Date(weekInRangeDay.getFullYear(), weekMonthIndex, 1).toLocaleString("fr-FR", { month: "long" })}
+                                      </span>
+                                    )}
+                                    <span className="font-semibold text-neutral-700">S{pad2(getISOWeek(week[0]))}</span>
+                                  </div>
+                                  {weekdays.map((day) => {
+                                    const dayKey = toLocalKey(day);
+                                    const inRange = day.getTime() >= calendarWindow.start.getTime() && day.getTime() <= calendarWindow.end.getTime();
+                                    const isToday = dayKey === todayKey;
+                                    const plannedItems = calendarEventMap.plannedMap[dayKey] || [];
+                                    const pendingItems = calendarEventMap.pendingMap[dayKey] || [];
+                                    const absenceItems = calendarEventMap.absencesMap[dayKey] || [];
+                                    return (
+                                      <div
+                                        key={dayKey}
+                                        className={cx(
+                                          "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
+                                          !inRange && "bg-neutral-50 text-neutral-400",
+                                          isToday && "bg-sky-50"
+                                        )}
+                                      >
+                                        <div className="flex items-center justify-between text-[11px] font-semibold">
+                                          <div className="flex items-center gap-1">
+                                            <span className={cx(isToday && "text-sky-700")}>{day.getDate()}</span>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              aria-label={`Ajouter un événement le ${day.toLocaleDateString("fr-FR")}`}
+                                              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                                                event.stopPropagation();
+                                                openEventDialogForDate(dayKey);
+                                              }}
+                                            >
+                                              <Plus className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                          {absenceItems.length > 0 && (
+                                            <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">
+                                              {absenceItems.length} abs.
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="space-y-1">
+                                          {plannedItems.slice(0, 3).map((site) => (
+                                            <div key={`${site.id}-${dayKey}`} className="flex items-center gap-1">
+                                              <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
+                                              <span className="truncate">{site.name}</span>
+                                            </div>
+                                          ))}
+                                          {calendarEventsByDay[dayKey]?.slice(0, 2).map((event) => (
+                                            <div key={`evt-${event.id}`} className="flex items-center gap-1">
+                                              <span className={cx("w-2 h-2 rounded-full border", event.color, event.color ? "border-black/10" : "border-neutral-200")} />
+                                              <span className="truncate">{event.title}</span>
+                                            </div>
+                                          ))}
+                                          {pendingItems.slice(0, 2).map((site) => (
+                                            <div key={`${site.id}-pending-${dayKey}`} className="flex items-center gap-1 text-amber-700">
+                                              <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
+                                              <span className="truncate">{site.name}</span>
+                                            </div>
+                                          ))}
+                                          {absenceItems.length > 0 && (
+                                            <div className="text-[11px] text-sky-700">
+                                              {absenceItems.slice(0, 2).join(", ")}
+                                              {absenceItems.length > 2 && "…"}
+                                            </div>
+                                          )}
+                                          {(plannedItems.length > 3) ||
+                                          (pendingItems.length > 2) ||
+                                          (calendarEventsByDay[dayKey]?.length ?? 0) > 2 ? (
+                                            <div className="text-[11px] text-neutral-500">
+                                              +{Math.max(0, plannedItems.length - 3) + Math.max(0, pendingItems.length - 2) + Math.max(0, (calendarEventsByDay[dayKey]?.length || 0) - 2)} autre(s)
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </Card>
+
+                  <div className="space-y-3">
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Résumé de la période</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers planifiés</span>
+                          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                            {calendarPlannedInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers non planifiés</span>
+                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                            {calendarPendingInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Semaines avec absences</span>
+                          <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
+                            {calendarAbsenceWeeks.length}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-semibold">Calendriers</div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setCalendarDraft({ name: "", color: COLORS[3] });
+                              setCalendarEditTarget(null);
+                              setCalendarDialogOpen(true);
+                            }}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Ajouter
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          {eventCalendars.map((cal) => (
+                            <div key={cal.id} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cal.visible}
+                                  onChange={() =>
+                                    setEventCalendars((prev) =>
+                                      prev.map((c) => (c.id === cal.id ? { ...c, visible: !c.visible } : c))
+                                    )
+                                  }
+                                />
+                                <span className={cx("w-2.5 h-2.5 rounded-full border", cal.color, cal.color ? "border-black/10" : "border-neutral-200")} />
+                                {cal.name}
+                              </span>
+                              <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+                                <span>{calendarEvents.filter((evt) => evt.calendarId === cal.id).length}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setCalendarDraft({ name: cal.name, color: cal.color });
+                                    setCalendarEditTarget({ id: cal.id, isDefault: cal.isDefault });
+                                    setCalendarDialogOpen(true);
+                                  }}
+                                  aria-label={`Modifier ${cal.name}`}
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={cal.isDefault}
+                                  onClick={() => deleteCalendar(cal.id)}
+                                  aria-label={`Supprimer ${cal.name}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {eventCalendars.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucun calendrier personnalisé.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Chantiers non planifiés</div>
+                        <div className="space-y-2">
+                          {calendarPendingInMonth.slice(0, 5).map((site) => (
+                            <div key={site.id} className="flex items-start gap-2 text-xs">
+                              <span className={cx("w-2.5 h-2.5 rounded-full mt-1 border", site.color || "bg-amber-400", site.color ? "border-black/10" : "border-neutral-200")} />
+                              <div>
+                                <div className="font-semibold text-neutral-800">{site.name}</div>
+                                <div className="text-[11px] text-neutral-500">
+                                  {site.clientName || site.quoteSnapshot?.client || "Client"}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {calendarPendingInMonth.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucun chantier en attente ce mois-ci.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Congés & absences</div>
+                        <div className="space-y-2">
+                          {calendarAbsenceWeeks.map((weekKey) => {
+                            const names = absencesWeekPeople[weekKey] || [];
+                            return (
+                              <div key={weekKey} className="rounded-lg border border-sky-100 bg-sky-50/40 px-2 py-1">
+                                <div className="text-[11px] font-semibold text-sky-700">{weekKey}</div>
+                                <div className="text-[11px] text-neutral-700">{names.join(", ")}</div>
+                              </div>
+                            );
+                          })}
+                          {calendarAbsenceWeeks.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucune absence ce mois-ci.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TIMELINE / CALENDRIER GANTT */}
             {view === "timeline" && timelineView && (
               <div className="space-y-3">
@@ -3684,6 +4159,18 @@ useEffect(() => {
                       Année
                     </Button>
                   </div>
+                </div>
+                <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm flex flex-wrap items-center gap-3 text-xs">
+                  <span className="uppercase tracking-wide text-neutral-500 font-semibold">Aperçu</span>
+                  <span className="text-[11px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
+                    {plannedSites.length} planifiés
+                  </span>
+                  <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                    {pendingSites.length} non planifiés
+                  </span>
+                  <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                    {Object.keys(absencesByWeek).length} sem. absences
+                  </span>
                 </div>
                 <div className="text-xs text-neutral-600">
                   Barres continues alignées sur les dates prévues des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
@@ -3736,6 +4223,72 @@ useEffect(() => {
                     ))}
                   </div>
                 </div>
+
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold">Chantiers non planifiés</div>
+                      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                        {timelinePendingSites.length} à planifier
+                      </span>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                      {timelinePendingSites.map((site) => (
+                        <div key={site.id} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3">
+                          <div className="flex items-start gap-2">
+                            <span className={cx("w-3 h-3 rounded-full mt-1 border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} />
+                            <div className="space-y-0.5">
+                              <div className="font-semibold text-neutral-900">{site.name}</div>
+                              <div className="text-[11px] text-neutral-600">
+                                {site.clientName || site.quoteSnapshot?.client || "Client"}
+                              </div>
+                              {(site.startDate || site.endDate) && (
+                                <div className="text-[11px] text-neutral-600">
+                                  {site.startDate ? formatFR(new Date(site.startDate)) : "Date à définir"}
+                                  {site.startDate && site.endDate ? " → " : ""}
+                                  {site.endDate ? formatFR(new Date(site.endDate)) : ""}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {timelinePendingSites.length === 0 && (
+                        <div className="text-sm text-neutral-500">Aucun chantier non planifié sur cette période.</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold">Congés & absences</div>
+                      <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
+                        {timelineAbsences.length} semaine{timelineAbsences.length > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {timelineAbsences.map((entry) => (
+                        <div key={entry.weekKey} className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2">
+                          <div className="text-[11px] font-semibold text-sky-700">
+                            S{pad2(getISOWeek(entry.start))} • {formatFR(entry.start, true)}
+                          </div>
+                          <div className="text-xs text-neutral-700 mt-1 flex flex-wrap gap-1">
+                            {entry.people.map((name) => (
+                              <span key={name} className="px-2 py-0.5 rounded-full bg-white border border-sky-100 text-sky-700">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {timelineAbsences.length === 0 && (
+                        <div className="text-sm text-neutral-500">Aucune absence enregistrée sur la période.</div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
 
                 <Card>
                   <CardContent className="space-y-3">
@@ -4240,6 +4793,167 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Créer un événement</DialogTitle>
+            <DialogDescription>Ajoutez un événement et choisissez le calendrier ou une couleur personnalisée.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={eventDraft.title}
+              onChange={(e: any) => setEventDraft((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Titre de l'événement"
+            />
+            <div className="grid md:grid-cols-2 gap-2">
+              <Input
+                type="date"
+                value={eventDraft.dateKey}
+                onChange={(e: any) => {
+                  const nextDate = e.target.value;
+                  setEventDraft((prev) => ({ ...prev, dateKey: nextDate }));
+                  if (nextDate) {
+                    setEventWeekYear(getISOWeekYear(fromLocalKey(nextDate)));
+                  }
+                }}
+              />
+              <Input
+                type="date"
+                value={eventDraft.endDateKey}
+                onChange={(e: any) => setEventDraft((prev) => ({ ...prev, endDateKey: e.target.value }))}
+                placeholder="Fin"
+              />
+            </div>
+            <div className="grid md:grid-cols-2 gap-2 items-center">
+              <select
+                value={eventDraft.calendarId}
+                onChange={(e) => setEventDraft((prev) => ({ ...prev, calendarId: e.target.value }))}
+                className="border rounded-md px-2 py-1 text-sm w-full"
+              >
+                <option value="">Couleur personnalisée</option>
+                {eventCalendars.map((cal) => (
+                  <option key={cal.id} value={cal.id}>
+                    {cal.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-neutral-600">Semaines ciblées</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={eventWeekYear}
+                    onChange={(e) => setEventWeekYear(Number(e.target.value))}
+                    className="border rounded-md px-2 py-1 text-xs"
+                  >
+                    {[eventWeekYear - 1, eventWeekYear, eventWeekYear + 1].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEventDraft((prev) => ({ ...prev, weekKeys: [] }))}
+                  >
+                    Effacer
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-32 overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-2">
+                {eventWeekOptions.map((weekKey) => {
+                  const checked = eventDraft.weekKeys.includes(weekKey);
+                  return (
+                    <label key={weekKey} className="flex items-center gap-1 text-[11px] text-neutral-600">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setEventDraft((prev) => ({
+                            ...prev,
+                            weekKeys: checked
+                              ? prev.weekKeys.filter((wk) => wk !== weekKey)
+                              : [...prev.weekKeys, weekKey],
+                          }))
+                        }
+                      />
+                      {weekKey.replace(`${eventWeekYear}-W`, "S")}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                Sélectionner des semaines crée un événement par semaine et ignore les dates ci-dessus.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Couleur (optionnelle)</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.slice(0, 12).map((c) => (
+                  <button
+                    key={c}
+                    className={cx("w-6 h-6 rounded-full border", c, eventDraft.color === c && "ring-2 ring-black")}
+                    onClick={() => setEventDraft((prev) => ({ ...prev, color: prev.color === c ? "" : c }))}
+                    type="button"
+                    aria-label={`Couleur ${c}`}
+                  />
+                ))}
+              </div>
+              <p className="text-[11px] text-neutral-500">Si une couleur est choisie, elle remplace celle du calendrier.</p>
+            </div>
+            <Textarea
+              value={eventDraft.notes}
+              onChange={(e: any) => setEventDraft((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Notes"
+              className="text-sm"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEventDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={createCalendarEvent}>Créer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={calendarDialogOpen} onOpenChange={setCalendarDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{calendarEditTarget ? "Modifier le calendrier" : "Créer un calendrier"}</DialogTitle>
+            <DialogDescription>Définissez un nom et une couleur pour le nouveau calendrier.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={calendarDraft.name}
+              onChange={(e: any) => setCalendarDraft((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Nom du calendrier"
+            />
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Couleur</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.slice(0, 12).map((c) => (
+                  <button
+                    key={c}
+                    className={cx("w-6 h-6 rounded-full border", c, calendarDraft.color === c && "ring-2 ring-black")}
+                    onClick={() => setCalendarDraft((prev) => ({ ...prev, color: c }))}
+                    type="button"
+                    aria-label={`Couleur ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCalendarDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={createCalendar}>{calendarEditTarget ? "Enregistrer" : "Créer"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <RenameDialog
         open={renameOpen}
         setOpen={setRenameOpen}
