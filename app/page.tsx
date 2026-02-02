@@ -3837,26 +3837,36 @@ useEffect(() => {
                                 </Button>
                               </div>
                               <div className="space-y-3">
-                                {[
-                                  { count: week.planned.length, color: "bg-sky-500", label: "Chantiers planifiés" },
-                                  { count: week.pending.length, color: "bg-amber-400", label: "Chantiers non planifiés" },
-                                  { count: week.absences.length, color: "bg-rose-400", label: "Congés payés" },
-                                ].map((group) => {
-                                  if (group.count === 0) return null;
-                                  const dots = Math.min(group.count, 12);
-                                  return (
-                                    <div key={group.label} className="flex items-center gap-2" aria-label={group.label}>
-                                      <div className="flex flex-wrap items-center gap-1.5">
-                                        {Array.from({ length: dots }, (_, idx) => (
-                                          <span key={`${group.label}-${idx}`} className={cx("h-3.5 w-3.5 rounded-full", group.color)} />
-                                        ))}
-                                        {group.count > dots && (
-                                          <span className="text-sm text-neutral-500">+{group.count - dots}</span>
-                                        )}
+                                {week.planned.length > 0 && (
+                                  <div className="space-y-1.5" aria-label="Chantiers planifiés">
+                                    {week.planned.map((site) => (
+                                      <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full bg-sky-500" />
+                                        <span className="truncate">{site.name}</span>
                                       </div>
-                                    </div>
-                                  );
-                                })}
+                                    ))}
+                                  </div>
+                                )}
+                                {week.pending.length > 0 && (
+                                  <div className="space-y-1.5" aria-label="Chantiers non planifiés">
+                                    {week.pending.map((site) => (
+                                      <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full bg-amber-400" />
+                                        <span className="truncate">{site.name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {week.absences.length > 0 && (
+                                  <div className="space-y-1.5" aria-label="Congés payés">
+                                    {week.absences.map((name) => (
+                                      <div key={`absence-${week.weekKey}-${name}`} className="flex items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full bg-rose-400" />
+                                        <span className="truncate">{name}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                                 {week.events.length > 0 && (
                                   <div className="space-y-1.5" aria-label="Disponibilités">
                                     {week.events.map((event) => (
