@@ -3815,23 +3815,23 @@ useEffect(() => {
                 <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                   <Card className="overflow-hidden">
                     {calendarScope === "projection" ? (
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center justify-between text-xs text-neutral-600">
+                      <div className="p-5 space-y-4">
+                        <div className="flex items-center justify-between text-sm text-neutral-600">
                           <span className="font-semibold text-neutral-700">Projection hebdomadaire</span>
                           <span>4 semaines par ligne • Vue synthèse</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
                           {projectionWeekSummaries.map((week) => (
                             <div
                               key={week.weekKey}
-                              className="rounded-xl border border-neutral-200 bg-white shadow-sm p-4 text-xs space-y-3"
+                              className="rounded-xl border border-neutral-200 bg-white shadow-sm p-5 text-sm space-y-4"
                             >
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <div className="text-sm font-semibold text-neutral-900">
+                                  <div className="text-base font-semibold text-neutral-900">
                                     S{pad2(week.weekNum)}
                                   </div>
-                                  <div className="text-[11px] text-neutral-500">
+                                  <div className="text-xs text-neutral-500">
                                     {formatFR(week.start, true)}
                                   </div>
                                 </div>
@@ -3845,10 +3845,10 @@ useEffect(() => {
                                   <Plus className="h-3.5 w-3.5" />
                                 </Button>
                               </div>
-                              <div className="space-y-2">
+                              <div className="space-y-3">
                                 {week.planned.length > 0 && (
-                                  <div className="space-y-1 max-h-28 overflow-auto">
-                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
+                                  <div className="space-y-1 max-h-32 overflow-auto">
+                                    <div className="text-xs uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
                                     {week.planned.map((site) => (
                                       <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
                                         <span className={cx("w-2 h-2 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
@@ -3858,8 +3858,8 @@ useEffect(() => {
                                   </div>
                                 )}
                                 {week.events.length > 0 && (
-                                  <div className="space-y-1 max-h-24 overflow-auto">
-                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">Événements</div>
+                                  <div className="space-y-1 max-h-28 overflow-auto">
+                                    <div className="text-xs uppercase tracking-wide text-neutral-400">Événements</div>
                                     {week.events.map((event) => (
                                       <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
                                         <span className={cx("w-2 h-2 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
@@ -3869,8 +3869,8 @@ useEffect(() => {
                                   </div>
                                 )}
                                 {week.pending.length > 0 && (
-                                  <div className="space-y-1 max-h-20 overflow-auto">
-                                    <div className="text-[10px] uppercase tracking-wide text-neutral-400">En attente</div>
+                                  <div className="space-y-1 max-h-24 overflow-auto">
+                                    <div className="text-xs uppercase tracking-wide text-neutral-400">En attente</div>
                                     {week.pending.map((site) => (
                                       <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
                                         <span className="w-2 h-2 rounded-full border border-amber-200 bg-amber-400" />
@@ -3880,8 +3880,8 @@ useEffect(() => {
                                   </div>
                                 )}
                                 {week.absences.length > 0 && (
-                                  <div className="text-[11px] text-sky-700">
-                                    <div className="text-[10px] uppercase tracking-wide text-sky-400">Absences</div>
+                                  <div className="text-xs text-sky-700">
+                                    <div className="text-xs uppercase tracking-wide text-sky-400">Absences</div>
                                     {week.absences.join(", ")}
                                   </div>
                                 )}
