@@ -3542,80 +3542,82 @@ useEffect(() => {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <div className="grid grid-cols-12 gap-4">
           {/* Left column: People & Sites */}
-          <div
-            className={cx(
-              "col-span-12 lg:col-span-3 space-y-4",
-              isPlanningMonth && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
-            )}
-          >
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">Salariés</div>
-                  <AddPerson onAdd={addPerson} />
-                </div>
-                <div className="space-y-2">
-                  {people.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-2">
-                      <PersonChip person={p} />
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs flex items-center gap-1">
-                          <input type="checkbox" checked={isAbsentOnWeek(p.id, currentWeekKey)} onChange={() => toggleAbsentThisWeek(p.id)} />
-                          Abs. S{getISOWeek(weekDays[0])}
-                        </label>
-                        <Button size="icon" variant="ghost" onClick={() => { setRenameTarget({ type: 'person', id: p.id, name: p.name }); setRenameOpen(true); }} aria-label={`Renommer ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
-                        <Button size="icon" variant="ghost" onClick={() => removePerson(p.id)} aria-label={`Supprimer ${p.name}`}><Trash2 className="w-4 h-4" /></Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-neutral-500">L'absence ne vaut que pour la <b>semaine affichée</b>.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium flex items-center gap-2">
-                    Chantiers
-                    {pendingSites.length > 0 && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
-                        {pendingSites.length} à planifier
-                      </span>
-                    )}
+          {view !== "calendar" && (
+            <div
+              className={cx(
+                "col-span-12 lg:col-span-3 space-y-4",
+                isPlanningMonth && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+              )}
+            >
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium">Salariés</div>
+                    <AddPerson onAdd={addPerson} />
                   </div>
-                  <AddSite onAdd={addSite} />
-                </div>
-                <div className="space-y-2">
-                  {plannedSites.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2">
-                        <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
-                        {s.name}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => {
-                            setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, color: s.color });
-                            setRenameWeeks(siteWeekVisibility[s.id] || []);
-                            setRenamePickerYear(getISOWeekYear(anchor));
-                            setRenameOpen(true);
-                          }}
-                          aria-label={`Renommer ${s.name}`}
-                        ><Edit3 className="w-4 h-4" /></Button>
-                        <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
+                  <div className="space-y-2">
+                    {people.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-2">
+                        <PersonChip person={p} />
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs flex items-center gap-1">
+                            <input type="checkbox" checked={isAbsentOnWeek(p.id, currentWeekKey)} onChange={() => toggleAbsentThisWeek(p.id)} />
+                            Abs. S{getISOWeek(weekDays[0])}
+                          </label>
+                          <Button size="icon" variant="ghost" onClick={() => { setRenameTarget({ type: 'person', id: p.id, name: p.name }); setRenameOpen(true); }} aria-label={`Renommer ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => removePerson(p.id)} aria-label={`Supprimer ${p.name}`}><Trash2 className="w-4 h-4" /></Button>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-neutral-500">L'absence ne vaut que pour la <b>semaine affichée</b>.</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium flex items-center gap-2">
+                      Chantiers
+                      {pendingSites.length > 0 && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                          {pendingSites.length} à planifier
+                        </span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                    <AddSite onAdd={addSite} />
+                  </div>
+                  <div className="space-y-2">
+                    {plannedSites.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2">
+                          <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
+                          {s.name}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, color: s.color });
+                              setRenameWeeks(siteWeekVisibility[s.id] || []);
+                              setRenamePickerYear(getISOWeekYear(anchor));
+                              setRenameOpen(true);
+                            }}
+                            aria-label={`Renommer ${s.name}`}
+                          ><Edit3 className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Right column: Calendars */}
-          <div className="col-span-12 lg:col-span-9">
+          <div className={cx("col-span-12", view === "calendar" ? "lg:col-span-12" : "lg:col-span-9")}>
             {/* WEEK VIEW */}
             {isPlanningWeek && (
               <div className="space-y-2">
