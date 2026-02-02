@@ -3822,6 +3822,11 @@ useEffect(() => {
                                 </Button>
                               </div>
                               <div className="space-y-3">
+                                {(() => {
+                                  const leaveEvents = week.events.filter((event) => event.calendarId === "cal-leave");
+                                  const availabilityEvents = week.events.filter((event) => event.calendarId === "cal-availability");
+                                  return (
+                                    <>
                                 {week.planned.length > 0 && (
                                   <div className="space-y-1.5" aria-label="Chantiers planifiés">
                                     {week.planned.map((site) => (
@@ -3842,7 +3847,7 @@ useEffect(() => {
                                     ))}
                                   </div>
                                 )}
-                                {week.absences.length > 0 && (
+                                {(week.absences.length > 0 || leaveEvents.length > 0) && (
                                   <div className="space-y-1.5" aria-label="Congés payés">
                                     {week.absences.map((name) => (
                                       <div key={`absence-${week.weekKey}-${name}`} className="flex items-center gap-2">
@@ -3850,11 +3855,17 @@ useEffect(() => {
                                         <span className="truncate">{name}</span>
                                       </div>
                                     ))}
+                                    {leaveEvents.map((event) => (
+                                      <div key={event.id} className="flex items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full bg-rose-400" />
+                                        <span className="truncate">{event.title}</span>
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
-                                {week.events.length > 0 && (
+                                {availabilityEvents.length > 0 && (
                                   <div className="space-y-1.5" aria-label="Disponibilités">
-                                    {week.events.map((event) => (
+                                    {availabilityEvents.map((event) => (
                                       <div key={event.id} className="flex items-center gap-2">
                                         <span className="h-3.5 w-3.5 rounded-full bg-black" />
                                         <span className="truncate">{event.title}</span>
@@ -3862,6 +3873,9 @@ useEffect(() => {
                                     ))}
                                   </div>
                                 )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </div>
                           ))}
