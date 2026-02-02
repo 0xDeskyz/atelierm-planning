@@ -1552,6 +1552,7 @@ export default function Page() {
   >([]);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [calendarDialogOpen, setCalendarDialogOpen] = useState(false);
+  const [eventEditId, setEventEditId] = useState<string | null>(null);
   const [eventDraft, setEventDraft] = useState({
     title: "",
     dateKey: todayKey,
@@ -2266,7 +2267,10 @@ export default function Page() {
         notes: eventDraft.notes || undefined,
       };
     });
-    setCalendarEvents((prev) => [...prev, ...eventsFromWeeks]);
+    setCalendarEvents((prev) => {
+      const cleaned = eventEditId ? prev.filter((evt) => evt.id !== eventEditId) : prev;
+      return [...cleaned, ...eventsFromWeeks];
+    });
     setEventDraft((prev) => ({
       ...prev,
       title: "",
@@ -2277,8 +2281,34 @@ export default function Page() {
       color: "",
       calendarId: prev.calendarId || "cal-availability",
     }));
+    setEventEditId(null);
     setEventDialogOpen(false);
-  }, [eventCalendarsById, eventDraft.calendarId, eventDraft.notes, eventDraft.title, eventDraft.weekKeys]);
+  }, [eventCalendarsById, eventDraft.calendarId, eventDraft.notes, eventDraft.title, eventDraft.weekKeys, eventEditId]);
+
+  const openEventDialogForEvent = useCallback((event: any) => {
+    const parsedDate = fromLocalKey(event.dateKey);
+    const eventWeekKey = weekKeyOf(parsedDate);
+    setEventWeekYear(getISOWeekYear(parsedDate));
+    setEventEditId(event.id);
+    setEventDraft((prev) => ({
+      ...prev,
+      title: event.title || "",
+      dateKey: event.dateKey || todayKey,
+      endDateKey: event.endDateKey || "",
+      weekKeys: eventWeekKey ? [eventWeekKey] : [],
+      notes: event.notes || "",
+      color: "",
+      calendarId: event.calendarId || "cal-availability",
+    }));
+    setEventDialogOpen(true);
+  }, []);
+
+  const deleteCalendarEvent = useCallback(() => {
+    if (!eventEditId) return;
+    setCalendarEvents((prev) => prev.filter((evt) => evt.id !== eventEditId));
+    setEventEditId(null);
+    setEventDialogOpen(false);
+  }, [eventEditId]);
   const openEventDialogForDate = useCallback((dateKey: string) => {
     const parsedDate = fromLocalKey(dateKey);
     setEventWeekYear(getISOWeekYear(parsedDate));
@@ -3856,20 +3886,30 @@ useEffect(() => {
                                       </div>
                                     ))}
                                     {leaveEvents.map((event) => (
-                                      <div key={event.id} className="flex items-center gap-2">
+                                      <button
+                                        key={event.id}
+                                        type="button"
+                                        className="flex items-center gap-2 text-left"
+                                        onClick={() => openEventDialogForEvent(event)}
+                                      >
                                         <span className="h-3.5 w-3.5 rounded-full bg-rose-400" />
                                         <span className="truncate">{event.title}</span>
-                                      </div>
+                                      </button>
                                     ))}
                                   </div>
                                 )}
                                 {availabilityEvents.length > 0 && (
                                   <div className="space-y-1.5" aria-label="Disponibilités">
                                     {availabilityEvents.map((event) => (
-                                      <div key={event.id} className="flex items-center gap-2">
+                                      <button
+                                        key={event.id}
+                                        type="button"
+                                        className="flex items-center gap-2 text-left"
+                                        onClick={() => openEventDialogForEvent(event)}
+                                      >
                                         <span className="h-3.5 w-3.5 rounded-full bg-black" />
                                         <span className="truncate">{event.title}</span>
-                                      </div>
+                                      </button>
                                     ))}
                                   </div>
                                 )}
@@ -4788,7 +4828,7 @@ useEffect(() => {
       <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Créer un événement</DialogTitle>
+            <DialogTitle>{eventEditId ? "Modifier l'événement" : "Créer un événement"}</DialogTitle>
             <DialogDescription>Ajoutez un événement de disponibilité ou de congé et sélectionnez les semaines concernées.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -4865,7 +4905,12 @@ useEffect(() => {
             <Button variant="ghost" onClick={() => setEventDialogOpen(false)}>
               Annuler
             </Button>
-            <Button onClick={createCalendarEvent}>Créer</Button>
+            {eventEditId && (
+              <Button variant="outline" onClick={deleteCalendarEvent}>
+                Supprimer
+              </Button>
+            )}
+            <Button onClick={createCalendarEvent}>{eventEditId ? "Enregistrer" : "Créer"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
