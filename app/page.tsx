@@ -477,8 +477,8 @@ function PersonChip({ person }: any) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm ${person.color} shadow cursor-grab`}>
-      <Users className="w-4 h-4" /> {person.name}
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-white text-xs ${person.color} shadow cursor-grab`}>
+      <Users className="w-3.5 h-3.5" /> {person.name}
     </div>
   );
 }
@@ -512,12 +512,12 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`px-2 py-0.5 rounded-full text-white text-xs ${person.color} flex items-center gap-1 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
+      className={`px-2.5 py-1 rounded-full text-white text-sm ${person.color} flex items-center gap-1.5 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
       title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
     >
       <span>{person.name}</span>
-      {extraLabel && <span className="text-[10px] px-1 py-0.5 rounded-full bg-black/30">{extraLabel}</span>}
-      {conflict && <span className="text-[10px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-900">Conflit</span>}
+      {extraLabel && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black/30">{extraLabel}</span>}
+      {conflict && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-900">Conflit</span>}
       <button className="ml-1 w-4 h-4 leading-none rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center" title="Retirer du jour" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
     </div>
   );
@@ -576,7 +576,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
       </div>
 
       {/* Assignments list */}
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-2">
         {todays.map((a: any) => {
           const p = people.find((pp: any) => pp.id === a.personId);
           const conflictKey = `${a.personId}|${a.date}`;
@@ -3555,9 +3555,9 @@ useEffect(() => {
                     <div className="font-medium">Salariés</div>
                     <AddPerson onAdd={addPerson} />
                   </div>
-                  <div className="space-y-2">
-                    {people.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between gap-2">
+                <div className="space-y-1.5">
+                  {people.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-2">
                         <PersonChip person={p} />
                         <div className="flex items-center gap-2">
                           <label className="text-xs flex items-center gap-1">
@@ -3587,13 +3587,13 @@ useEffect(() => {
                     </div>
                     <AddSite onAdd={addSite} />
                   </div>
-                  <div className="space-y-2">
-                    {plannedSites.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2">
-                          <span className={cx("w-3 h-3 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
-                          {s.name}
-                        </span>
+                <div className="space-y-1.5">
+                  {plannedSites.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2">
+                        <span className={cx("w-2.5 h-2.5 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
+                        {s.name}
+                      </span>
                         <div className="flex items-center gap-2">
                           <Button
                             size="icon"
