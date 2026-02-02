@@ -3812,7 +3812,7 @@ useEffect(() => {
                   </div>
                 </div>
 
-                <div className="grid gap-3">
+                <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
                   <Card className="overflow-hidden">
                     {calendarScope === "projection" ? (
                       <div className="p-4 space-y-3">
@@ -4005,7 +4005,138 @@ useEffect(() => {
                       </>
                     )}
                   </Card>
+                  <div className="space-y-3">
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Résumé de la période</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers planifiés</span>
+                          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
+                            {calendarPlannedInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Chantiers non planifiés</span>
+                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                            {calendarPendingInMonth.length}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-neutral-600 text-xs">Semaines avec absences</span>
+                          <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-full">
+                            {calendarAbsenceWeeks.length}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
 
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-semibold">Calendriers</div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setCalendarDraft({ name: "", color: COLORS[3] });
+                              setCalendarEditTarget(null);
+                              setCalendarDialogOpen(true);
+                            }}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Ajouter
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          {eventCalendars.map((cal) => (
+                            <div key={cal.id} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cal.visible}
+                                  onChange={() =>
+                                    setEventCalendars((prev) =>
+                                      prev.map((c) => (c.id === cal.id ? { ...c, visible: !c.visible } : c))
+                                    )
+                                  }
+                                />
+                                <span className={cx("w-2.5 h-2.5 rounded-full border", cal.color, cal.color ? "border-black/10" : "border-neutral-200")} />
+                                {cal.name}
+                              </span>
+                              <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+                                <span>{calendarEvents.filter((evt) => evt.calendarId === cal.id).length}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setCalendarDraft({ name: cal.name, color: cal.color });
+                                    setCalendarEditTarget({ id: cal.id, isDefault: cal.isDefault });
+                                    setCalendarDialogOpen(true);
+                                  }}
+                                  aria-label={`Modifier ${cal.name}`}
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={cal.isDefault}
+                                  onClick={() => deleteCalendar(cal.id)}
+                                  aria-label={`Supprimer ${cal.name}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {eventCalendars.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucun calendrier personnalisé.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Chantiers non planifiés</div>
+                        <div className="space-y-2">
+                          {calendarPendingInMonth.slice(0, 5).map((site) => (
+                            <div key={site.id} className="flex items-start gap-2 text-xs">
+                              <span className={cx("w-2.5 h-2.5 rounded-full mt-1 border", site.color || "bg-amber-400", site.color ? "border-black/10" : "border-neutral-200")} />
+                              <div>
+                                <div className="font-semibold text-neutral-800">{site.name}</div>
+                                <div className="text-[11px] text-neutral-500">
+                                  {site.clientName || site.quoteSnapshot?.client || "Client"}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {calendarPendingInMonth.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucun chantier en attente ce mois-ci.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="text-sm font-semibold">Congés & absences</div>
+                        <div className="space-y-2">
+                          {calendarAbsenceWeeks.map((weekKey) => {
+                            const names = absencesWeekPeople[weekKey] || [];
+                            return (
+                              <div key={weekKey} className="rounded-lg border border-sky-100 bg-sky-50/40 px-2 py-1">
+                                <div className="text-[11px] font-semibold text-sky-700">{weekKey}</div>
+                                <div className="text-[11px] text-neutral-700">{names.join(", ")}</div>
+                              </div>
+                            );
+                          })}
+                          {calendarAbsenceWeeks.length === 0 && (
+                            <div className="text-xs text-neutral-500">Aucune absence ce mois-ci.</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
               </div>
             )}
