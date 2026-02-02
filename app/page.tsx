@@ -1545,7 +1545,7 @@ export default function Page() {
   >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
-  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("month");
+  const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("projection");
   const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3797,16 +3797,7 @@ useEffect(() => {
                     <Button variant="outline" size="sm" onClick={() => setCalendarDialogOpen(true)}>
                       <Plus className="w-4 h-4 mr-1" /> Nouveau calendrier
                     </Button>
-                    <Button variant={calendarScope === "month" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("month")}>
-                      Mensuel
-                    </Button>
-                    <Button variant={calendarScope === "quarter" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("quarter")}>
-                      Trimestre
-                    </Button>
-                    <Button variant={calendarScope === "year" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("year")}>
-                      Année
-                    </Button>
-                    <Button variant={calendarScope === "projection" ? "default" : "outline"} size="sm" onClick={() => setCalendarScope("projection")}>
+                    <Button variant="default" size="sm">
                       Projection
                     </Button>
                   </div>
@@ -3845,46 +3836,28 @@ useEffect(() => {
                                   <Plus className="h-4 w-4" />
                                 </Button>
                               </div>
-                              <div className="space-y-4">
-                                {week.planned.length > 0 && (
-                                  <div className="space-y-2 max-h-40 overflow-auto">
-                                    <div className="text-sm uppercase tracking-wide text-neutral-400">Chantiers planifiés</div>
-                                    {week.planned.map((site) => (
-                                      <div key={`planned-${week.weekKey}-${site.id}`} className="flex items-center gap-2">
-                                        <span className={cx("w-2.5 h-2.5 rounded-full border", site.color || "bg-sky-500", site.color ? "border-black/10" : "border-neutral-200")} />
-                                        <span className="truncate">{site.name}</span>
+                              <div className="space-y-3">
+                                {[
+                                  { count: week.planned.length, color: "bg-sky-500", label: "Chantiers planifiés" },
+                                  { count: week.pending.length, color: "bg-amber-400", label: "Chantiers non planifiés" },
+                                  { count: week.absences.length, color: "bg-rose-400", label: "Congés payés" },
+                                  { count: week.events.length, color: "bg-black", label: "Disponibilités" },
+                                ].map((group) => {
+                                  if (group.count === 0) return null;
+                                  const dots = Math.min(group.count, 12);
+                                  return (
+                                    <div key={group.label} className="flex items-center gap-2" aria-label={group.label}>
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        {Array.from({ length: dots }, (_, idx) => (
+                                          <span key={`${group.label}-${idx}`} className={cx("h-3.5 w-3.5 rounded-full", group.color)} />
+                                        ))}
+                                        {group.count > dots && (
+                                          <span className="text-sm text-neutral-500">+{group.count - dots}</span>
+                                        )}
                                       </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {week.events.length > 0 && (
-                                  <div className="space-y-2 max-h-36 overflow-auto">
-                                    <div className="text-sm uppercase tracking-wide text-neutral-400">Événements</div>
-                                    {week.events.map((event) => (
-                                      <div key={`evt-${week.weekKey}-${event.id}`} className="flex items-center gap-2">
-                                        <span className={cx("w-2.5 h-2.5 rounded-full border", event.color || "bg-neutral-400", event.color ? "border-black/10" : "border-neutral-200")} />
-                                        <span className="truncate">{event.title}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {week.pending.length > 0 && (
-                                  <div className="space-y-2 max-h-32 overflow-auto">
-                                    <div className="text-sm uppercase tracking-wide text-neutral-400">En attente</div>
-                                    {week.pending.map((site) => (
-                                      <div key={`pending-${week.weekKey}-${site.id}`} className="flex items-center gap-2 text-amber-700">
-                                        <span className="w-2.5 h-2.5 rounded-full border border-amber-200 bg-amber-400" />
-                                        <span className="truncate">{site.name}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {week.absences.length > 0 && (
-                                  <div className="text-sm text-sky-700">
-                                    <div className="text-sm uppercase tracking-wide text-sky-400">Absences</div>
-                                    {week.absences.join(", ")}
-                                  </div>
-                                )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}
