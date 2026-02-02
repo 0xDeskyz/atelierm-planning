@@ -303,10 +303,10 @@ const DEMO_SITES = [
   { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
 ];
 const DEFAULT_EVENT_CALENDARS = [
-  { id: "cal-leave", name: "Congés", color: "bg-sky-500", visible: true, isDefault: true },
-  { id: "cal-planned", name: "Chantiers planifiés", color: "bg-emerald-500", visible: true, isDefault: true },
+  { id: "cal-planned", name: "Chantiers planifiés", color: "bg-sky-500", visible: true, isDefault: true },
   { id: "cal-pending", name: "Chantiers non planifiés", color: "bg-amber-500", visible: true, isDefault: true },
-  { id: "cal-meeting", name: "Réunions", color: "bg-violet-500", visible: true, isDefault: true },
+  { id: "cal-leave", name: "Congés payés", color: "bg-rose-500", visible: true, isDefault: true },
+  { id: "cal-availability", name: "Disponibilités", color: "bg-black", visible: true, isDefault: true },
 ];
 const QUOTE_COLUMNS = [
   { id: "todo", label: "À réaliser", hint: "Devis à préparer", tone: "sky" },
