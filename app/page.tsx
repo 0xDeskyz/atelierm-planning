@@ -3841,7 +3841,6 @@ useEffect(() => {
                                   { count: week.planned.length, color: "bg-sky-500", label: "Chantiers planifiés" },
                                   { count: week.pending.length, color: "bg-amber-400", label: "Chantiers non planifiés" },
                                   { count: week.absences.length, color: "bg-rose-400", label: "Congés payés" },
-                                  { count: week.events.length, color: "bg-black", label: "Disponibilités" },
                                 ].map((group) => {
                                   if (group.count === 0) return null;
                                   const dots = Math.min(group.count, 12);
@@ -3858,6 +3857,16 @@ useEffect(() => {
                                     </div>
                                   );
                                 })}
+                                {week.events.length > 0 && (
+                                  <div className="space-y-1.5" aria-label="Disponibilités">
+                                    {week.events.map((event) => (
+                                      <div key={event.id} className="flex items-center gap-2">
+                                        <span className="h-3.5 w-3.5 rounded-full bg-black" />
+                                        <span className="truncate">{event.title}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ))}
