@@ -1557,7 +1557,7 @@ export default function Page() {
     dateKey: todayKey,
     endDateKey: "",
     weekKeys: [] as string[],
-    calendarId: DEFAULT_EVENT_CALENDARS[0]?.id || "",
+    calendarId: "cal-availability",
     color: "",
     notes: "",
   });
@@ -2247,42 +2247,26 @@ export default function Page() {
 
   const createCalendarEvent = useCallback(() => {
     const title = eventDraft.title.trim();
-    if (!title || !eventDraft.dateKey) return;
-    if (eventDraft.weekKeys.length > 0) {
-      const eventsFromWeeks = eventDraft.weekKeys.map((weekKey) => {
-        const [yearRaw, weekRaw] = weekKey.split("-W");
-        const year = Number(yearRaw);
-        const weekNum = Number(weekRaw);
-        const weekStart = getISOWeekStart(year, weekNum);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 4);
-        return {
-          id: ensureId(`${title}-${weekKey}`, "evt"),
-          title,
-          dateKey: toLocalKey(weekStart),
-          endDateKey: toLocalKey(weekEnd),
-          calendarId: eventDraft.calendarId || undefined,
-          color: eventDraft.color || undefined,
-          notes: eventDraft.notes || undefined,
-        };
-      });
-      setCalendarEvents((prev) => [...prev, ...eventsFromWeeks]);
-    } else {
-      let endKey = eventDraft.endDateKey;
-      const id = ensureId(`${title}-${eventDraft.dateKey}`, "evt");
-      setCalendarEvents((prev) => [
-        ...prev,
-        {
-          id,
-          title,
-          dateKey: eventDraft.dateKey,
-          endDateKey: endKey || undefined,
-          calendarId: eventDraft.calendarId || undefined,
-          color: eventDraft.color || undefined,
-          notes: eventDraft.notes || undefined,
-        },
-      ]);
-    }
+    if (!title || eventDraft.weekKeys.length === 0) return;
+    const selectedCalendar = eventCalendarsById[eventDraft.calendarId] || eventCalendarsById["cal-availability"];
+    const eventsFromWeeks = eventDraft.weekKeys.map((weekKey) => {
+      const [yearRaw, weekRaw] = weekKey.split("-W");
+      const year = Number(yearRaw);
+      const weekNum = Number(weekRaw);
+      const weekStart = getISOWeekStart(year, weekNum);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 4);
+      return {
+        id: ensureId(`${title}-${weekKey}`, "evt"),
+        title,
+        dateKey: toLocalKey(weekStart),
+        endDateKey: toLocalKey(weekEnd),
+        calendarId: selectedCalendar?.id,
+        color: selectedCalendar?.color,
+        notes: eventDraft.notes || undefined,
+      };
+    });
+    setCalendarEvents((prev) => [...prev, ...eventsFromWeeks]);
     setEventDraft((prev) => ({
       ...prev,
       title: "",
@@ -2291,9 +2275,10 @@ export default function Page() {
       endDateKey: "",
       dateKey: prev.dateKey || todayKey,
       color: "",
+      calendarId: prev.calendarId || "cal-availability",
     }));
     setEventDialogOpen(false);
-  }, [eventDraft.calendarId, eventDraft.color, eventDraft.dateKey, eventDraft.endDateKey, eventDraft.notes, eventDraft.title, eventDraft.weekKeys]);
+  }, [eventCalendarsById, eventDraft.calendarId, eventDraft.notes, eventDraft.title, eventDraft.weekKeys]);
   const openEventDialogForDate = useCallback((dateKey: string) => {
     const parsedDate = fromLocalKey(dateKey);
     setEventWeekYear(getISOWeekYear(parsedDate));
@@ -2305,7 +2290,7 @@ export default function Page() {
       weekKeys: [],
       notes: "",
       color: "",
-      calendarId: prev.calendarId || DEFAULT_EVENT_CALENDARS[0]?.id || "",
+      calendarId: prev.calendarId || "cal-availability",
     }));
     setEventDialogOpen(true);
   }, []);
@@ -4790,7 +4775,7 @@ useEffect(() => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Créer un événement</DialogTitle>
-            <DialogDescription>Ajoutez un événement et choisissez le calendrier ou une couleur personnalisée.</DialogDescription>
+            <DialogDescription>Ajoutez un événement de disponibilité ou de congé et sélectionnez les semaines concernées.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
@@ -4798,37 +4783,14 @@ useEffect(() => {
               onChange={(e: any) => setEventDraft((prev) => ({ ...prev, title: e.target.value }))}
               placeholder="Titre de l'événement"
             />
-            <div className="grid md:grid-cols-2 gap-2">
-              <Input
-                type="date"
-                value={eventDraft.dateKey}
-                onChange={(e: any) => {
-                  const nextDate = e.target.value;
-                  setEventDraft((prev) => ({ ...prev, dateKey: nextDate }));
-                  if (nextDate) {
-                    setEventWeekYear(getISOWeekYear(fromLocalKey(nextDate)));
-                  }
-                }}
-              />
-              <Input
-                type="date"
-                value={eventDraft.endDateKey}
-                onChange={(e: any) => setEventDraft((prev) => ({ ...prev, endDateKey: e.target.value }))}
-                placeholder="Fin"
-              />
-            </div>
             <div className="grid md:grid-cols-2 gap-2 items-center">
               <select
                 value={eventDraft.calendarId}
                 onChange={(e) => setEventDraft((prev) => ({ ...prev, calendarId: e.target.value }))}
                 className="border rounded-md px-2 py-1 text-sm w-full"
               >
-                <option value="">Couleur personnalisée</option>
-                {eventCalendars.map((cal) => (
-                  <option key={cal.id} value={cal.id}>
-                    {cal.name}
-                  </option>
-                ))}
+                <option value="cal-availability">Disponibilités (noir)</option>
+                <option value="cal-leave">Congés payés (rose)</option>
               </select>
             </div>
             <div className="space-y-2">
@@ -4877,24 +4839,6 @@ useEffect(() => {
                   );
                 })}
               </div>
-              <p className="text-[11px] text-neutral-500">
-                Sélectionner des semaines crée un événement par semaine et ignore les dates ci-dessus.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-neutral-600">Couleur (optionnelle)</label>
-              <div className="flex flex-wrap gap-2">
-                {COLORS.slice(0, 12).map((c) => (
-                  <button
-                    key={c}
-                    className={cx("w-6 h-6 rounded-full border", c, eventDraft.color === c && "ring-2 ring-black")}
-                    onClick={() => setEventDraft((prev) => ({ ...prev, color: prev.color === c ? "" : c }))}
-                    type="button"
-                    aria-label={`Couleur ${c}`}
-                  />
-                ))}
-              </div>
-              <p className="text-[11px] text-neutral-500">Si une couleur est choisie, elle remplace celle du calendrier.</p>
             </div>
             <Textarea
               value={eventDraft.notes}
