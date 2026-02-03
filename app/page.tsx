@@ -1514,8 +1514,14 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [customizationOpen, setCustomizationOpen] = useState(false);
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
+  const [branding, setBranding] = useState({
+    logoText: "BT",
+    title: "BTP Planner",
+    subtitle: "Tableau de bord & suivi collaboratif",
+  });
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
       ? (crypto as any).randomUUID()
@@ -3076,10 +3082,12 @@ useEffect(() => {
           <div className="relative rounded-2xl border bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-gradient-to-r from-neutral-50 to-white">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-semibold">BT</div>
+                <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-semibold">
+                  {branding.logoText}
+                </div>
                 <div className="leading-tight">
-                  <div className="text-sm font-semibold text-neutral-900">BTP Planner</div>
-                  <div className="text-xs text-neutral-500">Tableau de bord & suivi collaboratif</div>
+                  <div className="text-sm font-semibold text-neutral-900">{branding.title}</div>
+                  <div className="text-xs text-neutral-500">{branding.subtitle}</div>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3166,6 +3174,16 @@ useEffect(() => {
                         }}
                       >
                         <Download className="w-4 h-4" /> Exporter JSON
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          setCustomizationOpen(true);
+                          setMaintenanceOpen(false);
+                        }}
+                      >
+                        <Edit3 className="w-4 h-4" /> Personnalisation
                       </Button>
                       {view === "hours" && (
                         <Button
@@ -4825,6 +4843,45 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <Dialog open={customizationOpen} onOpenChange={setCustomizationOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Personnalisation</DialogTitle>
+            <DialogDescription>Modifiez le logo et les titres visibles dans l'entête.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold text-neutral-600">Texte du logo</label>
+              <Input
+                value={branding.logoText}
+                onChange={(e: any) => setBranding((prev) => ({ ...prev, logoText: e.target.value }))}
+                placeholder="Initiales"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold text-neutral-600">Titre</label>
+              <Input
+                value={branding.title}
+                onChange={(e: any) => setBranding((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="Nom de l'application"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold text-neutral-600">Sous-titre</label>
+              <Input
+                value={branding.subtitle}
+                onChange={(e: any) => setBranding((prev) => ({ ...prev, subtitle: e.target.value }))}
+                placeholder="Accroche"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCustomizationOpen(false)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
