@@ -1539,6 +1539,10 @@ export default function Page() {
   const [saving, setSaving] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [customizationOpen, setCustomizationOpen] = useState(false);
+  const [weekPlannerOpen, setWeekPlannerOpen] = useState(false);
+  const [weekPlannerSite, setWeekPlannerSite] = useState<any | null>(null);
+  const [weekPlannerWeeks, setWeekPlannerWeeks] = useState<string[]>([]);
+  const [weekPlannerYear, setWeekPlannerYear] = useState(() => getISOWeekYear(new Date()));
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [branding, setBranding] = useState({
@@ -1902,6 +1906,14 @@ export default function Page() {
       return `${eventWeekYear}-W${pad2(weekNum)}`;
     });
   }, [eventWeekYear]);
+  const weekPlannerWeeksInYear = useMemo(
+    () => Math.max(54, getISOWeeksInYear(weekPlannerYear)),
+    [weekPlannerYear]
+  );
+  const weekPlannerWeeksList = useMemo(
+    () => Array.from({ length: weekPlannerWeeksInYear }, (_, idx) => idx + 1),
+    [weekPlannerWeeksInYear]
+  );
   const quoteWeeksInYear = useMemo(() => Math.max(54, getISOWeeksInYear(quoteWeekPickerYear)), [quoteWeekPickerYear]);
   const quoteWeeksList = useMemo(
     () => Array.from({ length: quoteWeeksInYear }, (_, idx) => idx + 1),
@@ -2818,6 +2830,34 @@ export default function Page() {
       if (!weeks || weeks.length === 0) return prev;
       return { ...prev, [id]: weeks };
     });
+  };
+  const openWeekPlanner = (site: any) => {
+    const weeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
+    setWeekPlannerSite(site);
+    setWeekPlannerWeeks(weeks);
+    const first = weeks[0];
+    const parsed = first ? parseWeekKey(first) : null;
+    setWeekPlannerYear(parsed?.year || getISOWeekYear(new Date()));
+    setWeekPlannerOpen(true);
+  };
+  const saveWeekPlanner = () => {
+    if (!weekPlannerSite?.id) return;
+    const unique = Array.from(new Set(weekPlannerWeeks)).filter(Boolean);
+    const derived = unique.length ? getWeekRangeFromKeys(unique) : null;
+    updateSiteMeta(weekPlannerSite.id, {
+      planningWeeks: unique,
+      startDate: derived?.startKey,
+      endDate: derived?.endKey,
+    });
+    setSiteWeekVisibility((prev) => {
+      if (unique.length === 0) {
+        const { [weekPlannerSite.id]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [weekPlannerSite.id]: unique };
+    });
+    setWeekPlannerOpen(false);
+    setWeekPlannerSite(null);
   };
   const openSiteDetail = (id: string, statusOverride?: "planned" | "pending") => {
     const site = safeSites.find((s) => s.id === id);
@@ -4603,16 +4643,28 @@ useEffect(() => {
                                     </div>
                                   </div>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={(e: any) => {
-                                    e.stopPropagation();
-                                    openSiteDetail(site.id, "planned");
-                                  }}
-                                >
-                                  Planifier
-                                </Button>
+                                <div className="flex flex-col gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={(e: any) => {
+                                      e.stopPropagation();
+                                      openSiteDetail(site.id, "planned");
+                                    }}
+                                  >
+                                    Planifier
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e: any) => {
+                                      e.stopPropagation();
+                                      openWeekPlanner(site);
+                                    }}
+                                  >
+                                    Semaines
+                                  </Button>
+                                </div>
                               </div>
                               {site.quoteSnapshot?.amount && (
                                 <div className="text-xs text-neutral-600 mt-1">Devis : {formatEUR(site.quoteSnapshot.amount)}</div>
@@ -4678,6 +4730,16 @@ useEffect(() => {
                                     )}
                                   </div>
                                 )}
+                                <button
+                                  type="button"
+                                  className="text-[11px] text-emerald-700 underline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openWeekPlanner(site);
+                                  }}
+                                >
+                                  Modifier les semaines
+                                </button>
                                 <div className="text-[11px] text-sky-700">Cliquer pour modifier</div>
                               </div>
                             </button>
@@ -4953,6 +5015,97 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <Dialog
+        open={weekPlannerOpen}
+        onOpenChange={(open) => {
+          setWeekPlannerOpen(open);
+          if (!open) setWeekPlannerSite(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Planifier les semaines</DialogTitle>
+            <DialogDescription>
+              {weekPlannerSite ? `Sélectionnez les semaines pour ${weekPlannerSite.name}.` : "Sélectionnez les semaines à planifier."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-neutral-700">Semaines prévues</div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setWeekPlannerYear((y: number) => y - 1)}
+                  aria-label="Année précédente"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <div className="text-sm font-semibold w-14 text-center">{weekPlannerYear}</div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setWeekPlannerYear((y: number) => y + 1)}
+                  aria-label="Année suivante"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-500">Sans sélection, le chantier restera visible toute l'année.</p>
+            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
+              {weekPlannerWeeksList.map((wk) => {
+                const wkKey = `${weekPlannerYear}-W${pad2(wk)}`;
+                const active = weekPlannerWeeks.includes(wkKey);
+                return (
+                  <button
+                    key={wkKey}
+                    type="button"
+                    onClick={() =>
+                      setWeekPlannerWeeks((prev) =>
+                        prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey]
+                      )
+                    }
+                    className={cx(
+                      "text-xs rounded-md border px-2 py-1 text-center transition",
+                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
+                    )}
+                  >
+                    S{pad2(wk)}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between text-xs text-neutral-600">
+              <button type="button" className="underline" onClick={() => setWeekPlannerWeeks([])}>
+                Toutes les semaines
+              </button>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => {
+                  setWeekPlannerWeeks([]);
+                  setWeekPlannerYear(getISOWeekYear(new Date()));
+                }}
+              >
+                Réinitialiser
+              </button>
+            </div>
+          </div>
+          <DialogFooter className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setWeekPlannerOpen(false);
+                setWeekPlannerSite(null);
+              }}
+            >
+              Fermer
+            </Button>
+            <Button onClick={saveWeekPlanner}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={customizationOpen} onOpenChange={setCustomizationOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
