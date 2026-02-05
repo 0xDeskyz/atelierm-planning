@@ -214,6 +214,23 @@ const getISOWeekStart = (year: number, weekNum: number) => {
   weekStart.setHours(0, 0, 0, 0);
   return weekStart;
 };
+const parseWeekKey = (wk: string) => {
+  const match = wk.match(/^(\d{4})-W(\d{1,2})$/i);
+  if (!match) return null;
+  return { year: Number(match[1]), week: Number(match[2]) };
+};
+const getWeekRangeFromKeys = (weekKeys: string[]) => {
+  const parsed = weekKeys
+    .map(parseWeekKey)
+    .filter(Boolean) as { year: number; week: number }[];
+  if (parsed.length === 0) return null;
+  parsed.sort((a, b) => (a.year - b.year) || (a.week - b.week));
+  const start = getISOWeekStart(parsed[0].year, parsed[0].week);
+  const end = getISOWeekStart(parsed[parsed.length - 1].year, parsed[parsed.length - 1].week);
+  const endDate = new Date(end);
+  endDate.setDate(endDate.getDate() + 6);
+  return { startKey: toLocalKey(start), endKey: toLocalKey(endDate) };
+};
 function getMonthWeeks(anchor: Date) {
   const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
@@ -371,6 +388,28 @@ const parseWeekList = (input: string, fallbackYear: number) => {
     }
   });
   return Array.from(weeks);
+};
+const getSiteDateRange = (site: any, fallbackKey: string) => {
+  const planningWeeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
+  const derived = planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
+  const startKey = derived?.startKey || site?.startDate || fallbackKey;
+  const endKey = derived?.endKey || site?.endDate || site?.startDate || fallbackKey;
+  return { startKey, endKey };
+};
+const formatWeeksSummary = (weeks: string[]) => {
+  if (!weeks || weeks.length === 0) return "Toutes les semaines";
+  const parsed = weeks
+    .map(parseWeekKey)
+    .filter(Boolean) as { year: number; week: number }[];
+  if (parsed.length === 0) return "Toutes les semaines";
+  parsed.sort((a, b) => (a.year - b.year) || (a.week - b.week));
+  const first = parsed[0];
+  const last = parsed[parsed.length - 1];
+  if (first.year === last.year) {
+    if (first.week === last.week) return `S${pad2(first.week)} • ${first.year}`;
+    return `S${pad2(first.week)} → S${pad2(last.week)} • ${first.year}`;
+  }
+  return `S${pad2(first.week)} ${first.year} → S${pad2(last.week)} ${last.year}`;
 };
 const toArray = (val: any, fallback: any[] = []) => (Array.isArray(val) ? val : fallback);
 const ensureId = (seed: string, prefix: string) => {
@@ -906,9 +945,14 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
 
 function AddSiteDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState<string>(() => toLocalKey(new Date()));
-  const [endDate, setEndDate] = useState<string>(() => toLocalKey(new Date()));
   const [color, setColor] = useState<string>(SITE_COLORS[6]);
+  const [selectedWeeks, setSelectedWeeks] = useState<string[]>([]);
+  const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
+  const weeksInYear = Math.max(54, getISOWeeksInYear(pickerYear));
+  const weeksList = Array.from({ length: weeksInYear }, (_, i) => i + 1);
+  const toggleWeek = (wkKey: string) => {
+    setSelectedWeeks((prev) => (prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey]));
+  };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
@@ -934,15 +978,39 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <label className="space-y-1">
-              <span className="text-neutral-600">Début</span>
-              <Input type="date" value={startDate} onChange={(e: any) => setStartDate(e.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-neutral-600">Fin</span>
-              <Input type="date" value={endDate} min={startDate} onChange={(e: any) => setEndDate(e.target.value)} />
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-neutral-700">Semaines prévues</div>
+              <div className="flex items-center gap-2">
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente"><ChevronLeft className="w-4 h-4" /></Button>
+                <div className="text-sm font-semibold w-14 text-center">{pickerYear}</div>
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante"><ChevronRight className="w-4 h-4" /></Button>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-500">Sélectionnez les semaines à planifier. Sans sélection, le chantier restera visible toute l'année.</p>
+            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
+              {weeksList.map((wk) => {
+                const wkKey = `${pickerYear}-W${pad2(wk)}`;
+                const active = selectedWeeks.includes(wkKey);
+                return (
+                  <button
+                    key={wkKey}
+                    type="button"
+                    onClick={() => toggleWeek(wkKey)}
+                    className={cx(
+                      "text-xs rounded-md border px-2 py-1 text-center transition",
+                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
+                    )}
+                  >
+                    S{pad2(wk)}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between text-xs text-neutral-600">
+              <button type="button" className="underline" onClick={() => setSelectedWeeks([])}>Toutes les semaines</button>
+              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); setPickerYear(new Date().getFullYear()); }}>Réinitialiser</button>
+            </div>
           </div>
         </div>
         <DialogFooter>
@@ -950,16 +1018,12 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
             onClick={() => {
               const n = name.trim();
               if (!n) return;
-              if (!startDate || !endDate || fromLocalKey(endDate) < fromLocalKey(startDate)) {
-                window.alert("Merci de saisir des dates de début et fin valides.");
-                return;
-              }
-              onAdd(n, startDate, endDate, color);
+              onAdd(n, selectedWeeks, color);
               setOpen(false);
               setName("");
-              setStartDate(toLocalKey(new Date()));
-              setEndDate(toLocalKey(new Date()));
               setColor(SITE_COLORS[6]);
+              setSelectedWeeks([]);
+              setPickerYear(new Date().getFullYear());
             }}
           >
             Ajouter
@@ -979,22 +1043,16 @@ function RenameDialog({
   weekSelection,
   onWeekSelectionChange,
   initialYear,
-  startDate,
-  endDate,
   color,
 }: any) {
   const [val, setVal] = useState<string>(name || "");
   const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>(weekSelection || []);
-  const [scheduleStart, setScheduleStart] = useState<string>(startDate || "");
-  const [scheduleEnd, setScheduleEnd] = useState<string>(endDate || "");
   const [siteColor, setSiteColor] = useState<string>(color || SITE_COLORS[0]);
 
   useEffect(() => setVal(name || ""), [name]);
   useEffect(() => setSelectedWeeks(weekSelection || []), [weekSelection]);
   useEffect(() => { if (initialYear) setPickerYear(initialYear); }, [initialYear]);
-  useEffect(() => setScheduleStart(startDate || ""), [startDate]);
-  useEffect(() => setScheduleEnd(endDate || ""), [endDate]);
   useEffect(() => setSiteColor(color || SITE_COLORS[0]), [color]);
 
   const toggleWeek = (wkKey: string) => {
@@ -1015,18 +1073,6 @@ function RenameDialog({
       <DialogContent>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <Input value={val} onChange={(e: any) => setVal(e.target.value)} placeholder="Nouveau nom" />
-        {typeof startDate !== "undefined" && typeof endDate !== "undefined" && (
-          <div className="grid grid-cols-2 gap-3 text-sm mt-3">
-            <label className="space-y-1">
-              <span className="text-neutral-600">Début du chantier</span>
-              <Input type="date" value={scheduleStart} onChange={(e: any) => setScheduleStart(e.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-neutral-600">Fin du chantier</span>
-              <Input type="date" value={scheduleEnd} min={scheduleStart} onChange={(e: any) => setScheduleEnd(e.target.value)} />
-            </label>
-          </div>
-        )}
         {typeof color !== "undefined" && (
           <div className="mt-3 space-y-1">
             <div className="text-neutral-600 text-sm">Couleur du chantier</div>
@@ -1089,14 +1135,9 @@ function RenameDialog({
             onClick={() => {
               const n = val.trim();
               if (!n) return;
-              if (scheduleStart && scheduleEnd && fromLocalKey(scheduleEnd) < fromLocalKey(scheduleStart)) {
-                window.alert("La fin doit être postérieure ou égale au début du chantier.");
-                return;
-              }
               onSave(
                 n,
                 selectedWeeks,
-                scheduleStart && scheduleEnd ? { startDate: scheduleStart, endDate: scheduleEnd } : undefined,
                 siteColor
               );
             }}
@@ -1112,8 +1153,6 @@ function RenameDialog({
 function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
   const [clientName, setClientName] = useState<string>("");
   const [address, setAddress] = useState<string>("");
   const [city, setCity] = useState<string>("");
@@ -1125,8 +1164,6 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
   useEffect(() => {
     setName(site?.name || "");
     setStatus(site?.status || "pending");
-    setStartDate(site?.startDate || "");
-    setEndDate(site?.endDate || "");
     setClientName(site?.clientName || site?.quoteSnapshot?.client || "");
     setAddress(site?.address || "");
     setCity(site?.city || "");
@@ -1140,17 +1177,14 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
     if (!site?.id) return;
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (startDate && endDate && fromLocalKey(endDate) < fromLocalKey(startDate)) {
-      window.alert("Merci de saisir des dates de début et fin valides.");
-      return;
-    }
     const parsedWeeks = parseWeekList(weeks, fallbackYear);
+    const derived = parsedWeeks.length ? getWeekRangeFromKeys(parsedWeeks) : null;
     onSave({
       ...site,
       name: trimmed,
       status: nextStatus || status,
-      startDate,
-      endDate,
+      startDate: derived?.startKey || site?.startDate,
+      endDate: derived?.endKey || site?.endDate,
       clientName,
       address,
       city,
@@ -1222,14 +1256,6 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
             <label className="space-y-1">
               <span className="text-[11px] text-neutral-600">Adresse</span>
               <Input value={address} onChange={(e: any) => setAddress(e.target.value)} placeholder="Adresse du chantier" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Début</span>
-              <Input type="date" value={startDate} onChange={(e: any) => setStartDate(e.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Fin</span>
-              <Input type="date" min={startDate || undefined} value={endDate} onChange={(e: any) => setEndDate(e.target.value)} />
             </label>
             <label className="space-y-1">
               <span className="text-[11px] text-neutral-600">Contact</span>
@@ -1488,7 +1514,7 @@ function AddPerson({ onAdd }: { onAdd: (name: string, color: string, extra?: any
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string, startDate: string, endDate: string, color: string) => void }) {
+function AddSite({ onAdd }: { onAdd: (name: string, planningWeeks: string[], color: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1700,7 +1726,8 @@ export default function Page() {
   const earliestTimelineStart = useMemo(
     () =>
       timelinePlannedSites.reduce<Date | null>((min, site) => {
-        const s = fromLocalKey(site.startDate || todayKey);
+        const range = getSiteDateRange(site, todayKey);
+        const s = fromLocalKey(range.startKey);
         return !min || s.getTime() < min.getTime() ? s : min;
       }, null),
     [timelinePlannedSites, todayKey]
@@ -1840,13 +1867,15 @@ export default function Page() {
       const weekStart = week.start.getTime();
       const weekEnd = week.end.getTime();
       const planned = visiblePlannedSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey).getTime();
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        const { startKey, endKey } = getSiteDateRange(site, todayKey);
+        const start = fromLocalKey(startKey).getTime();
+        const end = fromLocalKey(endKey).getTime();
         return start <= weekEnd && end >= weekStart;
       });
       const pending = visiblePendingSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey).getTime();
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey).getTime();
+        const { startKey, endKey } = getSiteDateRange(site, todayKey);
+        const start = fromLocalKey(startKey).getTime();
+        const end = fromLocalKey(endKey).getTime();
         return start <= weekEnd && end >= weekStart;
       });
       const absences = absencesWeekPeople[week.weekKey] || [];
@@ -1878,8 +1907,9 @@ export default function Page() {
   const calendarPlannedInMonth = useMemo(
     () =>
       visiblePlannedSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey);
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        const { startKey, endKey } = getSiteDateRange(site, todayKey);
+        const start = fromLocalKey(startKey);
+        const end = fromLocalKey(endKey);
         return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
     [calendarWindow.end, calendarWindow.start, visiblePlannedSites, todayKey]
@@ -1887,8 +1917,9 @@ export default function Page() {
   const calendarPendingInMonth = useMemo(
     () =>
       visiblePendingSites.filter((site) => {
-        const start = fromLocalKey(site.startDate || todayKey);
-        const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+        const { startKey, endKey } = getSiteDateRange(site, todayKey);
+        const start = fromLocalKey(startKey);
+        const end = fromLocalKey(endKey);
         return start.getTime() <= calendarWindow.end.getTime() && end.getTime() >= calendarWindow.start.getTime();
       }),
     [calendarWindow.end, calendarWindow.start, visiblePendingSites, todayKey]
@@ -1916,8 +1947,9 @@ export default function Page() {
       const key = toLocalKey(day);
       if (plannedVisible) {
         plannedMap[key] = visiblePlannedSites.filter((site) => {
-          const start = fromLocalKey(site.startDate || todayKey);
-          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          const { startKey, endKey } = getSiteDateRange(site, todayKey);
+          const start = fromLocalKey(startKey);
+          const end = fromLocalKey(endKey);
           return isDateWithin(day, start, end);
         });
       } else {
@@ -1925,8 +1957,9 @@ export default function Page() {
       }
       if (pendingVisible) {
         pendingMap[key] = visiblePendingSites.filter((site) => {
-          const start = fromLocalKey(site.startDate || todayKey);
-          const end = fromLocalKey(site.endDate || site.startDate || todayKey);
+          const { startKey, endKey } = getSiteDateRange(site, todayKey);
+          const start = fromLocalKey(startKey);
+          const end = fromLocalKey(endKey);
           return isDateWithin(day, start, end);
         });
       } else {
@@ -2072,8 +2105,9 @@ export default function Page() {
 
     const rows = timelinePlannedSites
       .map((site) => {
-        const siteStart = fromLocalKey(site.startDate || todayKey);
-        const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+        const { startKey, endKey } = getSiteDateRange(site, todayKey);
+        const siteStart = fromLocalKey(startKey);
+        const siteEnd = fromLocalKey(endKey);
         if (siteEnd < timelineView.start || siteStart > timelineView.end) return null;
 
         const start = siteStart.getTime() < timelineView.start.getTime() ? new Date(timelineView.start) : siteStart;
@@ -2119,8 +2153,9 @@ export default function Page() {
       if (!isWeekend(cursor)) {
         const dateKey = toLocalKey(cursor);
         const count = timelinePlannedSites.reduce((acc, site) => {
-          const siteStart = fromLocalKey(site.startDate || todayKey);
-          const siteEnd = fromLocalKey(site.endDate || site.startDate || todayKey);
+          const { startKey, endKey } = getSiteDateRange(site, todayKey);
+          const siteStart = fromLocalKey(startKey);
+          const siteEnd = fromLocalKey(endKey);
           if (siteStart.getTime() <= cursor.getTime() && siteEnd.getTime() >= cursor.getTime()) {
             return acc + 1;
           }
@@ -2205,7 +2240,11 @@ export default function Page() {
   const pendingSiteHighlights = useMemo(
     () =>
       [...pendingSites]
-        .sort((a, b) => fromLocalKey(a.startDate || todayKey).getTime() - fromLocalKey(b.startDate || todayKey).getTime())
+        .sort((a, b) => {
+          const aRange = getSiteDateRange(a, todayKey);
+          const bRange = getSiteDateRange(b, todayKey);
+          return fromLocalKey(aRange.startKey).getTime() - fromLocalKey(bRange.startKey).getTime();
+        })
         .slice(0, 4),
     [pendingSites, todayKey]
   );
@@ -2572,7 +2611,7 @@ export default function Page() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<
     | null
-    | { type: 'person' | 'site'; id: string; name: string; startDate?: string; endDate?: string; color?: string }
+    | { type: 'person' | 'site'; id: string; name: string; color?: string }
   >(null);
   const [renameWeeks, setRenameWeeks] = useState<string[]>([]);
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
@@ -2660,8 +2699,6 @@ export default function Page() {
   const renamePerson = (id: string, name: string) => setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
   const renameSite = (id: string, name: string, color?: string) =>
     setSites((s) => s.map((x) => (x.id === id ? { ...x, name, color: color || x.color } : x)));
-  const updateSiteSchedule = (id: string, startDate: string, endDate: string) =>
-    setSites((s) => s.map((x) => (x.id === id ? { ...x, startDate, endDate } : x)));
   const removeAssignment = (id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id));
   const updateAssignment = (id: string, changes: { hours?: any; portion?: any }) => {
     setAssignments((prev) =>
@@ -2701,18 +2738,30 @@ export default function Page() {
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string, startDate: string, endDate: string, color: string) =>
+  const addSite = (name: string, planningWeeks: string[], color: string) => {
+    const derived = planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
+    const startDate = derived?.startKey || toLocalKey(new Date());
+    const endDate = derived?.endKey || startDate;
+    const id =
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : `s${Date.now()}`;
     setSites((s) => [
       ...s,
       normalizeSiteRecord({
-        id: typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `s${Date.now()}`,
+        id,
         name,
         startDate,
         endDate,
         color,
         status: "planned",
+        planningWeeks,
       }),
     ]);
+    if (planningWeeks.length > 0) {
+      setSiteWeekVisibility((prev) => ({ ...prev, [id]: planningWeeks }));
+    }
+  };
   const removeSite = (id: string) => {
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
@@ -2721,8 +2770,21 @@ export default function Page() {
   };
   const updateSiteMeta = (id: string, patch: any) =>
     setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, ...patch }) : x)));
-  const planSite = (id: string, weeks: string[] = [], start?: string, end?: string) => {
-    setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, status: "planned", startDate: start || x.startDate, endDate: end || x.endDate, planningWeeks: weeks.length ? weeks : x.planningWeeks }) : x)));
+  const planSite = (id: string, weeks: string[] = []) => {
+    const derived = weeks.length ? getWeekRangeFromKeys(weeks) : null;
+    setSites((s) =>
+      s.map((x) =>
+        x.id === id
+          ? normalizeSiteRecord({
+              ...x,
+              status: "planned",
+              startDate: derived?.startKey || x.startDate,
+              endDate: derived?.endKey || x.endDate,
+              planningWeeks: weeks.length ? weeks : x.planningWeeks,
+            })
+          : x
+      )
+    );
     setSiteWeekVisibility((prev) => {
       if (!weeks || weeks.length === 0) return prev;
       return { ...prev, [id]: weeks };
@@ -3285,7 +3347,7 @@ useEffect(() => {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{timelineScopeLabel}</span>
                       <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-1 rounded-full">
-                        Barres basées sur les dates prévues des chantiers
+                        Barres basées sur les semaines planifiées des chantiers
                       </span>
                     </div>
                   )}
@@ -3344,7 +3406,7 @@ useEffect(() => {
                 <div className="text-3xl font-bold">{pendingSites.length}</div>
                 <div className="text-xs text-neutral-600">
                   {pendingSiteHighlights.length > 0
-                    ? `Prochain : ${formatFR(fromLocalKey(pendingSiteHighlights[0].startDate || todayKey))}`
+                    ? `Prochain : ${formatWeeksSummary(pendingSiteHighlights[0].planningWeeks || [])}`
                     : "Aucun devis validé en attente."}
                 </div>
               </CardContent>
@@ -3423,11 +3485,7 @@ useEffect(() => {
                         <div className="text-[11px] text-neutral-600 flex items-center gap-2">
                           <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
                           <span className="text-neutral-400">•</span>
-                          <span>
-                            {site.startDate ? formatFR(new Date(site.startDate)) : ""}
-                            {site.startDate && site.endDate ? " → " : ""}
-                            {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                          </span>
+                          <span>{formatWeeksSummary(site.planningWeeks || [])}</span>
                         </div>
                       </div>
                     </button>
@@ -3467,11 +3525,7 @@ useEffect(() => {
                         <div className="text-[11px] text-neutral-600 flex items-center gap-2">
                           <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
                           <span className="text-neutral-400">•</span>
-                          <span>
-                            {site.startDate ? formatFR(new Date(site.startDate)) : ""}
-                            {site.startDate && site.endDate ? " → " : ""}
-                            {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                          </span>
+                          <span>{formatWeeksSummary(site.planningWeeks || [])}</span>
                         </div>
                       </div>
                     </div>
@@ -3597,7 +3651,7 @@ useEffect(() => {
                             <input type="checkbox" checked={isAbsentOnWeek(p.id, currentWeekKey)} onChange={() => toggleAbsentThisWeek(p.id)} />
                             Abs. S{getISOWeek(weekDays[0])}
                           </label>
-                          <Button size="icon" variant="ghost" onClick={() => { setRenameTarget({ type: 'person', id: p.id, name: p.name }); setRenameOpen(true); }} aria-label={`Renommer ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => openPersonDetail(p.id)} aria-label={`Modifier ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
                           <Button size="icon" variant="ghost" onClick={() => removePerson(p.id)} aria-label={`Supprimer ${p.name}`}><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </div>
@@ -3628,11 +3682,11 @@ useEffect(() => {
                         {s.name}
                       </span>
                         <div className="flex items-center gap-2">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              setRenameTarget({ type: 'site', id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, color: s.color });
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                              setRenameTarget({ type: 'site', id: s.id, name: s.name, color: s.color });
                               setRenameWeeks(siteWeekVisibility[s.id] || []);
                               setRenamePickerYear(getISOWeekYear(anchor));
                               setRenameOpen(true);
@@ -4223,7 +4277,7 @@ useEffect(() => {
                   </span>
                 </div>
                 <div className="text-xs text-neutral-600">
-                  Barres continues alignées sur les dates prévues des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
+                  Barres continues alignées sur les semaines planifiées des chantiers pour identifier d'un coup d'œil les mois, trimestres ou années peu ou très chargés.
                 </div>
                 <div className="overflow-x-auto">
                   <div className="min-w-full space-y-3">
@@ -4253,7 +4307,7 @@ useEffect(() => {
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
-                            {formatFR(row.bar.start)} → {formatFR(row.bar.end)}
+                            {formatWeeksSummary(row.site.planningWeeks || [])}
                           </div>
                         </div>
                         <div className="relative h-12 rounded-xl bg-gradient-to-b from-neutral-50 to-white border border-neutral-200 shadow-[inset_0_1px_0_rgba(0,0,0,0.03)]">
@@ -4292,13 +4346,9 @@ useEffect(() => {
                               <div className="text-[11px] text-neutral-600">
                                 {site.clientName || site.quoteSnapshot?.client || "Client"}
                               </div>
-                              {(site.startDate || site.endDate) && (
-                                <div className="text-[11px] text-neutral-600">
-                                  {site.startDate ? formatFR(new Date(site.startDate)) : "Date à définir"}
-                                  {site.startDate && site.endDate ? " → " : ""}
-                                  {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                                </div>
-                              )}
+                              <div className="text-[11px] text-neutral-600">
+                                {formatWeeksSummary(site.planningWeeks || [])}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -4519,13 +4569,9 @@ useEffect(() => {
                                     <div className="text-[11px] text-neutral-600">
                                       {site.clientName || site.quoteSnapshot?.client || "Client inconnu"}
                                     </div>
-                                    {(site.startDate || site.endDate) && (
-                                      <div className="text-[11px] text-neutral-600">
-                                        {site.startDate ? formatFR(new Date(site.startDate)) : ""}
-                                        {site.startDate && site.endDate ? " → " : ""}
-                                        {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                                      </div>
-                                    )}
+                                    <div className="text-[11px] text-neutral-600">
+                                      {formatWeeksSummary(site.planningWeeks || [])}
+                                    </div>
                                   </div>
                                 </div>
                                 <Button
@@ -4583,13 +4629,6 @@ useEffect(() => {
                               />
                               <div className="flex-1 space-y-1">
                                 <div className="font-semibold text-neutral-900">{site.name}</div>
-                                {(site.startDate || site.endDate) && (
-                                  <div className="text-xs text-neutral-600">
-                                    {site.startDate ? formatFR(new Date(site.startDate)) : ""}
-                                    {site.startDate && site.endDate ? " → " : ""}
-                                    {site.endDate ? formatFR(new Date(site.endDate)) : ""}
-                                  </div>
-                                )}
                                 {site.planningWeeks?.length ? (
                                   <div className="text-[11px] text-neutral-600">
                                     Semaines actives : {site.planningWeeks.slice(0, 3).join(", ")}
@@ -5015,10 +5054,8 @@ useEffect(() => {
         weekSelection={renameTarget?.type === 'site' ? renameWeeks : undefined}
         onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
         initialYear={renamePickerYear}
-        startDate={renameTarget?.type === 'site' ? renameTarget?.startDate : undefined}
-        endDate={renameTarget?.type === 'site' ? renameTarget?.endDate : undefined}
         color={renameTarget?.type === 'site' ? renameTarget?.color : undefined}
-        onSave={(newName: string, weeks?: string[], schedule?: { startDate: string; endDate: string }, colorChoice?: string) => {
+        onSave={(newName: string, weeks?: string[], colorChoice?: string) => {
           if (!renameTarget) return;
           const n = newName.trim();
           if (!n) return;
@@ -5026,23 +5063,24 @@ useEffect(() => {
             renamePerson(renameTarget.id, n);
           } else {
             renameSite(renameTarget.id, n, colorChoice);
-            if (schedule?.startDate && schedule?.endDate) {
-              updateSiteSchedule(renameTarget.id, schedule.startDate, schedule.endDate);
-              setRenameTarget((prev) => (prev ? { ...prev, startDate: schedule.startDate, endDate: schedule.endDate } : prev));
-            }
             if (colorChoice) {
               setRenameTarget((prev) => (prev ? { ...prev, color: colorChoice } : prev));
             }
             if (weeks) {
+              const unique = Array.from(new Set(weeks)).filter(Boolean);
               setSiteWeekVisibility((prev) => {
-                const unique = Array.from(new Set(weeks)).filter(Boolean);
                 if (unique.length === 0) {
                   const { [renameTarget.id]: _omit, ...rest } = prev;
                   return rest;
                 }
                 return { ...prev, [renameTarget.id]: unique };
               });
-              updateSiteMeta(renameTarget.id, { planningWeeks: weeks });
+              const derived = unique.length ? getWeekRangeFromKeys(unique) : null;
+              updateSiteMeta(renameTarget.id, {
+                planningWeeks: unique,
+                startDate: derived?.startKey,
+                endDate: derived?.endKey,
+              });
             }
           }
           setRenameOpen(false);
