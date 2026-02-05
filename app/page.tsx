@@ -340,7 +340,7 @@ const QUOTE_TONES: Record<string, { bg: string; border: string; text: string; ch
   rose: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-800", chip: "bg-rose-500" },
 };
 const DEMO_QUOTES = [
-  { id: "q1", title: "Extension maison", client: "Mme Diallo", amount: 12000, status: "todo", dueDate: todayKey },
+  { id: "q1", title: "Extension maison", client: "Mme Diallo", amount: 12000, status: "todo", planningWeeks: [weekKeyOf(new Date())] },
   { id: "q2", title: "Rénovation bureau", client: "Société Nova", amount: 18500, status: "draft", note: "Attente métrés" },
   { id: "q3", title: "Création terrasse", client: "M. Karim", amount: 7600, status: "pending", sentAt: todayKey },
   { id: "q4", title: "Salle de réunion", client: "Startup Hexa", amount: 9200, status: "won", sentAt: todayKey },
@@ -411,6 +411,10 @@ const formatWeeksSummary = (weeks: string[]) => {
   }
   return `S${pad2(first.week)} ${first.year} → S${pad2(last.week)} ${last.year}`;
 };
+const getQuoteWeekRange = (quote: any) => {
+  const planningWeeks = Array.isArray(quote?.planningWeeks) ? quote.planningWeeks : [];
+  return planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
+};
 const toArray = (val: any, fallback: any[] = []) => (Array.isArray(val) ? val : fallback);
 const ensureId = (seed: string, prefix: string) => {
   if (seed) return `${prefix}-${seed}`;
@@ -480,19 +484,13 @@ const normalizeQuoteRecord = (quote: any) => {
     client: (base as any)?.client?.trim?.() || undefined,
     note: (base as any)?.note?.trim?.() || undefined,
     amount: Number.isFinite(amountNum) ? amountNum : undefined,
-    dueDate: (base as any)?.dueDate || undefined,
     status,
     address: (base as any)?.address?.trim?.() || undefined,
     city: (base as any)?.city?.trim?.() || (base as any)?.cityOrPostal || undefined,
     contactName: (base as any)?.contactName?.trim?.() || (base as any)?.client || undefined,
     contactPhone: (base as any)?.contactPhone?.trim?.() || undefined,
-    plannedStart: (base as any)?.plannedStart || undefined,
-    plannedEnd: (base as any)?.plannedEnd || undefined,
+    planningWeeks: Array.isArray((base as any)?.planningWeeks) ? (base as any)?.planningWeeks : [],
   };
-
-  if (patch.plannedStart && patch.plannedEnd && fromLocalKey(patch.plannedEnd) < fromLocalKey(patch.plannedStart)) {
-    patch.plannedEnd = patch.plannedStart;
-  }
 
   if ((status === "pending" || status === "won") && !quote?.sentAt) {
     patch.sentAt = todayKeyLocal;
@@ -678,9 +676,9 @@ function QuoteCard({ quote, tone, onOpen }: any) {
       <div className="text-xs text-neutral-600 space-y-1">
         {quote.client && <div className="truncate">Client : {quote.client}</div>}
         {Number.isFinite(quote.amount) && <div className="font-semibold text-neutral-800">{formatEUR(quote.amount)}</div>}
-        {quote.dueDate && (
+        {Array.isArray(quote.planningWeeks) && quote.planningWeeks.length > 0 && (
           <div className="flex items-center gap-1 text-sky-700">
-            <CalendarRange className="w-3 h-3" /> {formatFR(new Date(quote.dueDate))}
+            <CalendarRange className="w-3 h-3" /> {formatWeeksSummary(quote.planningWeeks)}
           </div>
         )}
       </div>
@@ -1664,6 +1662,7 @@ export default function Page() {
   });
   const [quoteDetail, setQuoteDetail] = useState<any | null>(null);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
+  const [quoteWeekPickerYear, setQuoteWeekPickerYear] = useState(() => getISOWeekYear(new Date()));
   const [siteDetail, setSiteDetail] = useState<any | null>(null);
   const [siteDetailOpen, setSiteDetailOpen] = useState(false);
   const [personDetail, setPersonDetail] = useState<any | null>(null);
@@ -1903,6 +1902,11 @@ export default function Page() {
       return `${eventWeekYear}-W${pad2(weekNum)}`;
     });
   }, [eventWeekYear]);
+  const quoteWeeksInYear = useMemo(() => Math.max(54, getISOWeeksInYear(quoteWeekPickerYear)), [quoteWeekPickerYear]);
+  const quoteWeeksList = useMemo(
+    () => Array.from({ length: quoteWeeksInYear }, (_, idx) => idx + 1),
+    [quoteWeeksInYear]
+  );
 
   const calendarPlannedInMonth = useMemo(
     () =>
@@ -2229,13 +2233,22 @@ export default function Page() {
     soon.setDate(soon.getDate() + 14);
 
     return actionableQuotes
-      .filter((q) => q.dueDate && fromLocalKey(q.dueDate).getTime() >= now.getTime())
-      .filter((q) => fromLocalKey(q.dueDate).getTime() <= soon.getTime())
-      .sort((a, b) => fromLocalKey(a.dueDate).getTime() - fromLocalKey(b.dueDate).getTime())
+      .map((q) => {
+        const range = getQuoteWeekRange(q);
+        return range ? { quote: q, startKey: range.startKey } : null;
+      })
+      .filter(Boolean)
+      .filter((entry: any) => fromLocalKey(entry.startKey).getTime() >= now.getTime())
+      .filter((entry: any) => fromLocalKey(entry.startKey).getTime() <= soon.getTime())
+      .sort((a: any, b: any) => fromLocalKey(a.startKey).getTime() - fromLocalKey(b.startKey).getTime())
+      .map((entry: any) => entry.quote)
       .slice(0, 4);
   }, [actionableQuotes]);
 
-  const backlogQuotes = useMemo(() => actionableQuotes.filter((q) => !q.dueDate).slice(0, 3), [actionableQuotes]);
+  const backlogQuotes = useMemo(
+    () => actionableQuotes.filter((q) => !Array.isArray(q.planningWeeks) || q.planningWeeks.length === 0).slice(0, 3),
+    [actionableQuotes]
+  );
 
   const pendingSiteHighlights = useMemo(
     () =>
@@ -2382,10 +2395,11 @@ export default function Page() {
         client: normalizedQuote.client,
         amount: normalizedQuote.amount,
         note: normalizedQuote.note,
-        dueDate: normalizedQuote.dueDate,
+        planningWeeks: normalizedQuote.planningWeeks,
       };
-      const baseStart = normalizedQuote.plannedStart || normalizedQuote.dueDate || normalizedQuote.sentAt || todayKey;
-      const baseEnd = normalizedQuote.plannedEnd || baseStart;
+      const derived = getQuoteWeekRange(normalizedQuote);
+      const baseStart = derived?.startKey || normalizedQuote.sentAt || todayKey;
+      const baseEnd = derived?.endKey || baseStart;
 
       setSites((prev) => {
         const existing = prev.find((s) => s.quoteId === normalizedQuote.id);
@@ -2395,6 +2409,7 @@ export default function Page() {
             name: existing.name || normalizedQuote.title || "Chantier issu d'un devis",
             startDate: existing.startDate || baseStart,
             endDate: existing.endDate || baseEnd,
+            planningWeeks: existing.planningWeeks?.length ? existing.planningWeeks : normalizedQuote.planningWeeks,
             address: existing.address || normalizedQuote.address,
             city: existing.city || normalizedQuote.city,
             clientName: existing.clientName || normalizedQuote.client,
@@ -2415,6 +2430,7 @@ export default function Page() {
           name: normalizedQuote.title || "Chantier issu d'un devis",
           startDate: baseStart,
           endDate: baseEnd,
+          planningWeeks: normalizedQuote.planningWeeks,
           color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
           address: normalizedQuote.address,
           city: normalizedQuote.city,
@@ -2442,8 +2458,21 @@ export default function Page() {
   }, [safeQuotes]);
 
   const openQuoteDetail = useCallback((quote: any) => {
-    setQuoteDetail(normalizeQuoteRecord(quote));
+    const normalized = normalizeQuoteRecord(quote);
+    setQuoteDetail(normalized);
+    const firstWeek = Array.isArray(normalized.planningWeeks) ? normalized.planningWeeks[0] : null;
+    const parsed = firstWeek ? parseWeekKey(firstWeek) : null;
+    setQuoteWeekPickerYear(parsed?.year || getISOWeekYear(new Date()));
     setQuoteDetailOpen(true);
+  }, []);
+
+  const toggleQuoteWeek = useCallback((wkKey: string) => {
+    setQuoteDetail((prev: any) => {
+      if (!prev) return prev;
+      const current = Array.isArray(prev.planningWeeks) ? prev.planningWeeks : [];
+      const next = current.includes(wkKey) ? current.filter((w: string) => w !== wkKey) : [...current, wkKey];
+      return { ...prev, planningWeeks: next };
+    });
   }, []);
 
   const saveQuoteDetail = useCallback(() => {
@@ -3564,7 +3593,7 @@ useEffect(() => {
                       <div className="text-[11px] text-neutral-600 flex items-center gap-2">
                         <span>{quote.client || "Client"}</span>
                         <span className="text-neutral-400">•</span>
-                        <span>Échéance {quote.dueDate ? formatFR(fromLocalKey(quote.dueDate)) : "non renseignée"}</span>
+                        <span>Semaine {formatWeeksSummary(quote.planningWeeks || [])}</span>
                       </div>
                     </button>
                   ))}
@@ -4754,29 +4783,21 @@ useEffect(() => {
                   placeholder="Montant (€)"
                 />
               </div>
-              <div className="grid md:grid-cols-2 gap-2 items-center">
-                <Input
-                  type="date"
-                  value={quoteDetail.dueDate || ""}
-                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, dueDate: e.target.value } : prev))}
-                  placeholder="Échéance"
-                />
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-neutral-600">Statut</span>
-                  <select
-                    value={quoteDetail.status || "todo"}
-                    onChange={(e) =>
-                      setQuoteDetail((prev: any) => (prev ? { ...prev, status: e.target.value } : prev))
-                    }
-                    className="border rounded-md px-2 py-1 text-sm w-full"
-                  >
-                    {QUOTE_COLUMNS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-neutral-600">Statut</span>
+                <select
+                  value={quoteDetail.status || "todo"}
+                  onChange={(e) =>
+                    setQuoteDetail((prev: any) => (prev ? { ...prev, status: e.target.value } : prev))
+                  }
+                  className="border rounded-md px-2 py-1 text-sm w-full"
+                >
+                  {QUOTE_COLUMNS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid md:grid-cols-2 gap-2">
                 <Input
@@ -4802,20 +4823,70 @@ useEffect(() => {
                   placeholder="Adresse du chantier"
                 />
               </div>
-              <div className="grid md:grid-cols-2 gap-2">
-                <Input
-                  type="date"
-                  value={quoteDetail.plannedStart || ""}
-                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, plannedStart: e.target.value } : prev))}
-                  placeholder="Début prévu"
-                />
-                <Input
-                  type="date"
-                  min={quoteDetail.plannedStart || undefined}
-                  value={quoteDetail.plannedEnd || ""}
-                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, plannedEnd: e.target.value } : prev))}
-                  placeholder="Fin prévue"
-                />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-neutral-700">Semaines prévues</div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setQuoteWeekPickerYear((y: number) => y - 1)}
+                      aria-label="Année précédente"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <div className="text-sm font-semibold w-14 text-center">{quoteWeekPickerYear}</div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setQuoteWeekPickerYear((y: number) => y + 1)}
+                      aria-label="Année suivante"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-500">Sélectionnez les semaines pour ce devis. Sans sélection, le devis reste sans période définie.</p>
+                <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
+                  {quoteWeeksList.map((wk) => {
+                    const wkKey = `${quoteWeekPickerYear}-W${pad2(wk)}`;
+                    const active = Array.isArray(quoteDetail.planningWeeks) && quoteDetail.planningWeeks.includes(wkKey);
+                    return (
+                      <button
+                        key={wkKey}
+                        type="button"
+                        onClick={() => toggleQuoteWeek(wkKey)}
+                        className={cx(
+                          "text-xs rounded-md border px-2 py-1 text-center transition",
+                          active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
+                        )}
+                      >
+                        S{pad2(wk)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between text-xs text-neutral-600">
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() =>
+                      setQuoteDetail((prev: any) => (prev ? { ...prev, planningWeeks: [] } : prev))
+                    }
+                  >
+                    Toutes les semaines
+                  </button>
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      setQuoteDetail((prev: any) => (prev ? { ...prev, planningWeeks: [] } : prev));
+                      setQuoteWeekPickerYear(getISOWeekYear(new Date()));
+                    }}
+                  >
+                    Réinitialiser
+                  </button>
+                </div>
               </div>
               <Textarea
                 value={quoteDetail.note || ""}
