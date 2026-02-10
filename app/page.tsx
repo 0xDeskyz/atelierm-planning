@@ -1735,6 +1735,7 @@ export default function Page() {
     title: "",
     client: "",
   });
+  const [dragging, setDragging] = useState(false);
   const [quoteDetail, setQuoteDetail] = useState<any | null>(null);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
   const [quoteWeekPickerYear, setQuoteWeekPickerYear] = useState(() => getISOWeekYear(new Date()));
@@ -2732,7 +2733,6 @@ export default function Page() {
   const [renamePickerYear, setRenamePickerYear] = useState<number>(() => new Date().getFullYear());
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKeyState, setNoteKeyState] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
   const currentNoteValue = noteKeyState ? (typeof notes[noteKeyState] === "string" ? { text: notes[noteKeyState] } : notes[noteKeyState] ?? {}) : {};
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
