@@ -2945,8 +2945,13 @@ export default function Page() {
           }
         } catch {}
 
-        // Source de vérité: serveur s'il est disponible. Le local sert de fallback offline uniquement.
-        if (remoteState) {
+        // Priorité serveur, mais on protège le cas "serveur stale" (ex: PUT échoué localement).
+        // Si le cache local est plus récent, on garde le local pour éviter de perdre les dernières modifs.
+        if (remoteState && localState) {
+          const remoteTs = Number(remoteState.updatedAt || 0);
+          const localTs = Number(localState.updatedAt || 0);
+          applyState(localTs > remoteTs ? localState : remoteState);
+        } else if (remoteState) {
           applyState(remoteState);
         } else if (localState) {
           applyState(localState);
@@ -3021,11 +3026,12 @@ useEffect(() => {
 
 const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   try {
-    await fetch(`/api/state/${wk}`, {
+    const res = await fetch(`/api/state/${wk}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
   } catch {}
 }, 600), []);
 
@@ -3051,11 +3057,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
     setSaving(true);
     try {
-      await fetch(`/api/state/${currentWeekKey}`, {
+      const res = await fetch(`/api/state/${currentWeekKey}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
     } catch {}
     finally {
       setSaving(false);
