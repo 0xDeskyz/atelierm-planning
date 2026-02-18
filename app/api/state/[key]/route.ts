@@ -6,6 +6,18 @@ export const runtime = "nodejs";
 
 type PlannerState = Record<string, unknown> | null;
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __plannerStateMemoryFallback: Map<string, PlannerState> | undefined;
+}
+
+function memoryFallbackStore() {
+  if (!globalThis.__plannerStateMemoryFallback) {
+    globalThis.__plannerStateMemoryFallback = new Map<string, PlannerState>();
+  }
+  return globalThis.__plannerStateMemoryFallback;
+}
+
 function safeKey(raw: string) {
   return raw.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
@@ -40,15 +52,20 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       const res = await fetch(blob.url, { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        return Response.json(json);
+        return Response.json(json, { headers: { "x-state-storage": "blob" } });
       }
     }
   } catch {
-    // fallback local below
+    // fallback below
   }
 
   const local = await readLocalFallback(params.key);
-  return Response.json(local);
+  if (local) {
+    return Response.json(local, { headers: { "x-state-storage": "local" } });
+  }
+
+  const memory = memoryFallbackStore().get(params.key) ?? null;
+  return Response.json(memory, { headers: { "x-state-storage": memory ? "memory" : "none" } });
 }
 
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
@@ -64,16 +81,25 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     });
     blobOk = true;
   } catch {
-    // fallback local below
+    // fallback below
   }
 
+  let localOk = false;
   try {
     await writeLocalFallback(params.key, body);
+    localOk = true;
   } catch {
-    if (!blobOk) {
-      return Response.json({ ok: false, error: "Unable to persist state" }, { status: 500 });
-    }
+    // fallback below
   }
 
-  return Response.json({ ok: true, storage: blobOk ? "blob+local" : "local" });
+  if (!blobOk && !localOk) {
+    memoryFallbackStore().set(params.key, body as PlannerState);
+    return Response.json(
+      { ok: true, storage: "memory", warning: "Blob and local fs unavailable; using in-memory fallback" },
+      { headers: { "x-state-storage": "memory" } }
+    );
+  }
+
+  const storage = blobOk ? (localOk ? "blob+local" : "blob") : "local";
+  return Response.json({ ok: true, storage }, { headers: { "x-state-storage": storage } });
 }
