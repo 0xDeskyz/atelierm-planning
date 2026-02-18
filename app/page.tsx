@@ -2908,6 +2908,7 @@ export default function Page() {
   }, []);
 
   const firstLoad = useRef(true);
+  const localStateKey = useMemo(() => `btp-planner-state:v1:${currentWeekKey}`, [currentWeekKey]);
 
   const loadWeekState = useCallback(
     async (markLoaded = false) => {
@@ -2935,7 +2936,7 @@ export default function Page() {
 
         let localState: any = null;
         try {
-          const raw = localStorage.getItem("btp-planner-state:v1");
+          const raw = localStorage.getItem(localStateKey);
           if (raw) {
             const parsed = JSON.parse(raw);
             if (hasPayload(parsed)) {
@@ -2944,22 +2945,18 @@ export default function Page() {
           }
         } catch {}
 
-    const candidates = [remoteState, localState].filter(Boolean) as any[];
-    if (candidates.length > 0) {
-          const newest = candidates.reduce((best, cur) => {
-            const curTs = Number(cur.updatedAt || 0);
-            const bestTs = Number(best.updatedAt || 0);
-            if (curTs > bestTs) return cur;
-            return best;
-          }, candidates[0]);
-          applyState(newest);
+        // Source de vérité: serveur s'il est disponible. Le local sert de fallback offline uniquement.
+        if (remoteState) {
+          applyState(remoteState);
+        } else if (localState) {
+          applyState(localState);
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
         setRefreshing(false);
       }
     },
-    [applyState, currentWeekKey]
+    [applyState, currentWeekKey, localStateKey]
   );
 
   const refreshPlanning = useCallback(() => {
@@ -3051,7 +3048,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildSyncPayload(stamp);
-    try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
+    try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
     setSaving(true);
     try {
       await fetch(`/api/state/${currentWeekKey}`, {
@@ -3063,7 +3060,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     finally {
       setSaving(false);
     }
-  }, [buildSyncPayload, currentWeekKey]);
+  }, [buildSyncPayload, currentWeekKey, localStateKey]);
 
 // Sauvegarder à chaque modif
 useEffect(() => {
@@ -3072,10 +3069,10 @@ useEffect(() => {
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
   // cache local (backup + rapidité)
-  try { localStorage.setItem("btp-planner-state:v1", JSON.stringify(payload)); } catch {}
+  try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
   // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [buildSyncPayload, currentWeekKey, saveRemote]);
+}, [buildSyncPayload, currentWeekKey, localStateKey, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
