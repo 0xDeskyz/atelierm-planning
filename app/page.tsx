@@ -1614,6 +1614,11 @@ export default function Page() {
   const [saving, setSaving] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [customizationOpen, setCustomizationOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportType, setExportType] = useState<"planning" | "hours">("planning");
+  const [exportPreset, setExportPreset] = useState<"week" | "month" | "year" | "custom">("month");
+  const [exportStartDate, setExportStartDate] = useState<string>(toLocalKey(startOfMonthLocal(new Date())));
+  const [exportEndDate, setExportEndDate] = useState<string>(toLocalKey(endOfMonthLocal(new Date())));
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [branding, setBranding] = useState({
@@ -2122,60 +2127,6 @@ export default function Page() {
     return map;
   }, [sites]);
 
-
-  const exportableHours = useMemo(() => {
-    const rows: {
-      isoYear: number;
-      week: number;
-      dateKey: string;
-      dateLabel: string;
-      person: string;
-      personColor?: string;
-      site: string;
-      portion: number;
-      hours: number;
-      conflict: boolean;
-      source: string;
-    }[] = [];
-
-    const sorted = [...weekAssignments].sort((a, b) => {
-      if (a.date === b.date) {
-        return a.siteId.localeCompare(b.siteId) || a.personId.localeCompare(b.personId);
-      }
-      return a.date.localeCompare(b.date);
-    });
-
-    sorted.forEach((a) => {
-      const person = peopleById[a.personId];
-      const site = sitesById[a.siteId];
-      if (!person || !site) return;
-
-      const info = getAssignmentHoursInfo(a);
-      if (info.meta.holiday || info.meta.blocked) return;
-
-      const dateObj = fromLocalKey(a.date);
-      const { week, isoYear } = getISOWeekAndYear(dateObj);
-      const hoursValue = Number.isFinite(info.hours) ? info.hours : 0;
-      const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
-      const source = info.hasCustomHours ? "manuel" : info.meta.hoursOverride ? "case" : "global";
-
-      rows.push({
-        isoYear,
-        week,
-        dateKey: a.date,
-        dateLabel: formatFR(dateObj),
-        person: person.name,
-        personColor: person.color,
-        site: site.name,
-        portion: Number.isFinite(info.portion) ? info.portion : 0,
-        hours: hoursValue,
-        conflict,
-        source,
-      });
-    });
-
-    return rows;
-  }, [conflictMap, getAssignmentHoursInfo, peopleById, sitesById, weekAssignments]);
 
   const ganttTimeline = useMemo(() => {
     if (!timelineView)
@@ -3195,6 +3146,129 @@ useEffect(() => {
   // Import / Export JSON
   // ==========================
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const getExportRange = () => {
+    const now = new Date();
+    if (exportPreset === "week") {
+      const start = weekDays[0];
+      const end = weekDays[weekDays.length - 1];
+      return { startKey: toLocalKey(start), endKey: toLocalKey(end), label: currentWeekKey };
+    }
+    if (exportPreset === "month") {
+      const start = startOfMonthLocal(now);
+      const end = endOfMonthLocal(now);
+      return { startKey: toLocalKey(start), endKey: toLocalKey(end), label: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}` };
+    }
+    if (exportPreset === "year") {
+      const start = startOfYearLocal(now.getFullYear());
+      const end = endOfYearLocal(now.getFullYear());
+      return { startKey: toLocalKey(start), endKey: toLocalKey(end), label: `${now.getFullYear()}` };
+    }
+    const startKey = exportStartDate || toLocalKey(startOfMonthLocal(now));
+    const endKey = exportEndDate || startKey;
+    return fromLocalKey(endKey) < fromLocalKey(startKey)
+      ? { startKey: endKey, endKey: startKey, label: `${endKey}_au_${startKey}` }
+      : { startKey, endKey, label: `${startKey}_au_${endKey}` };
+  };
+  const isDateInRange = (dateKey: string, startKey: string, endKey: string) => dateKey >= startKey && dateKey <= endKey;
+
+  const buildExportRows = () => {
+    const range = getExportRange();
+    const filtered = assignments
+      .filter((a) => isDateInRange(a.date, range.startKey, range.endKey))
+      .sort((a, b) => (a.date === b.date ? a.siteId.localeCompare(b.siteId) || a.personId.localeCompare(b.personId) : a.date.localeCompare(b.date)));
+
+    const conflictCounts: Record<string, number> = {};
+    filtered.forEach((a) => {
+      const key = `${a.personId}|${a.date}`;
+      conflictCounts[key] = (conflictCounts[key] || 0) + 1;
+    });
+
+    const rows = filtered
+      .map((a) => {
+        const person = peopleById[a.personId];
+        const site = sitesById[a.siteId];
+        if (!person || !site) return null;
+        const info = getAssignmentHoursInfo(a);
+        if (info.meta.holiday || info.meta.blocked) return null;
+        const dateObj = fromLocalKey(a.date);
+        const { week, isoYear } = getISOWeekAndYear(dateObj);
+        return {
+          isoYear,
+          week,
+          dateKey: a.date,
+          person: person.name,
+          site: site.name,
+          portion: Number.isFinite(info.portion) ? info.portion : 0,
+          hours: Number.isFinite(info.hours) ? info.hours : 0,
+          conflict: (conflictCounts[`${a.personId}|${a.date}`] || 0) > 1,
+          source: info.hasCustomHours ? "manuel" : info.meta.hoursOverride ? "case" : "global",
+        };
+      })
+      .filter(Boolean) as any[];
+
+    return { rows, range };
+  };
+
+  const exportPlanningCSV = () => {
+    const { rows, range } = buildExportRows();
+    if (rows.length === 0) {
+      window.alert("Aucune affectation exportable sur la période choisie.");
+      return;
+    }
+    const header = ["Année ISO", "Semaine", "Date", "Salarié", "Chantier", "Portion"];
+    const csvRows = rows.map((row) => [row.isoYear, `S${pad2(row.week)}`, row.dateKey, row.person, row.site, row.portion]);
+    const csv = [header, ...csvRows].map((line) => line.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `planning-${range.label}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportHoursCSV = () => {
+    const { rows, range } = buildExportRows();
+    if (rows.length === 0) {
+      window.alert("Aucune ligne exportable sur la période choisie.");
+      return;
+    }
+
+    const header = ["Année ISO", "Semaine", "Date", "Salarié", "Chantier", "Portion", "Heures", "Conflit", "Source heures"];
+    const csvRows = rows.map((row) => {
+      const conflict = row.conflict ? "Conflit" : "";
+      const sourceLabel = row.source === "global"
+        ? `global (${hoursPerDay}h/j)`
+        : row.source === "case"
+        ? "heures de la case"
+        : "manuel";
+      return [row.isoYear, `S${pad2(row.week)}`, row.dateKey, row.person, row.site, row.portion, row.hours, conflict, sourceLabel];
+    });
+
+    const csv = [header, ...csvRows]
+      .map((line) => line.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `heures-${range.label}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const openExportDialog = (type: "planning" | "hours") => {
+    setExportType(type);
+    setExportDialogOpen(true);
+  };
+
+  const runExport = () => {
+    if (exportType === "hours") exportHoursCSV();
+    else exportPlanningCSV();
+    setExportDialogOpen(false);
+  };
+
   const exportJSON = () => {
     const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -3203,46 +3277,6 @@ useEffect(() => {
     a.href = url; a.download = `btp-planner-${Date.now()}.json`; a.click(); URL.revokeObjectURL(url);
   };
 
-  const exportHoursCSV = () => {
-    if (exportableHours.length === 0) {
-      window.alert("Aucune ligne exportable pour cette semaine (heures ou affectations manquantes).");
-      return;
-    }
-
-    const header = ["Année ISO", "Semaine", "Date", "Salarié", "Chantier", "Portion", "Heures", "Conflit", "Source heures"];
-    const rows = exportableHours.map((row) => {
-      const conflict = row.conflict ? "Conflit" : "";
-      const sourceLabel = row.source === "global"
-        ? `global (${hoursPerDay}h/j)`
-        : row.source === "case"
-        ? "heures de la case"
-        : "manuel";
-
-      return [
-        row.isoYear,
-        `S${pad2(row.week)}`,
-        row.dateKey,
-        row.person,
-        row.site,
-        row.portion,
-        row.hours,
-        conflict,
-        sourceLabel,
-      ];
-    });
-
-    const csv = [header, ...rows]
-      .map((line) => line.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(";"))
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `heures-semaine-${currentWeekKey}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
     reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
@@ -3347,11 +3381,11 @@ useEffect(() => {
                         variant="ghost"
                         className="w-full justify-start gap-2"
                         onClick={() => {
-                          exportJSON();
+                          openExportDialog("planning");
                           setMaintenanceOpen(false);
                         }}
                       >
-                        <Download className="w-4 h-4" /> Exporter JSON
+                        <Download className="w-4 h-4" /> Export planning CSV
                       </Button>
                       <Button
                         variant="ghost"
@@ -3363,18 +3397,26 @@ useEffect(() => {
                       >
                         <Edit3 className="w-4 h-4" /> Personnalisation
                       </Button>
-                      {view === "hours" && (
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start gap-2"
-                          onClick={() => {
-                            exportHoursCSV();
-                            setMaintenanceOpen(false);
-                          }}
-                        >
-                          <Download className="w-4 h-4" /> Export heures CSV
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          openExportDialog("hours");
+                          setMaintenanceOpen(false);
+                        }}
+                      >
+                        <Download className="w-4 h-4" /> Export heures CSV
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2"
+                        onClick={() => {
+                          exportJSON();
+                          setMaintenanceOpen(false);
+                        }}
+                      >
+                        <Download className="w-4 h-4" /> Exporter JSON (complet)
+                      </Button>
                       <div className="px-2 pt-1 text-[11px] text-neutral-500">
                         Centralise les exports/imports pour garder le planning propre et synchronisé.
                       </div>
@@ -5051,6 +5093,38 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Exporter {exportType === "hours" ? "les heures" : "le planning"}</DialogTitle>
+            <DialogDescription>Choisissez la période à exporter.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant={exportPreset === "week" ? "default" : "outline"} onClick={() => setExportPreset("week")}>Semaine courante</Button>
+              <Button variant={exportPreset === "month" ? "default" : "outline"} onClick={() => setExportPreset("month")}>Mois courant</Button>
+              <Button variant={exportPreset === "year" ? "default" : "outline"} onClick={() => setExportPreset("year")}>Année courante</Button>
+              <Button variant={exportPreset === "custom" ? "default" : "outline"} onClick={() => setExportPreset("custom")}>Période personnalisée</Button>
+            </div>
+            {exportPreset === "custom" && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <span className="text-xs text-neutral-600">Début</span>
+                  <Input type="date" value={exportStartDate} onChange={(e: any) => setExportStartDate(e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-neutral-600">Fin</span>
+                  <Input type="date" value={exportEndDate} onChange={(e: any) => setExportEndDate(e.target.value)} />
+                </label>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExportDialogOpen(false)}>Annuler</Button>
+            <Button onClick={runExport}>Exporter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={customizationOpen} onOpenChange={setCustomizationOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
