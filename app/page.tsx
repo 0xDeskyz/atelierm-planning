@@ -3032,7 +3032,9 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
-  } catch {}
+  } catch (err) {
+    console.error("Autosave distant impossible", err);
+  }
 }, 600), []);
 
   const buildSyncPayload = useCallback((stamp: number) => ({
@@ -3063,8 +3065,16 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
-    } catch {}
-    finally {
+
+      const data = await res.json().catch(() => ({}));
+      const storage = String((data as any)?.storage || "");
+      if (storage === "memory") {
+        alert("Sauvegarde en mode temporaire (mémoire serveur). Vérifie la config BLOB_READ_WRITE_TOKEN sur Vercel.");
+      }
+    } catch (err) {
+      console.error("Enregistrement distant impossible", err);
+      alert("Impossible d'enregistrer sur le serveur. Les données restent seulement locales sur cet appareil.");
+    } finally {
       setSaving(false);
     }
   }, [buildSyncPayload, currentWeekKey, localStateKey]);
