@@ -1802,6 +1802,7 @@ export default function Page() {
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
   const [absencesByDay, setAbsencesByDay] = useState<Record<string, Record<string, "CP" | "MAL" | "OFF">>>({});
+  const [absenceExpandedId, setAbsenceExpandedId] = useState<string | null>(null);
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
@@ -4062,15 +4063,37 @@ useEffect(() => {
                     <div className="font-medium">Salariés</div>
                     <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => {
                       const DAY_LABELS = ["L","Ma","Me","J","V"];
+                      const absenceDays = weekDays.map((d) => getDayAbsence(p.id, toLocalKey(d)));
+                      const hasAnyAbsence = absenceDays.some(Boolean);
+                      const absOpen = absenceExpandedId === p.id;
                       return (
-                        <div key={p.id} className={cx("rounded-lg border border-neutral-100 bg-neutral-50 p-2 space-y-1.5", p.status === "disabled" && "opacity-50")}>
+                        <div key={p.id} className={cx("rounded-lg border border-neutral-100 bg-neutral-50 p-2", p.status === "disabled" && "opacity-50")}>
                           {/* Row 1: chip + actions */}
                           <div className="flex items-center justify-between gap-1">
                             <PersonChip person={p} />
                             <div className="flex items-center gap-1 shrink-0">
+                              {/* Absence dots indicator + toggle */}
+                              <button
+                                onClick={() => setAbsenceExpandedId(absOpen ? null : p.id)}
+                                title="Gérer les absences"
+                                className={cx(
+                                  "h-7 px-1.5 rounded-md flex items-center gap-0.5 transition border text-[9px] font-bold",
+                                  hasAnyAbsence
+                                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                                    : "border-neutral-200 bg-white text-neutral-300 hover:border-neutral-400 hover:text-neutral-500"
+                                )}
+                              >
+                                {hasAnyAbsence ? (
+                                  absenceDays.map((abs, i) => (
+                                    <span key={i} className={cx("w-2 h-2 rounded-full", abs ? (ABSENCE_COLORS[abs] || "bg-neutral-300") : "bg-neutral-200")} />
+                                  ))
+                                ) : (
+                                  <span className="text-[9px] leading-none px-0.5">abs</span>
+                                )}
+                              </button>
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -4092,34 +4115,62 @@ useEffect(() => {
                               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openPersonDetail(p.id)}><Edit3 className="w-3.5 h-3.5" /></Button>
                             </div>
                           </div>
-                          {/* Row 2: pastilles jours absence */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-neutral-400 w-8 shrink-0">Abs.</span>
-                            {weekDays.map((d, i) => {
-                              const dk = toLocalKey(d);
-                              const abs = getDayAbsence(p.id, dk);
-                              return (
-                                <button
-                                  key={dk}
-                                  onClick={() => cycleDayAbsence(p.id, dk)}
-                                  title={abs ? ABSENCE_LABELS[abs] : `Marquer absence ${DAY_LABELS[i]}`}
-                                  className={cx(
-                                    "w-7 h-5 rounded text-[9px] font-bold transition border",
-                                    abs
-                                      ? cx(ABSENCE_COLORS[abs], "text-white border-transparent")
-                                      : "bg-white text-neutral-300 border-neutral-200 hover:border-neutral-400"
-                                  )}
-                                >
-                                  {abs || DAY_LABELS[i]}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          {/* Row 2: absence panel (collapsible) */}
+                          {absOpen && (
+                            <div className="mt-1.5 pt-1.5 border-t border-neutral-200">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {weekDays.map((d, i) => {
+                                  const dk = toLocalKey(d);
+                                  const abs = getDayAbsence(p.id, dk);
+                                  return (
+                                    <button
+                                      key={dk}
+                                      onClick={() => cycleDayAbsence(p.id, dk)}
+                                      title={abs ? ABSENCE_LABELS[abs] : `Marquer absence ${DAY_LABELS[i]}`}
+                                      className={cx(
+                                        "h-6 px-2 rounded text-[9px] font-bold transition border flex items-center gap-1",
+                                        abs
+                                          ? cx(ABSENCE_COLORS[abs], "text-white border-transparent")
+                                          : "bg-white text-neutral-400 border-neutral-200 hover:border-neutral-400"
+                                      )}
+                                    >
+                                      {DAY_LABELS[i]}{abs && <span className="opacity-80">{abs}</span>}
+                                    </button>
+                                  );
+                                })}
+                                {/* Toute la semaine */}
+                                {(["CP","MAL","OFF"] as const).map((type) => (
+                                  <button
+                                    key={type}
+                                    onClick={() => {
+                                      weekDays.forEach((d) => {
+                                        const dk = toLocalKey(d);
+                                        setAbsencesByDay((prev) => {
+                                          const day = { ...(prev[dk] || {}) };
+                                          const cur = day[p.id];
+                                          if (cur === type) { delete day[p.id]; } else { day[p.id] = type; }
+                                          return { ...prev, [dk]: day };
+                                        });
+                                      });
+                                    }}
+                                    title={`${type} toute la semaine`}
+                                    className={cx(
+                                      "h-6 px-2 rounded text-[9px] font-bold border transition",
+                                      absenceDays.every((a) => a === type)
+                                        ? cx(ABSENCE_COLORS[type], "text-white border-transparent")
+                                        : "bg-white text-neutral-400 border-neutral-200 hover:border-neutral-400"
+                                    )}
+                                  >
+                                    {type} sem.
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                  <p className="text-[10px] text-neutral-400">Clic sur L/Ma/Me/J/V pour cycler CP → MAL → OFF → rien. <CalendarRange className="w-3 h-3 inline" /> affecte sur le 1er chantier.</p>
                 </CardContent>
               </Card>
 
