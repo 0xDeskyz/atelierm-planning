@@ -1754,11 +1754,20 @@ export default function Page() {
   const [exportEndDate, setExportEndDate] = useState<string>(toLocalKey(endOfMonthLocal(new Date())));
   const syncVersionRef = useRef<number>(0);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
   const [branding, setBranding] = useState({
     logoText: "BT",
     title: "BTP Planner",
     subtitle: "Tableau de bord & suivi collaboratif",
+    accentColor: "#000000",
+    density: "normal" as "normal" | "compact",
   });
+  // Undo stack — 20 snapshots max
+  const undoStack = useRef<any[]>([]);
+  const pushUndo = useCallback((snapshot: any) => {
+    undoStack.current = [...undoStack.current.slice(-19), snapshot];
+  }, []);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && (crypto as any).randomUUID
       ? (crypto as any).randomUUID()
@@ -2963,6 +2972,7 @@ export default function Page() {
       }),
     ]);
   const removePerson = (id: string) => {
+    pushUndo(snapshotNow());
     setPeople((p) => p.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
@@ -3001,6 +3011,7 @@ export default function Page() {
     showToast(`"${original.name}" dupliqué`);
   };
   const removeSite = (id: string) => {
+    pushUndo(snapshotNow());
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
@@ -3250,6 +3261,18 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     updatedAt: stamp,
     clientId: clientIdRef.current,
   }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+
+  const snapshotNow = useCallback(() => ({
+    people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
+  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+
+  const undo = useCallback(() => {
+    if (undoStack.current.length === 0) { showToast("Rien à annuler"); return; }
+    const prev = undoStack.current[undoStack.current.length - 1];
+    undoStack.current = undoStack.current.slice(0, -1);
+    applyState(prev);
+    showToast("Action annulée");
+  }, [applyState]);
 
   const savePlanning = useCallback(async () => {
     const stamp = Date.now();
@@ -3537,7 +3560,7 @@ useEffect(() => {
                   <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
                 </TabsList>
               </div>
-              <div className="flex items-center gap-2" ref={maintenanceRef}>
+              <div className="flex items-center gap-2">
                 <Button
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                   onClick={savePlanning}
@@ -3546,18 +3569,10 @@ useEffect(() => {
                   <Save className="w-4 h-4 mr-2" />
                   {saving ? "Enregistrement..." : "Enregistrer"}
                 </Button>
-                <Button
-                  className="bg-sky-600 text-white hover:bg-sky-700"
-                  onClick={refreshPlanning}
-                  disabled={refreshing}
-                >
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  {refreshing ? "Rechargement..." : "Recharger"}
-                </Button>
                 {syncStatus === "syncing" && (
                   <span className="text-xs text-sky-600 flex items-center gap-1">
                     <span className="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-                    Sync en cours…
+                    Sync…
                   </span>
                 )}
                 {syncStatus === "synced" && (
@@ -3569,89 +3584,18 @@ useEffect(() => {
                 {syncStatus === "error" && (
                   <span className="text-xs text-red-500 flex items-center gap-1">
                     <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
-                    {saveStatusMessage || "Erreur de sync"}
+                    Erreur sync
                   </span>
                 )}
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
-                <div className="relative">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Options de maintenance"
-                    onClick={() => setMaintenanceOpen((v) => !v)}
-                  >
-                    <Settings className="w-5 h-5" />
-                  </Button>
-                  {maintenanceOpen && (
-                    <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-white shadow-lg p-2 space-y-1">
-                      <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Maintenance</div>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          refreshPlanning();
-                          setMaintenanceOpen(false);
-                        }}
-                        disabled={refreshing}
-                      >
-                        <RotateCcw className="w-4 h-4" /> Recharger le planning
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          fileRef.current?.click();
-                          setMaintenanceOpen(false);
-                        }}
-                      >
-                        <Upload className="w-4 h-4" /> Importer JSON
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          openExportDialog("planning");
-                          setMaintenanceOpen(false);
-                        }}
-                      >
-                        <Download className="w-4 h-4" /> Export planning CSV
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          setCustomizationOpen(true);
-                          setMaintenanceOpen(false);
-                        }}
-                      >
-                        <Edit3 className="w-4 h-4" /> Personnalisation
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          openExportDialog("hours");
-                          setMaintenanceOpen(false);
-                        }}
-                      >
-                        <Download className="w-4 h-4" /> Export heures CSV
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2"
-                        onClick={() => {
-                          exportJSON();
-                          setMaintenanceOpen(false);
-                        }}
-                      >
-                        <Download className="w-4 h-4" /> Exporter JSON (complet)
-                      </Button>
-                      <div className="px-2 pt-1 text-[11px] text-neutral-500">
-                        Centralise les exports/imports pour garder le planning propre et synchronisé.
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Réglages"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings className="w-5 h-5" />
+                </Button>
               </div>
             </div>
           </div>
@@ -5468,45 +5412,6 @@ useEffect(() => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={customizationOpen} onOpenChange={setCustomizationOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Personnalisation</DialogTitle>
-            <DialogDescription>Modifiez le logo et les titres visibles dans l'entête.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid gap-2">
-              <label className="text-xs font-semibold text-neutral-600">Texte du logo</label>
-              <Input
-                value={branding.logoText}
-                onChange={(e: any) => setBranding((prev) => ({ ...prev, logoText: e.target.value }))}
-                placeholder="Initiales"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-xs font-semibold text-neutral-600">Titre</label>
-              <Input
-                value={branding.title}
-                onChange={(e: any) => setBranding((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Nom de l'application"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-xs font-semibold text-neutral-600">Sous-titre</label>
-              <Input
-                value={branding.subtitle}
-                onChange={(e: any) => setBranding((prev) => ({ ...prev, subtitle: e.target.value }))}
-                placeholder="Accroche"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCustomizationOpen(false)}>
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -5675,6 +5580,247 @@ useEffect(() => {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg animate-in fade-in slide-in-from-bottom-2">
           {toast}
         </div>
+      )}
+
+      {/* ===== DRAWER RÉGLAGES ===== */}
+      {settingsOpen && (
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+            onClick={() => setSettingsOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="fixed right-0 top-0 h-full w-full max-w-md z-50 bg-white shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div className="flex items-center gap-2 font-semibold text-neutral-800">
+                <Settings className="w-4 h-4" /> Réglages
+              </div>
+              <button onClick={() => setSettingsOpen(false)} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none">✕</button>
+            </div>
+            {/* Tabs */}
+            <div className="flex border-b text-sm">
+              {(["exports", "perso", "maintenance"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSettingsTab(t)}
+                  className={cx(
+                    "flex-1 py-2.5 font-medium transition",
+                    settingsTab === t
+                      ? "border-b-2 border-black text-black"
+                      : "text-neutral-400 hover:text-neutral-600"
+                  )}
+                >
+                  {t === "exports" ? "Exports" : t === "perso" ? "Personnalisation" : "Maintenance"}
+                </button>
+              ))}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+              {/* ---- EXPORTS ---- */}
+              {settingsTab === "exports" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-neutral-500">Choisissez la période puis téléchargez le fichier souhaité.</p>
+
+                  {/* Période */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-neutral-600">Période</label>
+                    <div className="flex gap-2">
+                      {(["week","month","year","custom"] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setExportPreset(p)}
+                          className={cx(
+                            "text-xs px-3 py-1.5 rounded-md border transition",
+                            exportPreset === p ? "bg-black text-white border-black" : "border-neutral-300 hover:bg-neutral-50"
+                          )}
+                        >
+                          {p === "week" ? "Semaine" : p === "month" ? "Mois" : p === "year" ? "Année" : "Perso"}
+                        </button>
+                      ))}
+                    </div>
+                    {exportPreset === "custom" && (
+                      <div className="flex gap-2 mt-2">
+                        <Input type="date" value={exportStartDate} onChange={(e: any) => setExportStartDate(e.target.value)} className="text-xs" />
+                        <Input type="date" value={exportEndDate} onChange={(e: any) => setExportEndDate(e.target.value)} className="text-xs" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-3 space-y-2">
+                    <button
+                      onClick={() => { exportPlanningCSV(); showToast("Planning CSV téléchargé"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition text-left"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-sky-100 flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4 text-sky-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Planning CSV</div>
+                        <div className="text-xs text-neutral-400">Affectations par chantier et par jour</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => { exportHoursCSV(); showToast("Heures CSV téléchargé"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition text-left"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-amber-100 flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Heures salariés CSV</div>
+                        <div className="text-xs text-neutral-400">Récapitulatif heures par personne</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => { exportJSON(); showToast("Sauvegarde JSON téléchargée"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition text-left"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-emerald-100 flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Sauvegarde JSON</div>
+                        <div className="text-xs text-neutral-400">Export complet de toutes les données</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => { window.print(); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition text-left"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-purple-100 flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4 text-purple-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Imprimer / PDF</div>
+                        <div className="text-xs text-neutral-400">Vue planning prête à l'impression</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ---- PERSONNALISATION ---- */}
+              {settingsTab === "perso" && (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Initiales / logo texte</label>
+                    <Input
+                      value={branding.logoText}
+                      onChange={(e: any) => setBranding((prev) => ({ ...prev, logoText: e.target.value }))}
+                      placeholder="BT"
+                      maxLength={3}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Nom de l'entreprise</label>
+                    <Input
+                      value={branding.title}
+                      onChange={(e: any) => setBranding((prev) => ({ ...prev, title: e.target.value }))}
+                      placeholder="BTP Planner"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Sous-titre</label>
+                    <Input
+                      value={branding.subtitle}
+                      onChange={(e: any) => setBranding((prev) => ({ ...prev, subtitle: e.target.value }))}
+                      placeholder="Tableau de bord & suivi collaboratif"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Couleur d'accent</label>
+                    <div className="flex flex-wrap gap-2">
+                      {["#000000","#1d4ed8","#0891b2","#16a34a","#d97706","#dc2626","#7c3aed","#db2777","#374151"].map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setBranding((prev) => ({ ...prev, accentColor: c }))}
+                          className={cx(
+                            "w-7 h-7 rounded-full border-2 transition",
+                            branding.accentColor === c ? "border-neutral-900 scale-110" : "border-transparent"
+                          )}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Densité d'affichage</label>
+                    <div className="flex gap-2">
+                      {(["normal","compact"] as const).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => setBranding((prev) => ({ ...prev, density: d }))}
+                          className={cx(
+                            "flex-1 py-2 rounded-md border text-sm transition",
+                            branding.density === d ? "bg-black text-white border-black" : "border-neutral-300 hover:bg-neutral-50"
+                          )}
+                        >
+                          {d === "normal" ? "Normal" : "Compact"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-400">La personnalisation est locale à votre navigateur pour l'instant.</p>
+                </div>
+              )}
+
+              {/* ---- MAINTENANCE ---- */}
+              {settingsTab === "maintenance" && (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Annuler une action</p>
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-neutral-200 bg-neutral-50">
+                      <div>
+                        <div className="text-sm font-medium">Annuler</div>
+                        <div className="text-xs text-neutral-400">
+                          {undoStack.current.length > 0
+                            ? `${undoStack.current.length} action${undoStack.current.length > 1 ? "s" : ""} disponible${undoStack.current.length > 1 ? "s" : ""}`
+                            : "Aucune action à annuler"}
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => { undo(); }}
+                        disabled={undoStack.current.length === 0}
+                        variant="outline"
+                        className="gap-2"
+                      >
+                        <RotateCcw className="w-4 h-4" /> Annuler
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t">
+                    <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Import de données</p>
+                    <button
+                      onClick={() => { fileRef.current?.click(); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition text-left"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-neutral-100 flex items-center justify-center shrink-0">
+                        <Upload className="w-4 h-4 text-neutral-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Importer JSON</div>
+                        <div className="text-xs text-neutral-400">Restaurer depuis une sauvegarde</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-neutral-400 pt-2 border-t">
+                    L'annulation fonctionne pendant la session en cours. Pour revenir à une version antérieure au chargement de la page, utilisez l'import JSON.
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
