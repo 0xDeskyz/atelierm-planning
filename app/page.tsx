@@ -424,6 +424,7 @@ const normalizePersonRecord = (p: any) => ({
   email: typeof p?.email === "string" ? p.email : "",
   notes: typeof p?.notes === "string" ? p.notes : "",
   skills: Array.isArray(p?.skills) ? p.skills.map(String) : [],
+  status: ["active","disabled","archived"].includes(p?.status) ? p.status : "active" as "active" | "disabled" | "archived",
 });
 
 const DEMO_PEOPLE = [
@@ -1509,7 +1510,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   );
 }
 
-function PersonDetailDialog({ open, person, onClose, onSave, usedColors = [] }: any) {
+function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColors = [] }: any) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [phone, setPhone] = useState("");
@@ -1517,6 +1518,8 @@ function PersonDetailDialog({ open, person, onClose, onSave, usedColors = [] }: 
   const [skills, setSkills] = useState("");
   const [notes, setNotes] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setName(person?.name || "");
@@ -1526,33 +1529,30 @@ function PersonDetailDialog({ open, person, onClose, onSave, usedColors = [] }: 
     setSkills((person?.skills || []).join(", "));
     setNotes(person?.notes || "");
     setColor(person?.color || COLORS[0]);
+    setConfirmArchive(false);
+    setConfirmDelete(false);
   }, [person]);
 
   const handleSave = () => {
     if (!person?.id) return;
     const trimmed = name.trim();
     if (!trimmed) return;
-    const parsedSkills = skills
-      .split(/[,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    onSave({
-      ...person,
-      name: trimmed,
-      role: role.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      notes: notes.trim(),
-      skills: parsedSkills,
-      color,
-    });
+    const parsedSkills = skills.split(/[,;]+/).map((s: string) => s.trim()).filter(Boolean);
+    onSave({ ...person, name: trimmed, role: role.trim(), phone: phone.trim(), email: email.trim(), notes: notes.trim(), skills: parsedSkills, color });
   };
+
+  const isArchived = person?.status === "archived";
+  const isDisabled = person?.status === "disabled";
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Fiche salarié</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Fiche salarié
+            {isArchived && <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500">Archivé</span>}
+            {isDisabled && <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">Désactivé</span>}
+          </DialogTitle>
           <DialogDescription>Compléter ou mettre à jour les informations associées à ce salarié.</DialogDescription>
         </DialogHeader>
 
@@ -1575,8 +1575,52 @@ function PersonDetailDialog({ open, person, onClose, onSave, usedColors = [] }: 
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Fermer</Button>
-          <Button onClick={handleSave}>Enregistrer</Button>
+          <div className="flex flex-col gap-2 w-full">
+            {/* Confirmations */}
+            {confirmArchive && (
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm space-y-2">
+                <p className="font-medium">{isArchived ? `Restaurer ${name} ?` : `Archiver ${name} ?`}</p>
+                <p className="text-xs text-neutral-500">{isArchived ? "Le salarié redeviendra actif." : "Il restera visible dans la grille et les exports mais disparaîtra des listes actives."}</p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => { onSave({ ...person, status: isArchived ? "active" : "archived" }); setConfirmArchive(false); }} className={isArchived ? "bg-emerald-600 text-white" : "bg-neutral-700 text-white"}>
+                    {isArchived ? "Restaurer" : "Confirmer l'archivage"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setConfirmArchive(false)}>Annuler</Button>
+                </div>
+              </div>
+            )}
+            {confirmDelete && (
+              <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-sm space-y-2">
+                <p className="font-medium text-red-700">Supprimer définitivement {name} ?</p>
+                <p className="text-xs text-red-500">Toutes les affectations de ce salarié seront supprimées. Cette action est irréversible.</p>
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-red-600 text-white hover:bg-red-700" onClick={() => { onDelete(person.id); setConfirmDelete(false); }}>Supprimer</Button>
+                  <Button size="sm" variant="outline" onClick={() => setConfirmDelete(false)}>Annuler</Button>
+                </div>
+              </div>
+            )}
+            {/* Actions row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => { setConfirmArchive(true); setConfirmDelete(false); }}>
+                  <Archive className="w-3.5 h-3.5 mr-1" />
+                  {isArchived ? "Restaurer" : "Archiver"}
+                </Button>
+                {!isArchived && (
+                  <Button size="sm" variant="outline" onClick={() => onSave({ ...person, status: isDisabled ? "active" : "disabled" })}>
+                    {isDisabled ? "Réactiver" : "Désactiver"}
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50 border-red-200" onClick={() => { setConfirmDelete(true); setConfirmArchive(false); }}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={onClose}>Fermer</Button>
+                <Button onClick={handleSave}>Enregistrer</Button>
+              </div>
+            </div>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -3526,9 +3570,9 @@ useEffect(() => {
       <div className="space-y-3">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
           <div className="relative rounded-2xl border bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-gradient-to-r from-neutral-50 to-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b" style={{ background: `linear-gradient(to right, ${branding.accentColor}12, white)` }}>
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-semibold">
+                <div className="h-10 w-10 rounded-full text-white flex items-center justify-center font-semibold" style={{ backgroundColor: branding.accentColor }}>
                   {branding.logoText}
                 </div>
                 <div className="leading-tight">
@@ -3975,22 +4019,43 @@ useEffect(() => {
                     <div className="font-medium">Salariés</div>
                     <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                   </div>
-                <div className="space-y-1.5">
-                  {people.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-2">
-                        <PersonChip person={p} />
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs flex items-center gap-1">
+                  <div className="space-y-1.5">
+                    {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => (
+                      <div key={p.id} className={cx("flex items-center justify-between gap-2", p.status === "disabled" && "opacity-50")}>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <PersonChip person={p} />
+                          {p.status === "disabled" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 shrink-0">off</span>}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <label className="text-xs flex items-center gap-1 cursor-pointer">
                             <input type="checkbox" checked={isAbsentOnWeek(p.id, currentWeekKey)} onChange={() => toggleAbsentThisWeek(p.id)} />
-                            Abs. S{getISOWeek(weekDays[0])}
+                            Abs.
                           </label>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
+                            onClick={() => {
+                              const siteId = sitesForCurrentWeek[0]?.id;
+                              if (!siteId) return;
+                              weekDateKeys.forEach((dateKey) => {
+                                if (isAbsentOnWeek(p.id, currentWeekKey)) return;
+                                const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
+                                if (already) return;
+                                const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
+                                setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
+                              });
+                            }}
+                            aria-label={`Affecter ${p.name} toute la semaine`}
+                          >
+                            <CalendarRange className="w-3.5 h-3.5" />
+                          </Button>
                           <Button size="icon" variant="ghost" onClick={() => openPersonDetail(p.id)} aria-label={`Modifier ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
-                          <Button size="icon" variant="ghost" onClick={() => removePerson(p.id)} aria-label={`Supprimer ${p.name}`}><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-neutral-500">L'absence ne vaut que pour la <b>semaine affichée</b>.</p>
+                  <p className="text-xs text-neutral-500">L'absence ne vaut que pour la <b>semaine affichée</b>. Le <CalendarRange className="w-3 h-3 inline" /> affecte sur le 1er chantier de la semaine.</p>
                 </CardContent>
               </Card>
 
@@ -4439,7 +4504,7 @@ useEffect(() => {
                                       <div
                                         key={dayKey}
                                         className={cx(
-                                          "min-h-[120px] border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
+                                          branding.density === "compact" ? "min-h-[72px]" : "min-h-[120px]", "border-l border-t border-neutral-200 p-2 text-xs flex flex-col gap-1",
                                           !inRange && "bg-neutral-50 text-neutral-400",
                                           isToday && "bg-sky-50"
                                         )}
@@ -5117,51 +5182,86 @@ useEffect(() => {
             {view === "salaries" && (
               <div className="space-y-3">
                 <Card>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-base font-semibold flex items-center gap-2">
                         <span>Mes salariés</span>
                         <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                          {safePeople.length} personne{safePeople.length > 1 ? "s" : ""}
+                          {safePeople.filter((p: any) => p.status !== "archived").length} actif{safePeople.filter((p: any) => p.status !== "archived").length > 1 ? "s" : ""}
                         </span>
                       </div>
                       <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                     </div>
+
+                    {/* Actifs + désactivés */}
                     <div className="grid md:grid-cols-2 gap-2">
-                      {safePeople.map((p) => (
+                      {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => (
                         <button
                           key={p.id}
                           onClick={() => openPersonDetail(p.id)}
-                          className="rounded-lg border border-neutral-200 p-3 bg-white shadow-sm flex items-start gap-3 text-left hover:border-neutral-300"
+                          className={cx(
+                            "rounded-lg border p-3 bg-white shadow-sm flex items-start gap-3 text-left hover:border-neutral-300 transition",
+                            p.status === "disabled" ? "border-amber-100 opacity-60" : "border-neutral-200"
+                          )}
                         >
-                          <span className={cx("w-3 h-3 rounded-full mt-1 border", p.color || "bg-neutral-300", p.color ? "border-black/10" : "border-neutral-200")} aria-hidden />
-                          <div className="space-y-1">
-                            <div className="font-semibold text-neutral-900 flex items-center gap-2">
+                          <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5", p.color || "bg-neutral-400")}>
+                            {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <div className="font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
                               {p.name}
                               {p.role && <span className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">{p.role}</span>}
+                              {p.status === "disabled" && <span className="text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">Désactivé</span>}
                             </div>
                             {(p.phone || p.email) && (
-                              <div className="text-[11px] text-neutral-600 space-y-0.5">
-                                {p.phone && <div>Tél : {p.phone}</div>}
-                                {p.email && <div>{p.email}</div>}
+                              <div className="text-[11px] text-neutral-500 space-y-0.5">
+                                {p.phone && <div>📞 {p.phone}</div>}
+                                {p.email && <div>✉ {p.email}</div>}
                               </div>
                             )}
                             {p.skills?.length > 0 && (
-                              <div className="flex flex-wrap gap-1 text-[11px] text-sky-700">
+                              <div className="flex flex-wrap gap-1">
                                 {p.skills.slice(0, 3).map((s: any, idx: number) => (
-                                  <span key={idx} className="px-2 py-0.5 bg-sky-50 border border-sky-100 rounded-full">{s}</span>
+                                  <span key={idx} className="text-[11px] px-2 py-0.5 bg-sky-50 border border-sky-100 text-sky-700 rounded-full">{s}</span>
                                 ))}
-                                {p.skills.length > 3 && <span className="text-[11px] text-neutral-500">+{p.skills.length - 3}</span>}
+                                {p.skills.length > 3 && <span className="text-[11px] text-neutral-400">+{p.skills.length - 3}</span>}
                               </div>
                             )}
-                            <div className="text-[11px] text-sky-700">Cliquer pour éditer la fiche</div>
                           </div>
                         </button>
                       ))}
-                      {safePeople.length === 0 && (
-                        <div className="text-sm text-neutral-500">Aucun salarié renseigné.</div>
+                      {safePeople.filter((p: any) => p.status !== "archived").length === 0 && (
+                        <div className="text-sm text-neutral-500 md:col-span-2">Aucun salarié actif.</div>
                       )}
                     </div>
+
+                    {/* Section archivés */}
+                    {safePeople.filter((p: any) => p.status === "archived").length > 0 && (
+                      <div className="border-t pt-3 space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-2">
+                          <Archive className="w-3.5 h-3.5" />
+                          Archivés ({safePeople.filter((p: any) => p.status === "archived").length})
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {safePeople.filter((p: any) => p.status === "archived").map((p: any) => (
+                            <button
+                              key={p.id}
+                              onClick={() => openPersonDetail(p.id)}
+                              className="rounded-lg border border-neutral-100 p-3 bg-neutral-50 flex items-start gap-3 text-left hover:border-neutral-200 transition"
+                            >
+                              <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 grayscale", p.color || "bg-neutral-400")}>
+                                {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-medium text-neutral-500 text-sm">{p.name}</div>
+                                {p.role && <div className="text-[11px] text-neutral-400">{p.role}</div>}
+                                <div className="text-[11px] text-neutral-400 mt-0.5">Cliquer pour restaurer ou supprimer</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -5374,7 +5474,8 @@ useEffect(() => {
             setPersonDetailOpen(false);
             setPersonDetail(null);
           }}
-          onSave={savePersonDetail}
+          onSave={(payload: any) => { savePersonDetail(payload); }}
+          onDelete={(id: string) => { removePerson(id); setPersonDetailOpen(false); setPersonDetail(null); }}
           usedColors={safePeople.filter((p: any) => p.id !== personDetail?.id).map((p: any) => p.color)}
         />
       )}
