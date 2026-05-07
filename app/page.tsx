@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 import {
   DndContext,
@@ -81,7 +81,6 @@ import {
   normalizePersonRecord,
   normalizeSiteRecord,
   normalizeQuoteRecord,
-  normalizeClientRecord,
   isDateWithin,
   cellKey,
   mapWeekDates,
@@ -145,13 +144,12 @@ const DEMO_QUOTES = [
 // ==================================
 // Devis Kanban – Carte draggable
 // ==================================
-function QuoteCard({ quote, tone, onOpen, onCreateSite, clients = [] }: any) {
+function QuoteCard({ quote, tone, onOpen, onCreateSite }: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `quote-${quote.id}`,
     data: { type: "quote", quoteId: quote.id, status: quote.status },
   });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined;
-  const linkedClient = quote.clientId ? clients.find((c: any) => c.id === quote.clientId) : null;
   return (
     <button
       ref={setNodeRef}
@@ -169,12 +167,7 @@ function QuoteCard({ quote, tone, onOpen, onCreateSite, clients = [] }: any) {
         <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 mt-0.5", tone.chip)} aria-hidden />
       </div>
       <div className="text-xs text-neutral-600 space-y-1">
-        {linkedClient && (
-          <div className="flex items-center gap-1">
-            <span className="px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-semibold">{linkedClient.name}</span>
-          </div>
-        )}
-        {quote.client && !linkedClient && <div className="truncate">Client : {quote.client}</div>}
+        {quote.client && <div className="truncate">Client : {quote.client}</div>}
         {Number.isFinite(quote.amount) && <div className="font-semibold text-neutral-800">{formatEUR(quote.amount)}</div>}
         {Array.isArray(quote.planningWeeks) && quote.planningWeeks.length > 0 && (
           <div className="flex items-center gap-1 text-sky-700">
@@ -195,7 +188,7 @@ function QuoteCard({ quote, tone, onOpen, onCreateSite, clients = [] }: any) {
   );
 }
 
-function QuoteColumn({ col, items, onOpenQuote, onCreateSite, clients = [] }: any) {
+function QuoteColumn({ col, items, onOpenQuote, onCreateSite }: any) {
   const tone = QUOTE_TONES[col.tone] || QUOTE_TONES.sky;
   const { setNodeRef, isOver } = useDroppable({
     id: `quote-col-${col.id}`,
@@ -264,7 +257,7 @@ function QuoteColumn({ col, items, onOpenQuote, onCreateSite, clients = [] }: an
           </div>
         )}
         {visible.map((q: any) => (
-          <QuoteCard key={q.id} quote={q} tone={tone} onOpen={() => onOpenQuote(q)} onCreateSite={onCreateSite} clients={clients} />
+          <QuoteCard key={q.id} quote={q} tone={tone} onOpen={() => onOpenQuote(q)} onCreateSite={onCreateSite} />
         ))}
         {!expanded && hiddenCount > 0 && (
           <button
@@ -586,6 +579,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>([]);
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
   const [color, setColor] = useState<string>(SITE_COLORS[0]);
+  const [tauxMateriel, setTauxMateriel] = useState<string>("");
 
   useEffect(() => {
     setName(site?.name || "");
@@ -603,6 +597,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setPickerYear(parsed?.year || new Date().getFullYear());
     setColor(site?.color || SITE_COLORS[0]);
     setGlobalNotes(site?.globalNotes || "");
+    setTauxMateriel(site?.tauxMateriel != null ? String(site.tauxMateriel) : "");
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -613,6 +608,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     if (!trimmed) return;
     const parsedWeeks = selectedWeeks.length ? selectedWeeks : parseWeekList(weeks, fallbackYear);
     const derived = parsedWeeks.length ? getWeekRangeFromKeys(parsedWeeks) : null;
+    const parsedTauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : null;
     onSave({
       ...site,
       name: trimmed,
@@ -627,6 +623,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       planningWeeks: parsedWeeks,
       color,
       globalNotes,
+      tauxMateriel: parsedTauxMat,
     });
   };
 
@@ -722,6 +719,10 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
           </div>
 
           <div className="space-y-1">
+            <span className="text-[11px] text-neutral-600 font-semibold">Taux matériel spécifique (%)</span>
+            <Input type="number" min={0} max={200} value={tauxMateriel} onChange={(e: any) => setTauxMateriel(e.target.value)} placeholder="Ex: 15 (laisser vide pour utiliser le taux global)" />
+          </div>
+          <div className="space-y-1">
             <span className="text-[11px] text-neutral-600 font-semibold">Notes</span>
             <Textarea
               value={globalNotes}
@@ -790,6 +791,7 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
   const [skills, setSkills] = useState("");
   const [notes, setNotes] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  const [tauxJournalier, setTauxJournalier] = useState<string>("");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -797,6 +799,7 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
     setName(person?.name || "");
     setRole(person?.role || "");
     setPhone(person?.phone || "");
+    setTauxJournalier(person?.tauxJournalier != null ? String(person.tauxJournalier) : "");
     setEmail(person?.email || "");
     setSkills((person?.skills || []).join(", "));
     setNotes(person?.notes || "");
@@ -810,7 +813,8 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
     const trimmed = name.trim();
     if (!trimmed) return;
     const parsedSkills = skills.split(/[,;]+/).map((s: string) => s.trim()).filter(Boolean);
-    onSave({ ...person, name: trimmed, role: role.trim(), phone: phone.trim(), email: email.trim(), notes: notes.trim(), skills: parsedSkills, color });
+    const parsedTaux = tauxJournalier !== "" && Number.isFinite(Number(tauxJournalier)) ? Number(tauxJournalier) : null;
+    onSave({ ...person, name: trimmed, role: role.trim(), phone: phone.trim(), email: email.trim(), notes: notes.trim(), skills: parsedSkills, color, tauxJournalier: parsedTaux });
   };
 
   const isArchived = person?.status === "archived";
@@ -838,6 +842,10 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
           <div className="space-y-1">
             <div className="text-xs text-neutral-600">Compétences (séparer par des virgules)</div>
             <Input value={skills} onChange={(e: any) => setSkills(e.target.value)} placeholder="Ex: plomberie, coffrage, conduite" />
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-neutral-600">Taux journalier (€/j) — pour le calcul de rentabilité</div>
+            <Input type="number" min={0} value={tauxJournalier} onChange={(e: any) => setTauxJournalier(e.target.value)} placeholder="Ex: 350 (laissez vide pour utiliser le taux global)" />
           </div>
           <Textarea value={notes} onChange={(e: any) => setNotes(e.target.value)} placeholder="Notes internes, disponibilités..." />
           <div className="space-y-1">
@@ -1089,13 +1097,9 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
-  const [clients, setClients] = useState<any[]>([]);
   const [tauxJournalierDefault, setTauxJournalierDefault] = useState<number>(350);
-  const [clientDialogOpen, setClientDialogOpen] = useState(false);
-  const [editingClient, setEditingClient] = useState<any | null>(null);
-  const [clientFiche, setClientFiche] = useState<any | null>(null);
-  const [clientFicheTab, setClientFicheTab] = useState<"devis"|"chantiers">("devis");
-  const [clientDraft, setClientDraft] = useState({ name: "", contactName: "", phone: "", email: "", address: "", city: "", notes: "", tauxJournalier: "" });
+  const [tauxMaterielDefault, setTauxMaterielDefault] = useState<number>(15);
+  const [rentaSort, setRentaSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "marge", dir: "desc" });
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatusMessage, setSaveStatusMessage] = useState<string>("");
@@ -1150,7 +1154,7 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries" | "clients" | "analyse"
+    "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries" | "rentabilite"
   >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
@@ -2485,8 +2489,8 @@ export default function Page() {
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
-    setClients(toArray(state.clients).map(normalizeClientRecord));
     if (state.tauxJournalierDefault != null) setTauxJournalierDefault(state.tauxJournalierDefault);
+    if (state.tauxMaterielDefault != null) setTauxMaterielDefault(state.tauxMaterielDefault);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -2658,13 +2662,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     siteWeekVisibility,
     hoursPerDay,
     quotes,
-    clients,
     tauxJournalierDefault,
+    tauxMaterielDefault,
     eventCalendars,
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, clients, tauxJournalierDefault, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, eventCalendars, calendarEvents]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -2908,7 +2912,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, clients, tauxJournalierDefault, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2917,7 +2921,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setClients(toArray(data.clients).map(normalizeClientRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -2966,10 +2970,9 @@ useEffect(() => {
             <div className="flex items-center gap-0.5">
               {[
                 { v: "devis", label: "Devis" },
-                { v: "clients", label: "Clients" },
                 { v: "sites", label: "Chantiers" },
                 { v: "salaries", label: "Salariés" },
-                { v: "analyse", label: "Analyse" },
+                { v: "rentabilite", label: "Rentabilité" },
               ].map(({ v, label }) => (
                 <button
                   key={v}
@@ -4195,7 +4198,6 @@ useEffect(() => {
                             items={quotesByColumn[col.id] || []}
                             onOpenQuote={openQuoteDetail}
                             onCreateSite={createSiteFromQuote}
-                            clients={clients}
                           />
                         ))}
                       </div>
@@ -4390,295 +4392,185 @@ useEffect(() => {
               </div>
             )}
 
-            {view === "clients" && (
-              <div className="space-y-3">
-                <Card>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-base font-semibold flex items-center gap-2">
-                        <span>Clients</span>
-                        <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{clients.length}</span>
-                      </div>
-                      <Button onClick={() => { setEditingClient(null); setClientDraft({ name: "", contactName: "", phone: "", email: "", address: "", city: "", notes: "", tauxJournalier: "" }); setClientDialogOpen(true); }}>
-                        <Plus className="w-4 h-4 mr-1" /> Nouveau client
-                      </Button>
-                    </div>
-                    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {clients.map((c) => {
-                        const clientQuotes = safeQuotes.filter(q => q.clientId === c.id);
-                        const wonQuotes = clientQuotes.filter(q => q.status === "won");
-                        const ca = wonQuotes.reduce((s, q) => s + (q.amount || 0), 0);
-                        const clientSites = safeSites.filter(s => s.clientId === c.id);
-                        const isActif = wonQuotes.length > 0;
-                        return (
-                          <button
-                            key={c.id}
-                            onClick={() => { setClientFiche(c); setClientFicheTab("devis"); }}
-                            className="rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-neutral-300 hover:shadow transition space-y-2"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="font-semibold text-neutral-900 leading-tight">{c.name || "Sans nom"}</div>
-                              <span className={cx("text-[11px] px-2 py-0.5 rounded-full font-semibold shrink-0", isActif ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500")}>
-                                {isActif ? "Actif" : "Prospect"}
-                              </span>
-                            </div>
-                            {c.city && <div className="text-xs text-neutral-500">{c.city}</div>}
-                            <div className="text-xs text-neutral-600 space-y-0.5">
-                              {c.phone && <div>📞 {c.phone}</div>}
-                              {c.email && <div>✉ {c.email}</div>}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-neutral-500 pt-1 border-t border-neutral-100">
-                              <span>{wonQuotes.length} devis validé{wonQuotes.length > 1 ? "s" : ""}</span>
-                              {ca > 0 && <span className="font-semibold text-emerald-700">{formatEUR(ca)}</span>}
-                              {clientSites.length > 0 && <span>{clientSites.length} chantier{clientSites.length > 1 ? "s" : ""}</span>}
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {clients.length === 0 && <div className="text-sm text-neutral-500 md:col-span-2">Aucun client pour l'instant. Créez-en un ou associez un client à vos devis.</div>}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+            {view === "rentabilite" && (() => {
+              const rentaRows = safeSites.filter((s: any) => s.status !== "archived").map((s: any) => {
+                const siteAssignments = assignments.filter((a: any) => a.siteId === s.id);
+                const mainOeuvre = siteAssignments.reduce((sum: number, a: any) => {
+                  const person = people.find((p: any) => p.id === a.personId);
+                  const rate = Number.isFinite(Number(person?.tauxJournalier)) ? Number(person.tauxJournalier) : tauxJournalierDefault;
+                  const portion = a.portion === "half" ? 0.5 : 1;
+                  return sum + rate * portion;
+                }, 0);
+                const tauxMat = s.tauxMateriel != null ? s.tauxMateriel : tauxMaterielDefault;
+                const coutMateriel = mainOeuvre * (tauxMat / 100);
+                const coutTotal = mainOeuvre + coutMateriel;
+                const linkedQuote = s.quoteId ? safeQuotes.find((q: any) => q.id === s.quoteId) : null;
+                const budget = Number(linkedQuote?.amount ?? s.quoteSnapshot?.amount ?? 0);
+                const marge = budget > 0 ? budget - coutTotal : null;
+                const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
+                return { site: s, mainOeuvre, coutMateriel, coutTotal, budget, marge, margePercent, tauxMat, nbJours: siteAssignments.reduce((s: number, a: any) => s + (a.portion === "half" ? 0.5 : 1), 0) };
+              });
 
-            {view === "salaries" && (
-              <div className="space-y-3">
-                <Card>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-base font-semibold flex items-center gap-2">
-                        <span>Mes salariés</span>
-                        <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                          {safePeople.filter((p: any) => p.status !== "archived").length} actif{safePeople.filter((p: any) => p.status !== "archived").length > 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
-                    </div>
+              const sorted = [...rentaRows].sort((a, b) => {
+                const { col, dir } = rentaSort;
+                const mult = dir === "asc" ? 1 : -1;
+                const va = col === "name" ? a.site.name : col === "client" ? (a.site.clientName || "") : col === "budget" ? a.budget : col === "mo" ? a.mainOeuvre : col === "cout" ? a.coutTotal : (a.margePercent ?? -Infinity);
+                const vb = col === "name" ? b.site.name : col === "client" ? (b.site.clientName || "") : col === "budget" ? b.budget : col === "mo" ? b.mainOeuvre : col === "cout" ? b.coutTotal : (b.margePercent ?? -Infinity);
+                if (typeof va === "string") return mult * va.localeCompare(vb as string);
+                return mult * ((va as number) - (vb as number));
+              });
 
-                    {/* Actifs + désactivés */}
-                    <div className="grid md:grid-cols-2 gap-2">
-                      {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => (
-                        <button
-                          key={p.id}
-                          onClick={() => openPersonDetail(p.id)}
-                          className={cx(
-                            "rounded-lg border p-3 bg-white shadow-sm flex items-start gap-3 text-left hover:border-neutral-300 transition",
-                            p.status === "disabled" ? "border-amber-100 opacity-60" : "border-neutral-200"
-                          )}
-                        >
-                          <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5", p.color || "bg-neutral-400")}>
-                            {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
-                          </div>
-                          <div className="space-y-1 min-w-0">
-                            <div className="font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
-                              {p.name}
-                              {p.role && <span className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">{p.role}</span>}
-                              {p.status === "disabled" && <span className="text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">Désactivé</span>}
-                            </div>
-                            {(p.phone || p.email) && (
-                              <div className="text-[11px] text-neutral-500 space-y-0.5">
-                                {p.phone && <div>📞 {p.phone}</div>}
-                                {p.email && <div>✉ {p.email}</div>}
-                              </div>
-                            )}
-                            {p.skills?.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {p.skills.slice(0, 3).map((s: any, idx: number) => (
-                                  <span key={idx} className="text-[11px] px-2 py-0.5 bg-sky-50 border border-sky-100 text-sky-700 rounded-full">{s}</span>
-                                ))}
-                                {p.skills.length > 3 && <span className="text-[11px] text-neutral-400">+{p.skills.length - 3}</span>}
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                      {safePeople.filter((p: any) => p.status !== "archived").length === 0 && (
-                        <div className="text-sm text-neutral-500 md:col-span-2">Aucun salarié actif.</div>
-                      )}
-                    </div>
+              const totalBudget = rentaRows.reduce((s: number, r: any) => s + r.budget, 0);
+              const totalMO = rentaRows.reduce((s: number, r: any) => s + r.mainOeuvre, 0);
+              const totalCout = rentaRows.reduce((s: number, r: any) => s + r.coutTotal, 0);
+              const totalMarge = totalBudget > 0 ? totalBudget - totalCout : 0;
+              const avgMarge = rentaRows.filter((r: any) => r.margePercent != null).length > 0
+                ? rentaRows.filter((r: any) => r.margePercent != null).reduce((s: number, r: any) => s + (r.margePercent ?? 0), 0) / rentaRows.filter((r: any) => r.margePercent != null).length
+                : null;
 
-                    {/* Section archivés */}
-                    {safePeople.filter((p: any) => p.status === "archived").length > 0 && (
-                      <div className="border-t pt-3 space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-2">
-                          <Archive className="w-3.5 h-3.5" />
-                          Archivés ({safePeople.filter((p: any) => p.status === "archived").length})
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-2">
-                          {safePeople.filter((p: any) => p.status === "archived").map((p: any) => (
-                            <button
-                              key={p.id}
-                              onClick={() => openPersonDetail(p.id)}
-                              className="rounded-lg border border-neutral-100 p-3 bg-neutral-50 flex items-start gap-3 text-left hover:border-neutral-200 transition"
-                            >
-                              <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 grayscale", p.color || "bg-neutral-400")}>
-                                {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-neutral-500 text-sm">{p.name}</div>
-                                {p.role && <div className="text-[11px] text-neutral-400">{p.role}</div>}
-                                <div className="text-[11px] text-neutral-400 mt-0.5">Cliquer pour restaurer ou supprimer</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+              const SortTh = ({ col, label, className = "" }: any) => (
+                <th
+                  className={"px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide cursor-pointer select-none hover:text-neutral-800 " + className}
+                  onClick={() => setRentaSort(prev => ({ col, dir: prev.col === col && prev.dir === "desc" ? "asc" : "desc" }))}
+                >
+                  {label}{rentaSort.col === col ? (rentaSort.dir === "desc" ? " ↓" : " ↑") : ""}
+                </th>
+              );
 
-            {view === "analyse" && (()=>{
-              const caEnvoye = safeQuotes.filter((q:any) => ["pending","won","lost"].includes(q.status)).reduce((s:number,q:any) => s + (q.amount||0), 0);
-              const caValide = safeQuotes.filter((q:any) => q.status === "won").reduce((s:number,q:any) => s + (q.amount||0), 0);
-              const totalSent = safeQuotes.filter((q:any) => ["pending","won","lost"].includes(q.status)).length;
-              const tauxTransfo = totalSent > 0 ? Math.round(safeQuotes.filter((q:any) => q.status === "won").length / totalSent * 100) : 0;
-              const joursPlannifies = assignments.length;
-              const pipelineData = QUOTE_COLUMNS.map((col:any) => ({ name: col.label, montant: safeQuotes.filter((q:any) => q.status === col.id).reduce((s:number,q:any) => s + (q.amount||0), 0) }));
-              const pipelineColors = ["#0ea5e9","#f59e0b","#6366f1","#10b981","#f43f5e"];
-              const activePeople = safePeople.filter((p:any) => p.status !== "archived");
-              const now4 = new Date();
-              const last4WeekKeys: string[] = [];
-              for (let i = 0; i < 4; i++) { const d = new Date(now4); d.setDate(d.getDate() - i * 7); last4WeekKeys.push(weekKeyOf(d)); }
-              const chargeData = activePeople.map((p:any) => ({
-                name: p.name,
-                jours: assignments.filter((a:any) => a.personId === p.id && last4WeekKeys.some((wk:string) => { const parts = wk.split("-W"); const wkStart = getISOWeekStart(parseInt(parts[0]), parseInt(parts[1])); const wkEnd = new Date(wkStart); wkEnd.setDate(wkStart.getDate() + 6); const d = fromLocalKey(a.date); return d >= wkStart && d <= wkEnd; })).length,
-              })).filter((x:any) => x.jours > 0);
-              const last8Sites = [...safeSites].filter((s:any) => s.quoteId || s.quoteSnapshot?.amount).slice(-8);
-              const rentaData = last8Sites.map((s:any) => { const montantDevis = s.quoteSnapshot?.amount || 0; const joursAff = assignments.filter((a:any) => a.siteId === s.id).length; const coutEstime = joursAff * tauxJournalierDefault; return { name: s.name.length > 15 ? s.name.slice(0, 15) + "…" : s.name, devis: montantDevis, cout: coutEstime }; });
-              const topClients = clients.map((c:any) => { const clientQuotes = safeQuotes.filter((q:any) => q.clientId === c.id && q.status === "won"); const ca = clientQuotes.reduce((s:number,q:any) => s + (q.amount||0), 0); const activeSites = safeSites.filter((s:any) => s.clientId === c.id && s.status === "planned").length; return { ...c, devisValides: clientQuotes.length, ca, activeSites }; }).filter((c:any) => c.devisValides > 0 || c.ca > 0).sort((a:any,b:any) => b.ca - a.ca);
+              const rowColor = (pct: number | null) => {
+                if (pct == null) return "";
+                if (pct >= 20) return "bg-emerald-50";
+                if (pct >= 5) return "bg-amber-50";
+                return "bg-red-50";
+              };
+              const margeColor = (pct: number | null) => {
+                if (pct == null) return "text-neutral-400";
+                if (pct >= 20) return "text-emerald-700 font-semibold";
+                if (pct >= 5) return "text-amber-700 font-semibold";
+                return "text-red-600 font-semibold";
+              };
+
               return (
-                <div className="space-y-6">
-                  {/* KPIs */}
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-4">
+                  {/* KPI cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: "CA envoyé", value: formatEUR(caEnvoye), sub: `${totalSent} devis`, color: "from-sky-50" },
-                      { label: "CA validé", value: formatEUR(caValide), sub: `${safeQuotes.filter(q => q.status === "won").length} devis won`, color: "from-emerald-50" },
-                      { label: "Taux de transfo", value: `${tauxTransfo}%`, sub: `sur ${totalSent} envoyés`, color: "from-indigo-50" },
-                      { label: "Jours affectés", value: String(joursPlannifies), sub: "total assignments", color: "from-amber-50" },
-                    ].map(kpi => (
-                      <Card key={kpi.label} className={cx("border-neutral-200 bg-gradient-to-br to-white", kpi.color)}>
-                        <CardContent className="space-y-2 p-4">
-                          <div className="text-sm font-semibold text-neutral-600">{kpi.label}</div>
-                          <div className="text-2xl font-bold text-neutral-900">{kpi.value}</div>
-                          <div className="text-xs text-neutral-500">{kpi.sub}</div>
+                      { label: "CA total devis", value: formatEUR(totalBudget), sub: `${rentaRows.filter((r: any) => r.budget > 0).length} chantiers avec budget` },
+                      { label: "Main d'œuvre totale", value: formatEUR(totalMO), sub: `${rentaRows.reduce((s: number, r: any) => s + r.nbJours, 0).toFixed(1)} jours planifiés` },
+                      { label: "Coût total estimé", value: formatEUR(totalCout), sub: "MO + matériel" },
+                      { label: "Marge globale", value: totalBudget > 0 ? `${Math.round((totalMarge / totalBudget) * 100)}%` : "—", sub: totalBudget > 0 ? formatEUR(totalMarge) : "Aucun budget", color: totalBudget > 0 && totalMarge >= 0 ? "text-emerald-600" : "text-red-500" },
+                    ].map((kpi: any) => (
+                      <Card key={kpi.label}>
+                        <CardContent className="p-3 space-y-1">
+                          <div className="text-[11px] text-neutral-500 uppercase tracking-wide">{kpi.label}</div>
+                          <div className={`text-xl font-bold ${kpi.color || "text-neutral-900"}`}>{kpi.value}</div>
+                          {kpi.sub && <div className="text-[11px] text-neutral-400">{kpi.sub}</div>}
                         </CardContent>
                       </Card>
                     ))}
                   </div>
 
-                  {/* Graphique 1: Pipeline */}
+                  {/* Settings row */}
                   <Card>
-                    <CardContent className="space-y-3 p-4">
-                      <div className="text-sm font-semibold">Pipeline devis — Montant par colonne</div>
-                      <div style={{ height: 220 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={pipelineData} layout="vertical" margin={{ left: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis type="number" tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k€` : `${v}€`} />
-                            <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11 }} />
-                            <Tooltip formatter={(v: any) => formatEUR(v)} />
-                            <Bar dataKey="montant" radius={[0,4,4,0]}>
-                              {pipelineData.map((_:any, i:number) => (
-                                <Cell key={i} fill={pipelineColors[i % pipelineColors.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                    <CardContent className="p-3 flex flex-wrap items-center gap-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-500 text-xs">Taux journalier global</span>
+                        <input type="number" min={0} step={10} value={tauxJournalierDefault} onChange={(e: any) => setTauxJournalierDefault(Number(e.target.value))} className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                        <span className="text-neutral-400 text-xs">€/j</span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-500 text-xs">Taux matériel global</span>
+                        <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-16 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                        <span className="text-neutral-400 text-xs">% de la MO</span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400">Les taux par chantier/salarié remplacent ces valeurs globales.</div>
                     </CardContent>
                   </Card>
 
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    {/* Graphique 2: Charge équipe */}
-                    <Card>
-                      <CardContent className="space-y-3 p-4">
-                        <div className="text-sm font-semibold">Charge équipe — 4 dernières semaines</div>
-                        {chargeData.length === 0 ? (
-                          <div className="text-sm text-neutral-500">Aucune affectation récente.</div>
-                        ) : (
-                          <div style={{ height: 200 }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={chargeData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                                <YAxis allowDecimals={false} />
-                                <Tooltip />
-                                <Bar dataKey="jours" fill="#0ea5e9" radius={[4,4,0,0]} name="Jours" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
+                  {/* Table */}
+                  <Card>
+                    <CardContent className="p-0 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="border-b border-neutral-100">
+                          <tr>
+                            <SortTh col="name" label="Chantier" className="pl-4" />
+                            <SortTh col="client" label="Client" />
+                            <SortTh col="budget" label="Budget devis" />
+                            <SortTh col="mo" label="Main d'œuvre" />
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Mat. %</th>
+                            <SortTh col="cout" label="Coût total" />
+                            <SortTh col="marge" label="Marge" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-50">
+                          {sorted.length === 0 && (
+                            <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier actif. Ajoutez des chantiers et affectez des salariés.</td></tr>
+                          )}
+                          {sorted.map(({ site: s, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours }: any) => (
+                            <tr key={s.id} className={`hover:bg-neutral-50 transition ${rowColor(margePercent)}`}>
+                              <td className="px-3 py-2.5 pl-4">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
+                                  <span className="font-medium text-neutral-900">{s.name}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
+                              <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
+                              <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
+                              <td className="px-3 py-2.5">
+                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">{tauxMat}%{s.tauxMateriel != null ? " ✎" : ""}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-neutral-700">{formatEUR(coutTotal)}</td>
+                              <td className={`px-3 py-2.5 ${margeColor(margePercent)}`}>
+                                {marge != null ? (
+                                  <span>{formatEUR(marge)} <span className="text-[11px]">({Math.round(margePercent!)}%)</span></span>
+                                ) : <span className="text-neutral-300">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        {sorted.length > 0 && (
+                          <tfoot className="border-t-2 border-neutral-200 bg-neutral-50">
+                            <tr>
+                              <td colSpan={2} className="px-3 py-2 pl-4 text-xs font-semibold text-neutral-500">TOTAL</td>
+                              <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalBudget)}</td>
+                              <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalMO)}</td>
+                              <td className="px-3 py-2 text-[11px] text-neutral-400">{avgMarge != null ? `${Math.round(avgMarge)}% moy.` : ""}</td>
+                              <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalCout)}</td>
+                              <td className={`px-3 py-2 ${margeColor(totalBudget > 0 ? (totalMarge / totalBudget) * 100 : null)}`}>
+                                {totalBudget > 0 ? `${formatEUR(totalMarge)} (${Math.round((totalMarge / totalBudget) * 100)}%)` : "—"}
+                              </td>
+                            </tr>
+                          </tfoot>
                         )}
-                      </CardContent>
-                    </Card>
+                      </table>
+                    </CardContent>
+                  </Card>
 
-                    {/* Graphique 3: Rentabilité par chantier */}
+                  {/* Bar chart: marge par chantier */}
+                  {sorted.filter((r: any) => r.budget > 0).length > 0 && (
                     <Card>
-                      <CardContent className="space-y-3 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-semibold">Rentabilité — 8 derniers chantiers</div>
-                          <label className="flex items-center gap-1.5 text-xs text-neutral-500">
-                            Taux/j
-                            <input
-                              type="number"
-                              value={tauxJournalierDefault}
-                              onChange={(e: any) => setTauxJournalierDefault(Number(e.target.value))}
-                              className="w-16 border rounded px-1.5 py-0.5 text-xs"
-                              min={0}
-                              step={10}
-                            />
-                            €
-                          </label>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="text-sm font-semibold text-neutral-800">Marge par chantier (%)</div>
+                        <div className="h-56">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={sorted.filter((r: any) => r.budget > 0).map((r: any) => ({ name: r.site.name.length > 14 ? r.site.name.slice(0, 14) + "…" : r.site.name, marge: r.margePercent != null ? Math.round(r.margePercent) : 0, fill: (r.margePercent ?? 0) >= 20 ? "#10b981" : (r.margePercent ?? 0) >= 5 ? "#f59e0b" : "#f43f5e" }))} margin={{ top: 4, right: 8, bottom: 24, left: 0 }}>
+                              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" />
+                              <YAxis tick={{ fontSize: 11 }} unit="%" />
+                              <Tooltip formatter={(v: any) => `${v}%`} />
+                              <ReferenceLine y={0} stroke="#e5e7eb" />
+                              <Bar dataKey="marge" radius={[4, 4, 0, 0]}>
+                                {sorted.filter((r: any) => r.budget > 0).map((r: any, idx: number) => (
+                                  <Cell key={idx} fill={(r.margePercent ?? 0) >= 20 ? "#10b981" : (r.margePercent ?? 0) >= 5 ? "#f59e0b" : "#f43f5e"} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
                         </div>
-                        {rentaData.length === 0 ? (
-                          <div className="text-sm text-neutral-500">Aucun chantier issu d'un devis.</div>
-                        ) : (
-                          <div style={{ height: 200 }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={rentaData} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
-                                <Tooltip formatter={(v: any) => formatEUR(v)} />
-                                <Legend />
-                                <Bar dataKey="devis" fill="#3b82f6" name="Devis (€)" radius={[0,4,4,0]} />
-                                <Bar dataKey="cout" fill="#f43f5e" name="Coût estimé (€)" radius={[0,4,4,0]} />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Top clients */}
-                  {topClients.length > 0 && (
-                    <Card>
-                      <CardContent className="space-y-3 p-4">
-                        <div className="text-sm font-semibold">Top clients</div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-xs text-neutral-500 border-b">
-                                <th className="text-left py-2 pr-4 font-semibold">Client</th>
-                                <th className="text-right py-2 pr-4 font-semibold">Devis validés</th>
-                                <th className="text-right py-2 pr-4 font-semibold">CA</th>
-                                <th className="text-right py-2 font-semibold">Chantiers actifs</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {topClients.map(c => (
-                                <tr key={c.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                                  <td className="py-2 pr-4 font-medium">{c.name}</td>
-                                  <td className="py-2 pr-4 text-right">{c.devisValides}</td>
-                                  <td className="py-2 pr-4 text-right font-semibold text-emerald-700">{formatEUR(c.ca)}</td>
-                                  <td className="py-2 text-right">{c.activeSites}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div className="flex items-center gap-4 text-[11px] text-neutral-500">
+                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" /> Bonne marge (≥ 20%)</span>
+                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Marge correcte (5–20%)</span>
+                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" /> Marge faible (&lt; 5%)</span>
                         </div>
                       </CardContent>
                     </Card>
@@ -4686,6 +4578,7 @@ useEffect(() => {
                 </div>
               );
             })()}
+
           </div>
         </div>
         <DragOverlay />
@@ -4714,45 +4607,17 @@ useEffect(() => {
                 onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, title: e.target.value } : prev))}
                 placeholder="Intitulé"
               />
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-neutral-600 shrink-0">Client</span>
-                  <select
-                    value={quoteDetail.clientId || ""}
-                    onChange={(e) => {
-                      const cid = e.target.value;
-                      if (cid === "__new__") {
-                        const newName = prompt("Nom du nouveau client :");
-                        if (!newName?.trim()) return;
-                        const newClient = normalizeClientRecord({ name: newName.trim() });
-                        setClients((prev: any[]) => [...prev, newClient]);
-                        setQuoteDetail((prev: any) => prev ? { ...prev, clientId: newClient.id, client: newClient.name } : prev);
-                      } else if (cid) {
-                        const found = clients.find((c: any) => c.id === cid);
-                        setQuoteDetail((prev: any) => prev ? { ...prev, clientId: cid, client: found?.name || prev.client } : prev);
-                      } else {
-                        setQuoteDetail((prev: any) => prev ? { ...prev, clientId: undefined } : prev);
-                      }
-                    }}
-                    className="border rounded-md px-2 py-1 text-sm flex-1"
-                  >
-                    <option value="">-- Saisie libre --</option>
-                    {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    <option value="__new__">+ Nouveau client…</option>
-                  </select>
-                </div>
-                <div className="grid md:grid-cols-2 gap-2">
-                  <Input
-                    value={quoteDetail.client || ""}
-                    onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, client: e.target.value } : prev))}
-                    placeholder="Nom du client (texte libre)"
-                  />
-                  <Input
-                    value={quoteDetail.amount ?? ""}
-                    onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, amount: e.target.value } : prev))}
-                    placeholder="Montant (€)"
-                  />
-                </div>
+              <div className="grid md:grid-cols-2 gap-2">
+                <Input
+                  value={quoteDetail.client || ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, client: e.target.value } : prev))}
+                  placeholder="Nom du client"
+                />
+                <Input
+                  value={quoteDetail.amount ?? ""}
+                  onChange={(e: any) => setQuoteDetail((prev: any) => (prev ? { ...prev, amount: e.target.value } : prev))}
+                  placeholder="Montant (€)"
+                />
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-neutral-600">Statut</span>
@@ -4932,122 +4797,6 @@ useEffect(() => {
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
 
       {/* === Dialogs Clients === */}
-      <Dialog open={clientDialogOpen} onOpenChange={setClientDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{editingClient ? "Modifier le client" : "Nouveau client"}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="Nom *" value={clientDraft.name} onChange={(e: any) => setClientDraft(p => ({ ...p, name: e.target.value }))} />
-            <div className="grid md:grid-cols-2 gap-2">
-              <Input placeholder="Contact principal" value={clientDraft.contactName} onChange={(e: any) => setClientDraft(p => ({ ...p, contactName: e.target.value }))} />
-              <Input placeholder="Téléphone" value={clientDraft.phone} onChange={(e: any) => setClientDraft(p => ({ ...p, phone: e.target.value }))} />
-              <Input placeholder="Email" value={clientDraft.email} onChange={(e: any) => setClientDraft(p => ({ ...p, email: e.target.value }))} className="md:col-span-2" />
-              <Input placeholder="Adresse" value={clientDraft.address} onChange={(e: any) => setClientDraft(p => ({ ...p, address: e.target.value }))} />
-              <Input placeholder="Ville" value={clientDraft.city} onChange={(e: any) => setClientDraft(p => ({ ...p, city: e.target.value }))} />
-            </div>
-            <Input placeholder="Taux journalier spécifique (€)" type="number" value={clientDraft.tauxJournalier} onChange={(e: any) => setClientDraft(p => ({ ...p, tauxJournalier: e.target.value }))} />
-            <Textarea placeholder="Notes internes" value={clientDraft.notes} onChange={(e: any) => setClientDraft(p => ({ ...p, notes: e.target.value }))} rows={3} />
-          </div>
-          <DialogFooter className="flex items-center justify-between">
-            {editingClient && (
-              <Button variant="destructive" onClick={() => {
-                if (confirm("Supprimer ce client ?")) { setClients(prev => prev.filter(c => c.id !== editingClient.id)); setClientDialogOpen(false); }
-              }}>Supprimer</Button>
-            )}
-            <div className="flex gap-2 ml-auto">
-              <Button variant="ghost" onClick={() => setClientDialogOpen(false)}>Annuler</Button>
-              <Button onClick={() => {
-                const normalized = normalizeClientRecord({ ...editingClient, ...clientDraft, tauxJournalier: clientDraft.tauxJournalier !== "" ? Number(clientDraft.tauxJournalier) : null });
-                if (!normalized.name.trim()) { alert("Le nom est requis"); return; }
-                if (editingClient) { setClients(prev => prev.map(c => c.id === editingClient.id ? normalized : c)); }
-                else { setClients(prev => [...prev, normalized]); }
-                setClientDialogOpen(false);
-              }}>Enregistrer</Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {clientFiche && (() => {
-        const c = clients.find((x: any) => x.id === clientFiche.id) || clientFiche;
-        const clientQuotes = safeQuotes.filter((q: any) => q.clientId === c.id);
-        const wonQuotes = clientQuotes.filter((q: any) => q.status === "won");
-        const ca = wonQuotes.reduce((s: number, q: any) => s + (q.amount || 0), 0);
-        const clientSites = safeSites.filter((s: any) => s.clientId === c.id);
-        return (
-          <Dialog open={!!clientFiche} onOpenChange={(v) => { if (!v) setClientFiche(null); }}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {c.name}
-                  <span className={cx("text-xs font-normal px-2 py-0.5 rounded-full", wonQuotes.length > 0 ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500")}>
-                    {wonQuotes.length > 0 ? "Actif" : "Prospect"}
-                  </span>
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-3 text-sm">
-                  {c.contactName && <div><span className="text-neutral-500 text-xs">Contact</span><div>{c.contactName}</div></div>}
-                  {c.phone && <div><span className="text-neutral-500 text-xs">Téléphone</span><div>{c.phone}</div></div>}
-                  {c.email && <div><span className="text-neutral-500 text-xs">Email</span><div>{c.email}</div></div>}
-                  {c.address && <div><span className="text-neutral-500 text-xs">Adresse</span><div>{c.address}</div></div>}
-                  {c.city && <div><span className="text-neutral-500 text-xs">Ville</span><div>{c.city}</div></div>}
-                  {c.tauxJournalier != null && <div><span className="text-neutral-500 text-xs">Taux journalier</span><div className="font-semibold">{formatEUR(c.tauxJournalier)}/j</div></div>}
-                </div>
-                {c.notes && <div className="text-sm text-neutral-600 bg-neutral-50 rounded-lg p-3">{c.notes}</div>}
-                <div className="flex items-center gap-4 text-sm font-semibold">
-                  <span>{wonQuotes.length} devis validé{wonQuotes.length > 1 ? "s" : ""}</span>
-                  {ca > 0 && <span className="text-emerald-700">{formatEUR(ca)} CA</span>}
-                  <span>{clientSites.length} chantier{clientSites.length > 1 ? "s" : ""}</span>
-                </div>
-                <div className="flex border-b text-sm">
-                  {(["devis","chantiers"] as const).map(t => (
-                    <button key={t} onClick={() => setClientFicheTab(t)} className={cx("px-4 py-2 font-medium transition border-b-2", clientFicheTab === t ? "border-black text-black" : "border-transparent text-neutral-400 hover:text-neutral-600")}>
-                      {t === "devis" ? `Devis (${clientQuotes.length})` : `Chantiers (${clientSites.length})`}
-                    </button>
-                  ))}
-                </div>
-                {clientFicheTab === "devis" && (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {clientQuotes.length === 0 && <div className="text-sm text-neutral-500">Aucun devis lié à ce client.</div>}
-                    {clientQuotes.map((q: any) => (
-                      <div key={q.id} className="rounded-lg border border-neutral-200 px-3 py-2 flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-sm">{q.title}</div>
-                          {q.amount && <div className="text-xs text-neutral-500">{formatEUR(q.amount)}</div>}
-                        </div>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">{QUOTE_COLUMNS.find((col: any) => col.id === q.status)?.label || q.status}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {clientFicheTab === "chantiers" && (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {clientSites.length === 0 && <div className="text-sm text-neutral-500">Aucun chantier lié à ce client.</div>}
-                    {clientSites.map((s: any) => (
-                      <div key={s.id} className="rounded-lg border border-neutral-200 px-3 py-2 flex items-center gap-3">
-                        <span className={cx("w-3 h-3 rounded-full border flex-shrink-0", s.color || "bg-neutral-300")} />
-                        <div>
-                          <div className="font-medium text-sm">{s.name}</div>
-                          <div className="text-xs text-neutral-500">{formatWeeksSummary(s.planningWeeks || [])}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => {
-                  setEditingClient(c);
-                  setClientDraft({ name: c.name, contactName: c.contactName, phone: c.phone, email: c.email, address: c.address, city: c.city, notes: c.notes, tauxJournalier: c.tauxJournalier != null ? String(c.tauxJournalier) : "" });
-                  setClientDialogOpen(true);
-                  setClientFiche(null);
-                }}>Modifier</Button>
-                <Button variant="ghost" onClick={() => setClientFiche(null)}>Fermer</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        );
-      })()}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>

@@ -261,6 +261,7 @@ export const normalizeSiteRecord = (site: any) => {
     contactName:
       (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
     contactPhone: (base as any)?.contactPhone || "",
+    tauxMateriel: Number.isFinite(Number((base as any)?.tauxMateriel)) ? Number((base as any).tauxMateriel) : null,
   };
 };
 
