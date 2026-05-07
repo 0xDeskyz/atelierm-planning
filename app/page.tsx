@@ -37,371 +37,85 @@ import {
   Users,
 } from "lucide-react";
 
-// ================= UI maison (Tailwind)
-const cx = (...cls: (string | false | null | undefined)[]) => cls.filter(Boolean).join(" ");
-
-function Button({ children, className = "", variant = "default", size = "md", ...props }: any) {
-  const base = "inline-flex items-center justify-center rounded-md font-medium transition focus:outline-none disabled:opacity-50 disabled:pointer-events-none";
-  const variants: Record<string, string> = {
-    default: "bg-black text-white hover:bg-black/90",
-    outline: "border border-neutral-300 hover:bg-neutral-50",
-    ghost: "hover:bg-neutral-100",
-  };
-  const sizes: Record<string, string> = { sm: "h-8 px-3 text-sm", md: "h-9 px-4 text-sm", icon: "h-9 w-9" };
-  return (
-    <button className={cx(base, variants[variant] || variants.default, sizes[size] || sizes.md, className)} {...props}>
-      {children}
-    </button>
-  );
-}
-function Card({ children, className = "" }: any) {
-  return <div className={cx("border rounded-xl bg-white", className)}>{children}</div>;
-}
-function CardContent({ children, className = "" }: any) {
-  return <div className={cx("p-4", className)}>{children}</div>;
-}
-function Input(props: any) {
-  return (
-    <input
-      {...props}
-      className={cx(
-        "w-full h-9 px-3 rounded-md border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-sky-400",
-        props.className
-      )}
-    />
-  );
-}
-function Textarea(props: any) {
-  return (
-    <textarea
-      {...props}
-      className={cx(
-        "w-full min-h-28 p-3 rounded-md border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-sky-400",
-        props.className
-      )}
-    />
-  );
-}
-
-// Tabs
-const TabsCtx = React.createContext<{ value: string; onValueChange: (v: string) => void } | null>(null);
-function Tabs({ value, onValueChange, children }: any) {
-  return <TabsCtx.Provider value={{ value, onValueChange }}>{children}</TabsCtx.Provider>;
-}
-function TabsList({ children, className = "" }: any) {
-  return (
-    <div role="tablist" aria-label="Vues" className={cx("inline-flex gap-1 bg-neutral-100 p-1 rounded-lg", className)}>
-      {children}
-    </div>
-  );
-}
-function TabsTrigger({ value, children }: any) {
-  const ctx = (React.useContext(TabsCtx) || { value: undefined, onValueChange: () => {} }) as any;
-  const active = ctx.value === value;
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={() => ctx.onValueChange(value)}
-      className={cx("px-3 py-1.5 rounded-md text-sm", active ? "bg-white shadow text-black" : "text-neutral-600 hover:bg-white/70")}
-    >
-      {children}
-    </button>
-  );
-}
-
-// Dialog (basique)
-function Dialog({ open, onOpenChange, children }: any) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange?.(false)} />
-      {children}
-    </div>
-  );
-}
-function DialogContent({ children, className = "" }: any) {
-  const arr = React.Children.toArray(children);
-  const header = arr.find((c: any) => c?.type === DialogHeader);
-  const footer = arr.find((c: any) => c?.type === DialogFooter);
-  const body = arr.filter((c: any) => c?.type !== DialogHeader && c?.type !== DialogFooter);
-  const footerChildren = (footer as any)?.props?.children;
-  return (
-    <div className={cx("relative z-10 w-full max-w-lg rounded-xl bg-white shadow-lg flex flex-col max-h-[90vh]", className)}>
-      {header && (
-        <div className="px-5 pt-5 pb-3 shrink-0">
-          {(header as any)?.props?.children}
-        </div>
-      )}
-      <div className="overflow-y-auto flex-1 min-h-0 px-5 pb-3 space-y-3">
-        {body}
-      </div>
-      {footer && (
-        <div className="px-5 py-3 shrink-0 border-t border-neutral-100 flex flex-col gap-2">
-          {footerChildren}
-        </div>
-      )}
-    </div>
-  );
-}
-function DialogHeader({ children }: any) { return null; }
-function DialogTitle({ children }: any) {
-  return <div className="text-lg font-semibold">{children}</div>;
-}
-function DialogDescription({ children, className = "" }: any) {
-  return <p className={cx("text-sm text-neutral-500 mt-0.5", className)}>{children}</p>;
-}
-function DialogFooter({ children, className = "" }: any) { return null; }
-
-// ==================================
-// Constantes & Démo
-// ==================================
-// Palette triée arc-en-ciel : rouge → orange → jaune → vert → cyan → bleu → indigo → violet → rose → neutres
-const COLORS = [
-  // Rouges
-  "bg-red-400", "bg-red-500", "bg-red-600",
-  "bg-rose-400", "bg-rose-500", "bg-rose-600",
-  // Oranges
-  "bg-orange-400", "bg-orange-500", "bg-orange-600",
-  "bg-amber-400", "bg-amber-500", "bg-amber-600",
-  // Jaunes
-  "bg-yellow-400", "bg-yellow-500",
-  // Limes / Verts
-  "bg-lime-400", "bg-lime-500",
-  "bg-green-400", "bg-green-500", "bg-green-600",
-  "bg-emerald-400", "bg-emerald-500", "bg-emerald-600",
-  // Teals / Cyans
-  "bg-teal-400", "bg-teal-500",
-  "bg-cyan-400", "bg-cyan-500",
-  // Bleus
-  "bg-sky-400", "bg-sky-500",
-  "bg-blue-400", "bg-blue-500", "bg-blue-600",
-  // Indigos / Violets
-  "bg-indigo-400", "bg-indigo-500",
-  "bg-violet-400", "bg-violet-500",
-  "bg-purple-400", "bg-purple-500",
-  // Fuchsia / Roses
-  "bg-fuchsia-400", "bg-fuchsia-500",
-  "bg-pink-400", "bg-pink-500",
-  // Neutres
-  "bg-slate-400", "bg-slate-500", "bg-slate-600",
-  "bg-zinc-500", "bg-neutral-600",
-];
-const SITE_COLORS = COLORS;
-
-function ColorPicker({ value, onChange, usedColors = [] }: { value: string; onChange: (c: string) => void; usedColors?: string[] }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {COLORS.map((c) => {
-        const isSelected = value === c;
-        const isTaken = !isSelected && usedColors.includes(c);
-        return (
-          <button
-            key={c}
-            type="button"
-            onClick={() => onChange(c)}
-            aria-label={`Couleur${isTaken ? " (déjà utilisée)" : ""}`}
-            title={isTaken ? "Déjà utilisée" : undefined}
-            className={cx(
-              "relative w-6 h-6 rounded-full border transition-transform",
-              c,
-              isSelected ? "ring-2 ring-offset-1 ring-black border-black scale-110" : "border-transparent hover:scale-110",
-              isTaken ? "opacity-35" : ""
-            )}
-          >
-            {isTaken && (
-              <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <span className="w-1.5 h-1.5 rounded-full bg-white/80 ring-1 ring-black/20" />
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Pastels (3 options) pour mini post-it & surlignage
-const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
-  mint: { bg: "bg-green-100", ring: "ring-green-200", text: "text-green-900" },
-  sky: { bg: "bg-sky-100", ring: "ring-sky-200", text: "text-sky-900" },
-  peach: { bg: "bg-orange-100", ring: "ring-orange-200", text: "text-orange-900" },
-};
-
-// ==================================
-// Date Helpers (ISO week, local time, Lun->Ven)
-// ==================================
-const pad2 = (n: number) => String(n).padStart(2, "0");
-const toLocalKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-function startOfISOWeekLocal(d: Date) {
-  const c = new Date(d);
-  const day = (c.getDay() + 6) % 7;
-  c.setDate(c.getDate() - day);
-  c.setHours(0, 0, 0, 0);
-  return c;
-}
-function getWeekDatesLocal(anchor: Date) {
-  const start = startOfISOWeekLocal(anchor);
-  return Array.from({ length: 7 }, (_, i) => {
-    const dd = new Date(start);
-    dd.setDate(start.getDate() + i);
-    return dd;
-  });
-}
-function getISOWeekAndYear(date: Date) {
-  const tmp = new Date(date);
-  tmp.setHours(0, 0, 0, 0);
-  const day = (tmp.getDay() + 6) % 7;
-  tmp.setDate(tmp.getDate() - day + 3);
-  const isoYear = tmp.getFullYear();
-  const jan4 = new Date(isoYear, 0, 4);
-  const jan4Day = (jan4.getDay() + 6) % 7;
-  const week1Start = new Date(jan4);
-  week1Start.setDate(jan4.getDate() - jan4Day);
-  const diffMs = tmp.getTime() - week1Start.getTime();
-  const week = 1 + Math.floor(diffMs / (7 * 24 * 3600 * 1000));
-  return { week, isoYear };
-}
-const getISOWeek = (d: Date) => getISOWeekAndYear(d).week;
-const getISOWeekYear = (d: Date) => getISOWeekAndYear(d).isoYear;
-const weekKeyOf = (d: Date) => `${getISOWeekYear(d)}-W${pad2(getISOWeek(d))}`;
-const getISOWeeksInYear = (year: number) => getISOWeek(new Date(year, 11, 28));
-const getISOWeekStart = (year: number, weekNum: number) => {
-  const jan4 = new Date(year, 0, 4);
-  const jan4Day = (jan4.getDay() + 6) % 7;
-  const week1Start = new Date(jan4);
-  week1Start.setDate(jan4.getDate() - jan4Day);
-  const weekStart = new Date(week1Start);
-  weekStart.setDate(week1Start.getDate() + (weekNum - 1) * 7);
-  weekStart.setHours(0, 0, 0, 0);
-  return weekStart;
-};
-const parseWeekKey = (wk: string) => {
-  const match = wk.match(/^(\d{4})-W(\d{1,2})$/i);
-  if (!match) return null;
-  return { year: Number(match[1]), week: Number(match[2]) };
-};
-const getWeekRangeFromKeys = (weekKeys: string[]) => {
-  const parsed = weekKeys
-    .map(parseWeekKey)
-    .filter(Boolean) as { year: number; week: number }[];
-  if (parsed.length === 0) return null;
-  parsed.sort((a, b) => (a.year - b.year) || (a.week - b.week));
-  const start = getISOWeekStart(parsed[0].year, parsed[0].week);
-  const end = getISOWeekStart(parsed[parsed.length - 1].year, parsed[parsed.length - 1].week);
-  const endDate = new Date(end);
-  endDate.setDate(endDate.getDate() + 6);
-  return { startKey: toLocalKey(start), endKey: toLocalKey(endDate) };
-};
-function getMonthWeeks(anchor: Date) {
-  const firstDay = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  const weeks: Date[][] = [];
-  let start = startOfISOWeekLocal(firstDay);
-
-  while (true) {
-    const week = Array.from({ length: 7 }, (_, i) => {
-      const dd = new Date(start);
-      dd.setDate(start.getDate() + i);
-      return dd;
-    });
-
-    const overlapsMonth = week.some((d) => d.getMonth() === firstDay.getMonth());
-    if (!overlapsMonth && start > lastDay) break;
-    if (overlapsMonth) weeks.push(week);
-
-    start = new Date(start);
-    start.setDate(start.getDate() + 7);
-  }
-
-  return weeks;
-}
-const startOfMonthLocal = (d: Date) => {
-  const dt = new Date(d.getFullYear(), d.getMonth(), 1);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const endOfMonthLocal = (d: Date) => {
-  const dt = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const startOfQuarterLocal = (d: Date) => {
-  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
-  const dt = new Date(d.getFullYear(), quarterStartMonth, 1);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const endOfQuarterLocal = (d: Date) => {
-  const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
-  const dt = new Date(d.getFullYear(), quarterStartMonth + 3, 0);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const startOfYearLocal = (year: number) => {
-  const dt = new Date(year, 0, 1);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const endOfYearLocal = (year: number) => {
-  const dt = new Date(year, 12, 0);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-
-// ── Jours fériés français ────────────────────────────────────────────────────
-function getEasterDate(year: number): Date {
-  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
-  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4), k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return new Date(year, month - 1, day);
-}
-
-function getFrenchHolidays(year: number): Map<string, string> {
-  const map = new Map<string, string>();
-  const add = (d: Date, name: string) => map.set(toLocalKey(d), name);
-  const d = (m: number, day: number) => new Date(year, m - 1, day);
-  const easter = getEasterDate(year);
-  const addDays = (base: Date, n: number) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + n);
-
-  add(d(1, 1), "Jour de l'an");
-  add(addDays(easter, 1), "Lundi de Pâques");
-  add(d(5, 1), "Fête du Travail");
-  add(d(5, 8), "Victoire 1945");
-  add(addDays(easter, 39), "Ascension");
-  add(addDays(easter, 50), "Lundi de Pentecôte");
-  add(d(7, 14), "Fête Nationale");
-  add(d(8, 15), "Assomption");
-  add(d(11, 1), "Toussaint");
-  add(d(11, 11), "Armistice");
-  add(d(12, 25), "Noël");
-  return map;
-}
-
-function getFrenchHolidaysWithBridges(year: number): Map<string, string> {
-  const holidays = getFrenchHolidays(year);
-  const result = new Map(holidays);
-  holidays.forEach((_name, key) => {
-    const [y, m, day] = key.split("-").map(Number);
-    const date = new Date(y, m - 1, day);
-    const dow = date.getDay(); // 0=Sun, 1=Mon…
-    if (dow === 2) { // Mardi → Lundi est un pont
-      const bridge = new Date(y, m - 1, day - 1);
-      if (!result.has(toLocalKey(bridge))) result.set(toLocalKey(bridge), "Pont");
-    }
-    if (dow === 4) { // Jeudi → Vendredi est un pont
-      const bridge = new Date(y, m - 1, day + 1);
-      if (!result.has(toLocalKey(bridge))) result.set(toLocalKey(bridge), "Pont");
-    }
-  });
-  return result;
-}
-// ─────────────────────────────────────────────────────────────────────────────
+// ================= Modules extraits
+import {
+  COLORS,
+  SITE_COLORS,
+  PASTELS,
+  DEFAULT_EVENT_CALENDARS,
+  QUOTE_COLUMNS,
+  QUOTE_TONES,
+  EVENT_TYPES,
+  EVENT_CELL_STYLE,
+  ABSENCE_TYPES,
+  ABSENCE_COLORS,
+  ABSENCE_LABELS,
+  ABSENCE_BADGE,
+} from "../lib/planner/constants";
+import type { EventType, AbsenceType } from "../lib/planner/constants";
+import {
+  cx,
+  pad2,
+  toLocalKey,
+  startOfISOWeekLocal,
+  getWeekDatesLocal,
+  getISOWeekAndYear,
+  getISOWeek,
+  getISOWeekYear,
+  weekKeyOf,
+  getISOWeeksInYear,
+  getISOWeekStart,
+  parseWeekKey,
+  getWeekRangeFromKeys,
+  getMonthWeeks,
+  startOfMonthLocal,
+  endOfMonthLocal,
+  startOfQuarterLocal,
+  endOfQuarterLocal,
+  startOfYearLocal,
+  endOfYearLocal,
+  getEasterDate,
+  getFrenchHolidays,
+  getFrenchHolidaysWithBridges,
+  normalizePersonRecord,
+  normalizeSiteRecord,
+  normalizeQuoteRecord,
+  isDateWithin,
+  cellKey,
+  mapWeekDates,
+  fromLocalKey,
+  hashString,
+  parseWeekList,
+  getSiteDateRange,
+  formatWeeksSummary,
+  getQuoteWeekRange,
+  toArray,
+  ensureId,
+  formatFR,
+  formatEUR,
+  getPortion,
+  debounce,
+} from "../lib/planner/helpers";
+import {
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Textarea,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsCtx,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  ColorPicker,
+} from "../components/planner/ui";
+import { PersonChip, AssignmentChip } from "../components/planner/chips";
+import { DayCell, HoursCell } from "../components/planner/cells";
 
 const todayKey = toLocalKey(new Date());
 const nextMonthKey = (() => {
@@ -409,23 +123,6 @@ const nextMonthKey = (() => {
   d.setMonth(d.getMonth() + 1);
   return toLocalKey(d);
 })();
-
-const normalizePersonRecord = (p: any) => ({
-  id:
-    typeof p?.id === "string"
-      ? p.id
-      : typeof crypto !== "undefined" && (crypto as any).randomUUID
-      ? (crypto as any).randomUUID()
-      : `p${Date.now()}`,
-  name: typeof p?.name === "string" ? p.name : "",
-  color: typeof p?.color === "string" ? p.color : COLORS[0],
-  role: typeof p?.role === "string" ? p.role : "",
-  phone: typeof p?.phone === "string" ? p.phone : "",
-  email: typeof p?.email === "string" ? p.email : "",
-  notes: typeof p?.notes === "string" ? p.notes : "",
-  skills: Array.isArray(p?.skills) ? p.skills.map(String) : [],
-  status: ["active","disabled","archived"].includes(p?.status) ? p.status : "active" as "active" | "disabled" | "archived",
-});
 
 const DEMO_PEOPLE = [
   normalizePersonRecord({ id: "p1", name: "Ali", color: "bg-rose-500", role: "Chef de chantier" }),
@@ -436,362 +133,13 @@ const DEMO_SITES = [
   { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
   { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
 ];
-const DEFAULT_EVENT_CALENDARS = [
-  { id: "cal-planned", name: "Chantiers planifiés", color: "bg-sky-500", visible: true, isDefault: true },
-  { id: "cal-pending", name: "Chantiers non planifiés", color: "bg-amber-500", visible: true, isDefault: true },
-  { id: "cal-leave", name: "Congés payés", color: "bg-rose-500", visible: true, isDefault: true },
-  { id: "cal-availability", name: "Disponibilités", color: "bg-black", visible: true, isDefault: true },
-];
-const QUOTE_COLUMNS = [
-  { id: "todo", label: "À réaliser", hint: "Devis à préparer", tone: "sky" },
-  { id: "draft", label: "Préparé, pas envoyé", hint: "Brouillons prêts", tone: "amber" },
-  { id: "pending", label: "En attente de réponse", hint: "Envoyé au client", tone: "indigo" },
-  { id: "won", label: "Validé", hint: "Accepté", tone: "emerald" },
-  { id: "lost", label: "Refusé", hint: "Avec motif optionnel", tone: "rose" },
-];
-const QUOTE_TONES: Record<string, { bg: string; border: string; text: string; chip: string }> = {
-  sky: { bg: "bg-sky-50", border: "border-sky-200", text: "text-sky-800", chip: "bg-sky-500" },
-  amber: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-800", chip: "bg-amber-500" },
-  indigo: { bg: "bg-indigo-50", border: "border-indigo-200", text: "text-indigo-800", chip: "bg-indigo-500" },
-  emerald: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-800", chip: "bg-emerald-500" },
-  rose: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-800", chip: "bg-rose-500" },
-};
+// (DEFAULT_EVENT_CALENDARS, QUOTE_COLUMNS, QUOTE_TONES imported from lib/planner/constants)
 const DEMO_QUOTES = [
   { id: "q1", title: "Extension maison", client: "Mme Diallo", amount: 12000, status: "todo", planningWeeks: [weekKeyOf(new Date())] },
   { id: "q2", title: "Rénovation bureau", client: "Société Nova", amount: 18500, status: "draft", note: "Attente métrés" },
   { id: "q3", title: "Création terrasse", client: "M. Karim", amount: 7600, status: "pending", sentAt: todayKey },
   { id: "q4", title: "Salle de réunion", client: "Startup Hexa", amount: 9200, status: "won", sentAt: todayKey },
 ];
-const isDateWithin = (date: Date, start: Date, end: Date) => date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
-const cellKey = (siteId: string, dateKey: string) => `${siteId}|${dateKey}`;
-const mapWeekDates = (src: Date[], dest: Date[]) => {
-  const len = Math.min(src.length, dest.length);
-  const result: Record<string, string> = {};
-  for (let i = 0; i < len; i++) {
-    result[toLocalKey(src[i])] = toLocalKey(dest[i]);
-  }
-  return result;
-};
-const fromLocalKey = (key: string) => {
-  const [y, m, d] = key.split("-").map(Number);
-  const dt = new Date(y || 0, (m || 1) - 1, d || 1);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-};
-const hashString = (s: string) => {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  }
-  return h;
-};
-const parseWeekList = (input: string, fallbackYear: number) => {
-  const tokens = input
-    .split(/[,\s;]+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  const weeks = new Set<string>();
-  tokens.forEach((token) => {
-    const isoMatch = token.match(/^(\d{4})-W(\d{1,2})$/i);
-    if (isoMatch) {
-      const num = Number(isoMatch[2]);
-      if (num >= 1 && num <= 54) weeks.add(`${isoMatch[1]}-W${pad2(num)}`);
-      return;
-    }
-    const short = token.match(/^s?(\d{1,2})$/i);
-    if (short) {
-      const num = Number(short[1]);
-      if (num >= 1 && num <= 54) weeks.add(`${fallbackYear}-W${pad2(num)}`);
-    }
-  });
-  return Array.from(weeks);
-};
-const getSiteDateRange = (site: any, fallbackKey: string) => {
-  const planningWeeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
-  const derived = planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
-  const startKey = derived?.startKey || site?.startDate || fallbackKey;
-  const endKey = derived?.endKey || site?.endDate || site?.startDate || fallbackKey;
-  return { startKey, endKey };
-};
-const formatWeeksSummary = (weeks: string[]) => {
-  if (!weeks || weeks.length === 0) return "Toutes les semaines";
-  const parsed = weeks
-    .map(parseWeekKey)
-    .filter(Boolean) as { year: number; week: number }[];
-  if (parsed.length === 0) return "Toutes les semaines";
-  parsed.sort((a, b) => (a.year - b.year) || (a.week - b.week));
-  const first = parsed[0];
-  const last = parsed[parsed.length - 1];
-  if (first.year === last.year) {
-    if (first.week === last.week) return `S${pad2(first.week)} • ${first.year}`;
-    return `S${pad2(first.week)} → S${pad2(last.week)} • ${first.year}`;
-  }
-  return `S${pad2(first.week)} ${first.year} → S${pad2(last.week)} ${last.year}`;
-};
-const getQuoteWeekRange = (quote: any) => {
-  const planningWeeks = Array.isArray(quote?.planningWeeks) ? quote.planningWeeks : [];
-  return planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
-};
-const toArray = (val: any, fallback: any[] = []) => (Array.isArray(val) ? val : fallback);
-const ensureId = (seed: string, prefix: string) => {
-  if (seed) return `${prefix}-${seed}`;
-  if (typeof crypto !== "undefined" && (crypto as any).randomUUID) {
-    return (crypto as any).randomUUID();
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
-
-const normalizeSiteRecord = (site: any) => {
-  const base = typeof site === "object" && site !== null ? site : {};
-  const start = (base as any)?.startDate || toLocalKey(new Date());
-  const end = (base as any)?.endDate || start;
-  const colorIndex = hashString(String((base as any)?.id || (base as any)?.name || start)) % SITE_COLORS.length;
-  const color = (base as any)?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
-  const status = (base as any)?.status === "archived" ? "archived" : (base as any)?.status === "pending" ? "pending" : "planned";
-  const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
-  return {
-    ...base,
-    id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),
-    startDate: start,
-    endDate: end,
-    color,
-    status,
-    planningWeeks,
-    city: (base as any)?.city?.trim?.() || (base as any)?.city || (base as any)?.cityOrPostal || "",
-    address: (base as any)?.address?.trim?.() || (base as any)?.address || "",
-    clientName: (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
-    contactName:
-      (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
-    contactPhone: (base as any)?.contactPhone || "",
-  };
-};
-// Helper format FR (jour mois année)
-function formatFR(d: Date, withWeekday: boolean = false): string {
-  try {
-    const opts: Intl.DateTimeFormatOptions = withWeekday
-      ? { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }
-      : { day: '2-digit', month: 'long', year: 'numeric' };
-    return d.toLocaleDateString('fr-FR', opts);
-  } catch {
-    // Fallback minimal si locale indispo
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }
-}
-const formatEUR = (val?: number) => {
-  if (!Number.isFinite(val)) return "";
-  try {
-    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(val || 0);
-  } catch {
-    return `${val} €`;
-  }
-};
-const normalizeQuoteRecord = (quote: any) => {
-  const base = typeof quote === "object" && quote !== null ? quote : {};
-  const todayKeyLocal = toLocalKey(new Date());
-  const status = (base as any)?.status || "todo";
-  const amountNum = Number((base as any)?.amount);
-  const id = (base as any)?.id || ensureId(String((base as any)?.title || (base as any)?.client || Date.now()), "quote");
-  const patch: any = {
-    ...base,
-    id,
-    title: (base as any)?.title?.trim?.() || "Nouveau devis",
-    client: (base as any)?.client?.trim?.() || undefined,
-    note: (base as any)?.note?.trim?.() || undefined,
-    amount: Number.isFinite(amountNum) ? amountNum : undefined,
-    status,
-    address: (base as any)?.address?.trim?.() || undefined,
-    city: (base as any)?.city?.trim?.() || (base as any)?.cityOrPostal || undefined,
-    contactName: (base as any)?.contactName?.trim?.() || (base as any)?.client || undefined,
-    contactPhone: (base as any)?.contactPhone?.trim?.() || undefined,
-    planningWeeks: Array.isArray((base as any)?.planningWeeks) ? (base as any)?.planningWeeks : [],
-  };
-
-  if ((status === "pending" || status === "won") && !quote?.sentAt) {
-    patch.sentAt = todayKeyLocal;
-  }
-  if (status !== "lost") {
-    patch.reason = undefined;
-  }
-
-  return patch;
-};
-// Debounce helper for throttling remote saves
-function debounce<T extends (...args:any[])=>void>(fn: T, ms=600) {
-  let t: any;
-  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
-
-// ==================================
-// Draggable Person Chip
-// ==================================
-function PersonChip({ person }: any) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: "none" }
-    : { touchAction: "none" };
-  const initials = person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
-  return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes}
-      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs shadow cursor-grab hover:brightness-110 transition", person.color || "bg-neutral-500")}
-    >
-      <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center font-semibold text-[10px] shrink-0">{initials}</span>
-      <span className="font-medium">{person.name}</span>
-    </div>
-  );
-}
-
-// ==================================
-// Assignment chip (draggable)
-// ==================================
-const getPortion = (val: any) => {
-  const portion = Number(val ?? 1);
-  return Number.isFinite(portion) && portion > 0 ? portion : 1;
-};
-
-function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `assign-${a.id}`,
-    data: { type: "assignment", assignmentId: a.id, personId: a.personId, from: { siteId: a.siteId, dateKey: a.date } },
-  });
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 5, touchAction: "none" }
-    : { touchAction: "none" };
-  const portion = getPortion(a.portion);
-  const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
-  const parsedHours = Number(a.hours);
-  const hours = hasCustomHours && Number.isFinite(parsedHours) ? parsedHours : baseHours * portion;
-  const extraLabel = (() => {
-    if (hasCustomHours) return `${hours || 0}h`;
-    if (portion !== 1) return portion === 0.5 ? "½j" : `${portion}j`;
-    return null;
-  })();
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={cx(
-        "pl-1 pr-2 py-0.5 rounded-full text-white text-xs flex items-center gap-1.5 select-none transition",
-        person.color || "bg-neutral-500",
-        isDragging ? "opacity-80 ring-2 ring-black/30" : "hover:brightness-105",
-        conflict ? "ring-2 ring-amber-400" : ""
-      )}
-      title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} j.` : person.name}
-    >
-      <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center font-bold text-[9px] shrink-0">
-        {person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
-      </span>
-      <span className="font-medium leading-none">{person.name.split(" ")[0]}</span>
-      {extraLabel && <span className="text-[10px] px-1 py-0.5 rounded-full bg-black/25">{extraLabel}</span>}
-      {conflict && <span className="text-[10px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-900">!</span>}
-      <button className="w-3.5 h-3.5 rounded-full bg-black/25 hover:bg-black/50 text-white flex items-center justify-center shrink-0 leading-none" title="Retirer" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
-    </div>
-  );
-}
-
-// ==================================
-// Droppable Cell (Day x Site)
-// ==================================
-const ABSENCE_BADGE: Record<string, string> = { CP: "bg-amber-400", MAL: "bg-red-400", OFF: "bg-slate-400" };
-
-function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
-  const id = `cell-${site.id}-${toLocalKey(date)}`;
-  const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
-  const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
-  const key = cellKey(site.id, toLocalKey(date));
-  const raw = notes[key];
-  const meta = typeof raw === "string" ? { text: raw } : (raw || {});
-  const pastel = meta.highlight && PASTELS[meta.highlight] ? meta.highlight : null;
-  const status = meta.holiday ? "holiday" : (meta.blocked ? "blocked" : null);
-  const unavailable = Boolean(status);
-  const hoursLabel = meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" ? `${meta.hoursOverride}h` : null;
-  const baseHours = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
-
-  return (
-    <div
-      className={cx(
-        "border min-h-20 p-2 rounded-xl bg-white",
-        isOver ? "ring-2 ring-sky-400" : "",
-        status === "holiday"
-          ? "bg-red-50 ring-2 ring-red-300 border-red-200"
-          : status === "blocked"
-          ? "bg-sky-50 ring-2 ring-sky-300 border-sky-200"
-          : pastel
-          ? `${PASTELS[pastel].bg} ${PASTELS[pastel].ring} ring-2`
-          : "border-neutral-200",
-        unavailable ? "opacity-90" : ""
-      )}
-      ref={setNodeRef}
-      title={meta.text || ""}
-    >
-      {/* Top bar */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 font-medium">{publicHoliday === "Pont" ? "🌉 Pont" : `🎌 ${publicHoliday}`}</div>)}
-          {meta.holiday && !publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-medium">🏖 Non travaillé</div>)}
-          {meta.blocked && !meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 font-medium">🚧 Indisponible</div>)}
-          {meta.eventType && (() => {
-            const et = EVENT_TYPES.find((e) => e.id === meta.eventType);
-            return et ? (
-              <div className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>
-                {et.icon} {et.label}{meta.text ? ` · ${meta.text}` : ""}
-              </div>
-            ) : null;
-          })()}
-          {!meta.eventType && meta.text && (
-            <div className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200 max-w-[80%] truncate" title={meta.text}>
-              📝 {meta.text}
-            </div>
-          )}
-          {hoursLabel && (
-            <div className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200" title="Heures spécifiques">
-              ⏱ {hoursLabel}
-            </div>
-          )}
-        </div>
-        <div className="text-[11px] text-neutral-400 shrink-0 ml-1">{date.getDate()}</div>
-      </div>
-
-      {/* Assignments list */}
-      <div className="flex flex-wrap gap-1.5">
-        {todays.map((a: any) => {
-          const p = people.find((pp: any) => pp.id === a.personId);
-          const conflictKey = `${a.personId}|${a.date}`;
-          const conflict = (conflictMap?.[conflictKey] || 0) > 1;
-          const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
-          return p ? (
-            <div key={a.id} className="flex items-center gap-1">
-              <AssignmentChip
-                a={a}
-                person={p}
-                onRemove={() => onRemoveAssignment(a.id)}
-                baseHours={baseHours}
-                conflict={conflict}
-              />
-              {absence && (
-                <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
-                  {absence}
-                </span>
-              )}
-            </div>
-          ) : null;
-        })}
-      </div>
-
-      {/* Edit button */}
-      <div className="mt-1.5 flex justify-end">
-        <button onClick={() => onEditNote(date, site)} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
-          <Edit3 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ==================================
 // Devis Kanban – Carte draggable
 // ==================================
@@ -909,93 +257,6 @@ function QuoteColumn({ col, items, onOpenQuote }: any) {
           >
             Afficher {hiddenCount} devis supplémentaires
           </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, onRemoveAssignment, getInfo }: any) {
-  const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
-  const key = cellKey(site.id, toLocalKey(date));
-  const raw = notes[key];
-  const meta = typeof raw === "string" ? { text: raw } : (raw || {});
-  const status = meta.holiday ? "holiday" : meta.blocked ? "blocked" : null;
-  const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay)) ? Number(meta.hoursOverride ?? hoursPerDay) : 0;
-  const unavailable = Boolean(status);
-
-  return (
-    <div
-      className={cx(
-        "border min-h-[6rem] p-3 rounded-xl bg-white",
-        status === "holiday"
-          ? "bg-red-50 ring-2 ring-red-300 border-red-200"
-          : status === "blocked"
-          ? "bg-sky-50 ring-2 ring-sky-300 border-sky-200"
-          : "border-neutral-200"
-      )}
-      title={meta.text || ""}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-semibold text-neutral-700">{date.getDate()}</span>
-          {meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">🏖 Non travaillé</span>}
-          {meta.blocked && !meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">🚧 Indispo</span>}
-          {meta.eventType && (() => { const et = EVENT_TYPES.find((e) => e.id === meta.eventType); return et ? <span className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>{et.icon}</span> : null; })()}
-          {meta.text && !meta.eventType && <span className="text-[10px] text-neutral-400 truncate max-w-[80px]" title={meta.text}>{meta.text}</span>}
-        </div>
-        <button onClick={() => onEditNote(date, site)} className="opacity-30 hover:opacity-70 transition" title="Éditer">
-          <Edit3 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <div className="space-y-1.5">
-        {todays.map((a: any) => {
-          const p = people.find((pp: any) => pp.id === a.personId);
-          if (!p) return null;
-          const info = getInfo(a, meta);
-          const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
-          const isFullDay = info.portion === 1;
-          const isHalfDay = info.portion === 0.5;
-          return (
-            <div key={a.id} className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className={cx("w-2 h-2 rounded-full shrink-0", p.color || "bg-neutral-400")} />
-                <span className="text-xs font-medium truncate">{p.name.split(" ")[0]}</span>
-                {conflict && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 shrink-0">!</span>}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  disabled={unavailable}
-                  onClick={() => onUpdateAssignment(a.id, { portion: 1, hours: "" })}
-                  className={cx(
-                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
-                    isFullDay && !info.hasCustomHours
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
-                  )}
-                >J</button>
-                <button
-                  disabled={unavailable}
-                  onClick={() => onUpdateAssignment(a.id, { portion: 0.5, hours: "" })}
-                  className={cx(
-                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
-                    isHalfDay && !info.hasCustomHours
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
-                  )}
-                >½</button>
-                <button
-                  onClick={() => onRemoveAssignment(a.id)}
-                  className="h-7 w-7 rounded-lg border border-neutral-200 bg-white text-neutral-300 hover:border-red-300 hover:text-red-400 transition flex items-center justify-center text-sm"
-                  title="Retirer l'affectation"
-                >×</button>
-              </div>
-            </div>
-          );
-        })}
-        {todays.length === 0 && (
-          <div className="text-[11px] text-neutral-400 italic">Aucune affectation</div>
         )}
       </div>
     </div>
@@ -1621,21 +882,6 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
     </Dialog>
   );
 }
-
-const EVENT_TYPES = [
-  { id: "reunion", label: "Réunion", icon: "🗣", color: "bg-violet-100 text-violet-800 border-violet-200" },
-  { id: "livraison", label: "Livraison", icon: "🚚", color: "bg-sky-100 text-sky-800 border-sky-200" },
-  { id: "inspection", label: "Inspection", icon: "🔍", color: "bg-amber-100 text-amber-800 border-amber-200" },
-  { id: "autre", label: "Autre", icon: "📌", color: "bg-neutral-100 text-neutral-700 border-neutral-200" },
-] as const;
-type EventType = typeof EVENT_TYPES[number]["id"] | null;
-
-const EVENT_CELL_STYLE: Record<string, string> = {
-  reunion: "bg-violet-100 text-violet-800",
-  livraison: "bg-sky-100 text-sky-800",
-  inspection: "bg-amber-100 text-amber-800",
-  autre: "bg-neutral-100 text-neutral-700",
-};
 
 function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const initial = typeof value === "string" ? { text: value } : value || {};
@@ -2837,11 +2083,6 @@ export default function Page() {
     });
   };
 
-  const ABSENCE_TYPES = ["CP", "MAL", "OFF"] as const;
-  type AbsenceType = typeof ABSENCE_TYPES[number];
-  const ABSENCE_COLORS: Record<AbsenceType, string> = { CP: "bg-amber-400", MAL: "bg-red-400", OFF: "bg-slate-400" };
-  const ABSENCE_LABELS: Record<AbsenceType, string> = { CP: "Congé payé", MAL: "Maladie", OFF: "Jour off / RTT" };
-
   const getDayAbsence = (pid: string, dateKey: string): AbsenceType | null =>
     (absencesByDay[dateKey]?.[pid] as AbsenceType) || null;
 
@@ -3618,7 +2859,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
