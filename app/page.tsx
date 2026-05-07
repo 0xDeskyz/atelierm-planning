@@ -648,11 +648,11 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const moKnown = moByPerson.reduce((s: number, r: any) => s + (r.cout ?? 0), 0);
   const moUnknown = moByPerson.filter((r: any) => r.rate == null);
   const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
-  const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
-  const coutMateriel = moKnown * (tauxMat / 100);
-  const coutTotal = moKnown + coutMateriel + totalCouts;
   const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
   const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? 0);
+  const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
+  const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
+  const coutTotal = moKnown + coutMateriel + totalCouts;
   const marge = budget > 0 ? budget - coutTotal : null;
   const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
 
@@ -815,8 +815,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   placeholder={String(tauxMDefault)}
                   className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm text-right"
                 />
-                <span className="text-neutral-500">% → <strong>{formatEUR(coutMateriel)}</strong></span>
+                <span className="text-neutral-500">% du devis → <strong>{formatEUR(coutMateriel)}</strong></span>
                 {tauxMateriel === "" && <span className="text-[11px] text-neutral-400">(taux global : {tauxMDefault}%)</span>}
+                {budget === 0 && <span className="text-[11px] text-neutral-400">— pas de budget défini</span>}
               </div>
             </div>
 
@@ -874,7 +875,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
               <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Récapitulatif</div>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between"><span className="text-neutral-600">Main d'œuvre</span><span>{formatEUR(moKnown)}</span></div>
-                <div className="flex justify-between"><span className="text-neutral-600">Matériel ({tauxMat}%)</span><span>{formatEUR(coutMateriel)}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-600">Matériel ({tauxMat}% du devis)</span><span>{formatEUR(coutMateriel)}</span></div>
                 {couts.length > 0 && <div className="flex justify-between"><span className="text-neutral-600">Coûts divers</span><span>{formatEUR(totalCouts)}</span></div>}
                 <div className="flex justify-between font-semibold border-t pt-1"><span>Coût total estimé</span><span>{formatEUR(coutTotal)}</span></div>
                 {budget > 0 && (
@@ -2633,7 +2634,16 @@ export default function Page() {
 // Persistance serveur (Vercel Blob) + cache local
 // ==========================
   const applyState = useCallback((state: any) => {
-    setPeople(toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord));
+    setPeople(prev => {
+      const incoming = toArray(state.people, DEMO_PEOPLE).map(normalizePersonRecord);
+      return incoming.map((p: any) => {
+        const existing = prev.find((x: any) => x.id === p.id);
+        if (existing && p.tauxJournalier == null && existing.tauxJournalier != null) {
+          return { ...p, tauxJournalier: existing.tauxJournalier };
+        }
+        return p;
+      });
+    });
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments));
     setNotes(state.notes || {});
@@ -4577,9 +4587,6 @@ useEffect(() => {
                               {p.role && <span className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">{p.role}</span>}
                               {p.status === "disabled" && <span className="text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">Désactivé</span>}
                             </div>
-                            {p.tauxJournalier != null && (
-                              <div className="text-[11px] text-emerald-700 font-semibold">{p.tauxJournalier} €/j</div>
-                            )}
                             {(p.phone || p.email) && (
                               <div className="text-[11px] text-neutral-500 space-y-0.5">
                                 {p.phone && <div>📞 {p.phone}</div>}
@@ -4642,11 +4649,11 @@ useEffect(() => {
                   return sum + Number(person.tauxJournalier) * getPortion(a.portion);
                 }, 0);
                 const tauxMat = s.tauxMateriel != null ? s.tauxMateriel : tauxMaterielDefault;
-                const coutMateriel = mainOeuvre * (tauxMat / 100);
-                const extraCouts = (s.couts || []).reduce((sum: number, c: any) => sum + (Number(c.montant) || 0), 0);
-                const coutTotal = mainOeuvre + coutMateriel + extraCouts;
                 const linkedQuote = s.quoteId ? safeQuotes.find((q: any) => q.id === s.quoteId) : null;
                 const budget = Number(linkedQuote?.amount ?? s.quoteSnapshot?.amount ?? 0);
+                const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
+                const extraCouts = (s.couts || []).reduce((sum: number, c: any) => sum + (Number(c.montant) || 0), 0);
+                const coutTotal = mainOeuvre + coutMateriel + extraCouts;
                 const marge = budget > 0 ? budget - coutTotal : null;
                 const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
                 return { site: s, mainOeuvre, coutMateriel, extraCouts, coutTotal, budget, marge, margePercent, tauxMat, nbJours: siteAssignments.reduce((s: number, a: any) => s + getPortion(a.portion), 0) };
