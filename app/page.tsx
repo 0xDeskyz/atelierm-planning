@@ -3632,107 +3632,126 @@ useEffect(() => {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-          <div className="relative rounded-2xl border bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b" style={{ background: `linear-gradient(to right, ${branding.accentColor}12, white)` }}>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full text-white flex items-center justify-center font-semibold" style={{ backgroundColor: branding.accentColor }}>
-                  {branding.logoText}
-                </div>
-                <div className="leading-tight">
-                  <div className="text-sm font-semibold text-neutral-900">{branding.title}</div>
-                  <div className="text-xs text-neutral-500">{branding.subtitle}</div>
-                </div>
+          {/* Navbar unique */}
+          <div className="rounded-xl border bg-white shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
+            {/* Logo */}
+            <div className="flex items-center gap-2.5 pr-4 border-r border-neutral-100 shrink-0">
+              <div className="h-8 w-8 rounded-lg text-white flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: branding.accentColor }}>
+                {branding.logoText}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] uppercase tracking-wide text-neutral-500">Navigation</span>
-                <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
-                  <TabsTrigger value="planning">
-                    <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Planning</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="hours">
-                    <span className="flex items-center gap-1.5 text-sm"><Clock3 className="w-4 h-4" /> Heures</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="calendar">
-                    <span className="flex items-center gap-1.5 text-sm"><CalendarRange className="w-4 h-4" /> Calendrier</span>
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+              <span className="text-sm font-semibold text-neutral-800 hidden sm:block">{branding.title}</span>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-neutral-50 border-t">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] uppercase tracking-wide text-neutral-500">Gestion</span>
-                <TabsList className="bg-neutral-100 p-1 rounded-xl shadow-inner">
-                  <TabsTrigger value="devis">Devis</TabsTrigger>
-                  <TabsTrigger value="sites">Mes chantiers</TabsTrigger>
-                  <TabsTrigger value="salaries">Mes salariés</TabsTrigger>
-                </TabsList>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
-                  onClick={savePlanning}
-                  disabled={saving}
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {saving ? "Enregistrement..." : "Enregistrer"}
-                </Button>
-                {syncStatus === "syncing" && (
-                  <span className="text-xs text-sky-600 flex items-center gap-1">
-                    <span className="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-                    Sync…
-                  </span>
+
+            {/* Nav principale */}
+            <div className="flex items-center gap-0.5">
+              {[
+                { v: "planning", label: "Planning", icon: <CalendarRange className="w-3.5 h-3.5" /> },
+                { v: "hours", label: "Heures", icon: <Clock3 className="w-3.5 h-3.5" /> },
+                { v: "calendar", label: "Calendrier", icon: <CalendarRange className="w-3.5 h-3.5" /> },
+              ].map(({ v, label, icon }) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v as any)}
+                  className={cx(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition",
+                    view === v
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100"
+                  )}
+                >{icon}{label}</button>
+              ))}
+            </div>
+
+            {/* Séparateur */}
+            <div className="w-px h-5 bg-neutral-200 shrink-0" />
+
+            {/* Gestion */}
+            <div className="flex items-center gap-0.5">
+              {[
+                { v: "devis", label: "Devis" },
+                { v: "sites", label: "Chantiers" },
+                { v: "salaries", label: "Salariés" },
+              ].map(({ v, label }) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v as any)}
+                  className={cx(
+                    "px-3 py-1.5 rounded-lg text-sm font-medium transition",
+                    view === v
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100"
+                  )}
+                >{label}</button>
+              ))}
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Sync + actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              {syncStatus === "syncing" && (
+                <span className="flex items-center gap-1 text-[11px] text-sky-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />Sync…
+                </span>
+              )}
+              {syncStatus === "synced" && (
+                <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Enregistré
+                </span>
+              )}
+              {syncStatus === "error" && (
+                <span className="flex items-center gap-1 text-[11px] text-red-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />Erreur
+                </span>
+              )}
+              <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
+              <button
+                onClick={savePlanning}
+                disabled={saving}
+                title={saving ? "Enregistrement…" : "Enregistrer"}
+                className={cx(
+                  "h-8 w-8 rounded-lg flex items-center justify-center transition border",
+                  saving
+                    ? "border-neutral-200 text-neutral-300"
+                    : "border-neutral-200 text-neutral-500 hover:border-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"
                 )}
-                {syncStatus === "synced" && (
-                  <span className="text-xs text-emerald-600 flex items-center gap-1">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-                    Synchronisé
-                  </span>
-                )}
-                {syncStatus === "error" && (
-                  <span className="text-xs text-red-500 flex items-center gap-1">
-                    <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
-                    Erreur sync
-                  </span>
-                )}
-                <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Réglages"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <Settings className="w-5 h-5" />
-                </Button>
-              </div>
+              >
+                <Save className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                title="Réglages"
+                className="h-8 w-8 rounded-lg flex items-center justify-center border border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 transition"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </Tabs>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3 shadow-sm">
+        {/* Barre contextuelle */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
             {view === "planning" && (
-              <div className="flex items-center gap-2 pr-2 border-r border-neutral-200">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Vue planning</span>
-                <div className="inline-flex rounded-lg bg-neutral-100 p-1">
-                  <Button
-                    size="sm"
-                    variant={planningView === "week" ? "default" : "ghost"}
-                    className={planningView === "week" ? "shadow-sm" : ""}
-                    onClick={() => setPlanningView("week")}
-                  >
-                    Semaine
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={planningView === "month" ? "default" : "ghost"}
-                    className={planningView === "month" ? "shadow-sm" : ""}
-                    onClick={() => setPlanningView("month")}
-                  >
-                    Mois
-                  </Button>
-                </div>
+              <div className="flex items-center gap-1 pr-3 border-r border-neutral-200">
+                {[
+                  { v: "week", label: "Semaine" },
+                  { v: "month", label: "Mois" },
+                ].map(({ v, label }) => (
+                  <button
+                    key={v}
+                    onClick={() => setPlanningView(v as any)}
+                    className={cx(
+                      "px-3 py-1 rounded-lg text-sm font-medium transition",
+                      planningView === v
+                        ? "bg-neutral-900 text-white"
+                        : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100"
+                    )}
+                  >{label}</button>
+                ))}
               </div>
             )}
             {["planning", "hours", "timeline", "calendar"].includes(view) && (
@@ -3811,16 +3830,13 @@ useEffect(() => {
               </label>
             )}
             {(isPlanningWeek || view === "hours") && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={clearCurrentWeek}
-                  aria-label="Vider la semaine"
-                  title="Retire toutes les données de la semaine affichée"
-                >
-                  <Eraser className="w-4 h-4 mr-1" /> Vider
-                </Button>
-              </>
+              <button
+                onClick={clearCurrentWeek}
+                title="Vider la semaine"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm text-neutral-500 border border-neutral-200 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition"
+              >
+                <Eraser className="w-3.5 h-3.5" /> Vider
+              </button>
             )}
           </div>
         </div>
