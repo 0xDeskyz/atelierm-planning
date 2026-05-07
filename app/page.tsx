@@ -583,6 +583,10 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [couts, setCouts] = useState<any[]>([]);
   const [newCoutLabel, setNewCoutLabel] = useState("");
   const [newCoutMontant, setNewCoutMontant] = useState("");
+  const [situations, setSituations] = useState<any[]>([]);
+  const [newSitLabel, setNewSitLabel] = useState("");
+  const [newSitMontant, setNewSitMontant] = useState("");
+  const [newSitDate, setNewSitDate] = useState("");
 
   useEffect(() => {
     setTab("infos");
@@ -605,6 +609,10 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setCouts(Array.isArray(site?.couts) ? site.couts : []);
     setNewCoutLabel("");
     setNewCoutMontant("");
+    setSituations(Array.isArray(site?.situations) ? site.situations : []);
+    setNewSitLabel("");
+    setNewSitMontant("");
+    setNewSitDate("");
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -632,6 +640,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       globalNotes,
       tauxMateriel: parsedTauxMat,
       couts,
+      situations,
     });
   };
 
@@ -647,6 +656,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const moKnown = moByPerson.reduce((s: number, r: any) => s + (r.cout ?? 0), 0);
   const moUnknown = moByPerson.filter((r: any) => r.rate == null);
   const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
+  const totalFacture = situations.reduce((s: number, sit: any) => s + (Number(sit.montant) || 0), 0);
   const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
   const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? 0);
   const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
@@ -654,6 +664,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const coutTotal = moKnown + coutMateriel + totalCouts;
   const marge = budget > 0 ? budget - coutTotal : null;
   const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
+  const resteAFacturer = budget > 0 ? budget - totalFacture : null;
 
   const isArchived = site?.status === "archived";
 
@@ -858,6 +869,38 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
               )}
             </div>
 
+            {/* Situations (tranches de facturation) */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Situations (tranches facturées)</div>
+              {situations.length === 0 && <div className="text-neutral-400 text-xs">Aucune situation enregistrée.</div>}
+              {situations.map((sit: any) => (
+                <div key={sit.id} className="flex items-center gap-2">
+                  <input type="date" value={sit.date} onChange={(e: any) => setSituations(prev => prev.map((x: any) => x.id === sit.id ? { ...x, date: e.target.value } : x))} className="border border-neutral-200 rounded px-2 py-1 text-xs w-32" />
+                  <Input value={sit.label} onChange={(e: any) => setSituations(prev => prev.map((x: any) => x.id === sit.id ? { ...x, label: e.target.value } : x))} placeholder="Libellé (ex: Situation n°1)" className="flex-1 text-sm" />
+                  <input type="number" min={0} value={sit.montant} onChange={(e: any) => setSituations(prev => prev.map((x: any) => x.id === sit.id ? { ...x, montant: Number(e.target.value) || 0 } : x))} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                  <span className="text-neutral-400 text-xs shrink-0">€</span>
+                  <button onClick={() => setSituations(prev => prev.filter((x: any) => x.id !== sit.id))} className="text-red-400 hover:text-red-600 shrink-0 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 pt-1">
+                <input type="date" value={newSitDate} onChange={(e: any) => setNewSitDate(e.target.value)} className="border border-neutral-200 rounded px-2 py-1 text-xs w-32" />
+                <Input value={newSitLabel} onChange={(e: any) => setNewSitLabel(e.target.value)} placeholder="Libellé situation" className="flex-1 text-sm" />
+                <input type="number" min={0} value={newSitMontant} onChange={(e: any) => setNewSitMontant(e.target.value)} placeholder="Montant €" className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                <Button size="sm" variant="outline" onClick={() => {
+                  if (!newSitLabel.trim() && !newSitMontant) return;
+                  const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `sit${Date.now()}`;
+                  setSituations(prev => [...prev, { id, label: newSitLabel.trim() || `Situation n°${prev.length + 1}`, montant: Number(newSitMontant) || 0, date: newSitDate }]);
+                  setNewSitLabel(""); setNewSitMontant(""); setNewSitDate("");
+                }}>Ajouter</Button>
+              </div>
+              {situations.length > 0 && (
+                <div className="flex justify-between font-semibold pt-1 border-t">
+                  <span>Total facturé</span>
+                  <span className="text-sky-700">{formatEUR(totalFacture)}{budget > 0 ? ` (${Math.round(totalFacture / budget * 100)}% du budget)` : ""}</span>
+                </div>
+              )}
+            </div>
+
             {/* Récap */}
             <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-2">
               <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Récapitulatif</div>
@@ -868,8 +911,14 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                 <div className="flex justify-between font-semibold border-t pt-1"><span>Coût total estimé</span><span>{formatEUR(coutTotal)}</span></div>
                 {budget > 0 && (
                   <div className={cx("flex justify-between font-bold text-base pt-1", (marge ?? 0) >= 0 ? "text-emerald-700" : "text-red-600")}>
-                    <span>Marge</span>
+                    <span>Marge estimée</span>
                     <span>{formatEUR(marge ?? 0)} ({margePercent != null ? Math.round(margePercent) : 0}%)</span>
+                  </div>
+                )}
+                {budget > 0 && situations.length > 0 && (
+                  <div className="flex justify-between pt-1 border-t text-sky-700 font-medium">
+                    <span>Reste à facturer</span>
+                    <span>{formatEUR(resteAFacturer ?? 0)}</span>
                   </div>
                 )}
               </div>
@@ -1241,7 +1290,9 @@ export default function Page() {
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [tauxJournalierDefault, setTauxJournalierDefault] = useState<number>(350);
   const [tauxMaterielDefault, setTauxMaterielDefault] = useState<number>(15);
+  const [fraisFixesDefault, setFraisFixesDefault] = useState<number>(0);
   const [rentaSort, setRentaSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "marge", dir: "desc" });
+  const [expandedRentaRows, setExpandedRentaRows] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatusMessage, setSaveStatusMessage] = useState<string>("");
@@ -2642,6 +2693,7 @@ export default function Page() {
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     if (state.tauxJournalierDefault != null) setTauxJournalierDefault(state.tauxJournalierDefault);
     if (state.tauxMaterielDefault != null) setTauxMaterielDefault(state.tauxMaterielDefault);
+    if (state.fraisFixesDefault != null) setFraisFixesDefault(state.fraisFixesDefault);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -2815,11 +2867,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     quotes,
     tauxJournalierDefault,
     tauxMaterielDefault,
+    fraisFixesDefault,
     eventCalendars,
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3063,7 +3116,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3072,7 +3125,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -4630,28 +4683,37 @@ useEffect(() => {
             {view === "rentabilite" && (() => {
               const noTauxWarning = safePeople.filter((p: any) => p.status !== "archived" && p.tauxJournalier == null).length;
               const rentaRows = safeSites.filter((s: any) => s.status !== "archived").map((s: any) => {
-                const siteAssignments = assignments.filter((a: any) => a.siteId === s.id);
-                const mainOeuvre = siteAssignments.reduce((sum: number, a: any) => {
-                  const person = people.find((p: any) => p.id === a.personId);
-                  if (!Number.isFinite(Number(person?.tauxJournalier))) return sum;
-                  return sum + Number(person.tauxJournalier) * getPortion(a.portion);
-                }, 0);
+                const siteAss = assignments.filter((a: any) => a.siteId === s.id);
+                const moByPerson = people
+                  .map((p: any) => {
+                    const pAss = siteAss.filter((a: any) => a.personId === p.id);
+                    if (!pAss.length) return null;
+                    const jours = pAss.reduce((sum: number, a: any) => sum + getPortion(a.portion), 0);
+                    const rate = Number.isFinite(Number(p.tauxJournalier)) ? Number(p.tauxJournalier) : null;
+                    return { person: p, jours, rate, cout: rate != null ? jours * rate : null };
+                  })
+                  .filter(Boolean);
+                const mainOeuvre = moByPerson.reduce((sum: number, r: any) => sum + (r.cout ?? 0), 0);
                 const tauxMat = s.tauxMateriel != null ? s.tauxMateriel : tauxMaterielDefault;
                 const linkedQuote = s.quoteId ? safeQuotes.find((q: any) => q.id === s.quoteId) : null;
                 const budget = Number(linkedQuote?.amount ?? s.quoteSnapshot?.amount ?? 0);
                 const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
                 const extraCouts = (s.couts || []).reduce((sum: number, c: any) => sum + (Number(c.montant) || 0), 0);
-                const coutTotal = mainOeuvre + coutMateriel + extraCouts;
+                const fraisFixes = budget > 0 ? budget * (fraisFixesDefault / 100) : 0;
+                const coutTotal = mainOeuvre + coutMateriel + extraCouts + fraisFixes;
                 const marge = budget > 0 ? budget - coutTotal : null;
                 const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
-                return { site: s, mainOeuvre, coutMateriel, extraCouts, coutTotal, budget, marge, margePercent, tauxMat, nbJours: siteAssignments.reduce((s: number, a: any) => s + getPortion(a.portion), 0) };
+                const totalFacture = (s.situations || []).reduce((sum: number, sit: any) => sum + (Number(sit.montant) || 0), 0);
+                const resteAFacturer = budget > 0 ? budget - totalFacture : null;
+                const nbJours = siteAss.reduce((sum: number, a: any) => sum + getPortion(a.portion), 0);
+                return { site: s, moByPerson, mainOeuvre, coutMateriel, extraCouts, fraisFixes, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer };
               });
 
               const sorted = [...rentaRows].sort((a, b) => {
                 const { col, dir } = rentaSort;
                 const mult = dir === "asc" ? 1 : -1;
-                const va = col === "name" ? a.site.name : col === "client" ? (a.site.clientName || "") : col === "budget" ? a.budget : col === "mo" ? a.mainOeuvre : col === "cout" ? a.coutTotal : (a.margePercent ?? -Infinity);
-                const vb = col === "name" ? b.site.name : col === "client" ? (b.site.clientName || "") : col === "budget" ? b.budget : col === "mo" ? b.mainOeuvre : col === "cout" ? b.coutTotal : (b.margePercent ?? -Infinity);
+                const va = col === "name" ? a.site.name : col === "client" ? (a.site.clientName || "") : col === "budget" ? a.budget : col === "mo" ? a.mainOeuvre : col === "cout" ? a.coutTotal : col === "facture" ? a.totalFacture : (a.margePercent ?? -Infinity);
+                const vb = col === "name" ? b.site.name : col === "client" ? (b.site.clientName || "") : col === "budget" ? b.budget : col === "mo" ? b.mainOeuvre : col === "cout" ? b.coutTotal : col === "facture" ? b.totalFacture : (b.margePercent ?? -Infinity);
                 if (typeof va === "string") return mult * va.localeCompare(vb as string);
                 return mult * ((va as number) - (vb as number));
               });
@@ -4660,6 +4722,7 @@ useEffect(() => {
               const totalMO = rentaRows.reduce((s: number, r: any) => s + r.mainOeuvre, 0);
               const totalCout = rentaRows.reduce((s: number, r: any) => s + r.coutTotal, 0);
               const totalMarge = totalBudget > 0 ? totalBudget - totalCout : 0;
+              const totalFactureGlobal = rentaRows.reduce((s: number, r: any) => s + r.totalFacture, 0);
               const avgMarge = rentaRows.filter((r: any) => r.margePercent != null).length > 0
                 ? rentaRows.filter((r: any) => r.margePercent != null).reduce((s: number, r: any) => s + (r.margePercent ?? 0), 0) / rentaRows.filter((r: any) => r.margePercent != null).length
                 : null;
@@ -4693,7 +4756,7 @@ useEffect(() => {
                     {[
                       { label: "CA total devis", value: formatEUR(totalBudget), sub: `${rentaRows.filter((r: any) => r.budget > 0).length} chantiers avec budget` },
                       { label: "Main d'œuvre totale", value: formatEUR(totalMO), sub: `${rentaRows.reduce((s: number, r: any) => s + r.nbJours, 0).toFixed(1)} jours planifiés` },
-                      { label: "Coût total estimé", value: formatEUR(totalCout), sub: "MO + matériel" },
+                      { label: "Coût total estimé", value: formatEUR(totalCout), sub: "MO + matériel + frais fixes" },
                       { label: "Marge globale", value: totalBudget > 0 ? `${Math.round((totalMarge / totalBudget) * 100)}%` : "—", sub: totalBudget > 0 ? formatEUR(totalMarge) : "Aucun budget", color: totalBudget > 0 && totalMarge >= 0 ? "text-emerald-600" : "text-red-500" },
                     ].map((kpi: any) => (
                       <Card key={kpi.label}>
@@ -4706,14 +4769,25 @@ useEffect(() => {
                     ))}
                   </div>
 
-                  {/* Settings + warnings */}
+                  {/* Settings bar */}
                   <div className="flex flex-wrap gap-3 items-start">
-                    <Card className="flex-1 min-w-[220px]">
-                      <CardContent className="p-3 flex items-center gap-3 text-sm">
-                        <span className="text-neutral-500 text-xs whitespace-nowrap">Taux matériel global</span>
-                        <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-16 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
-                        <span className="text-neutral-400 text-xs">% MO</span>
-                        <span className="text-[11px] text-neutral-400">(overridable par chantier)</span>
+                    <Card className="flex-1 min-w-[320px]">
+                      <CardContent className="p-3 flex flex-wrap items-center gap-4 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-3.5 h-3.5 text-neutral-400" />
+                          <span className="text-neutral-500 text-xs font-semibold uppercase tracking-wide">Paramètres</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs whitespace-nowrap">Matériel global</span>
+                          <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                          <span className="text-neutral-400 text-xs">% du devis</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-neutral-500 text-xs whitespace-nowrap">Frais fixes</span>
+                          <input type="number" min={0} max={100} step={0.5} value={fraisFixesDefault} onChange={(e: any) => setFraisFixesDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                          <span className="text-neutral-400 text-xs">% du devis</span>
+                        </div>
+                        <span className="text-[11px] text-neutral-400">Matériel overridable par chantier</span>
                       </CardContent>
                     </Card>
                     {noTauxWarning > 0 && (
@@ -4729,57 +4803,105 @@ useEffect(() => {
                       <table className="w-full text-sm">
                         <thead className="border-b border-neutral-100">
                           <tr>
-                            <SortTh col="name" label="Chantier" className="pl-4" />
+                            <th className="px-2 py-2 w-6" />
+                            <SortTh col="name" label="Chantier" />
                             <SortTh col="client" label="Client" />
-                            <SortTh col="budget" label="Budget devis" />
-                            <SortTh col="mo" label="Main d'œuvre" />
+                            <SortTh col="budget" label="Budget" />
+                            <SortTh col="mo" label="MO" />
                             <th className="px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Mat. %</th>
                             <SortTh col="cout" label="Coût total" />
                             <SortTh col="marge" label="Marge" />
+                            <SortTh col="facture" label="Facturé" />
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Reste</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-50">
                           {sorted.length === 0 && (
-                            <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier actif. Ajoutez des chantiers et affectez des salariés.</td></tr>
+                            <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier actif. Ajoutez des chantiers et affectez des salariés.</td></tr>
                           )}
-                          {sorted.map(({ site: s, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours }: any) => (
-                            <tr key={s.id} className={`hover:bg-neutral-50 transition ${rowColor(margePercent)}`}>
-                              <td className="px-3 py-2.5 pl-4">
-                                <button onClick={() => openSiteDetail(s.id)} className="flex items-center gap-2 hover:underline text-left">
-                                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
-                                  <span className="font-medium text-neutral-900">{s.name}</span>
-                                </button>
-                              </td>
-                              <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
-                              <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
-                              <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
-                              <td className="px-3 py-2 w-24">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number" min={0} max={200} step={1}
-                                    value={s.tauxMateriel ?? tauxMaterielDefault}
-                                    onChange={(e: any) => {
-                                      const val = e.target.value === "" ? null : Number(e.target.value);
-                                      setSites((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, tauxMateriel: val } : x));
-                                    }}
-                                    className="w-12 border border-neutral-200 rounded px-1.5 py-0.5 text-xs text-right"
-                                  />
-                                  <span className="text-[11px] text-neutral-400">%</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-neutral-700">{formatEUR(coutTotal)}</td>
-                              <td className={`px-3 py-2.5 ${margeColor(margePercent)}`}>
-                                {marge != null ? (
-                                  <span>{formatEUR(marge)} <span className="text-[11px]">({Math.round(margePercent!)}%)</span></span>
-                                ) : <span className="text-neutral-300">—</span>}
-                              </td>
-                            </tr>
-                          ))}
+                          {sorted.map(({ site: s, moByPerson, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer }: any) => {
+                            const isExpanded = expandedRentaRows.has(s.id);
+                            return (
+                              <>
+                                <tr key={s.id} className={`hover:bg-neutral-50 transition ${rowColor(margePercent)}`}>
+                                  <td className="px-2 py-2 w-6 text-center">
+                                    {moByPerson.length > 0 && (
+                                      <button
+                                        onClick={() => setExpandedRentaRows(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                                          return next;
+                                        })}
+                                        className="text-neutral-400 hover:text-neutral-700 transition"
+                                      >
+                                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                      </button>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <button onClick={() => openSiteDetail(s.id)} className="flex items-center gap-2 hover:underline text-left">
+                                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
+                                      <span className="font-medium text-neutral-900">{s.name}</span>
+                                    </button>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
+                                  <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
+                                  <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
+                                  <td className="px-3 py-2 w-24">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number" min={0} max={200} step={1}
+                                        value={s.tauxMateriel ?? tauxMaterielDefault}
+                                        onChange={(e: any) => {
+                                          const val = e.target.value === "" ? null : Number(e.target.value);
+                                          setSites((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, tauxMateriel: val } : x));
+                                        }}
+                                        className="w-12 border border-neutral-200 rounded px-1.5 py-0.5 text-xs text-right"
+                                      />
+                                      <span className="text-[11px] text-neutral-400">%</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-neutral-700">{formatEUR(coutTotal)}</td>
+                                  <td className={`px-3 py-2.5 ${margeColor(margePercent)}`}>
+                                    {marge != null ? (
+                                      <span>{formatEUR(marge)} <span className="text-[11px]">({Math.round(margePercent!)}%)</span></span>
+                                    ) : <span className="text-neutral-300">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-sky-700">
+                                    {totalFacture > 0 ? formatEUR(totalFacture) : <span className="text-neutral-300">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    {resteAFacturer != null ? (
+                                      <span className={resteAFacturer < 0 ? "text-red-600 font-semibold" : "text-neutral-700"}>{formatEUR(resteAFacturer)}</span>
+                                    ) : <span className="text-neutral-300">—</span>}
+                                  </td>
+                                </tr>
+                                {isExpanded && moByPerson.map((r: any) => (
+                                  <tr key={`${s.id}-${r.person.id}`} className="bg-neutral-50 border-l-2 border-neutral-200">
+                                    <td className="px-2 py-1.5" />
+                                    <td colSpan={2} className="px-4 py-1.5">
+                                      <div className="flex items-center gap-2 text-xs text-neutral-600">
+                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0 ${r.person.color || "bg-neutral-400"}`}>
+                                          {r.person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                                        </div>
+                                        <span>{r.person.name}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-xs text-neutral-400">{r.jours}j</td>
+                                    <td className="px-3 py-1.5 text-xs text-neutral-400">{r.rate != null ? `${r.rate} €/j` : <span className="text-amber-600">Taux non défini</span>}</td>
+                                    <td className="px-3 py-1.5" />
+                                    <td className="px-3 py-1.5 text-xs font-medium text-neutral-700">{r.cout != null ? formatEUR(r.cout) : "—"}</td>
+                                    <td colSpan={3} className="px-3 py-1.5" />
+                                  </tr>
+                                ))}
+                              </>
+                            );
+                          })}
                         </tbody>
                         {sorted.length > 0 && (
                           <tfoot className="border-t-2 border-neutral-200 bg-neutral-50">
                             <tr>
-                              <td colSpan={2} className="px-3 py-2 pl-4 text-xs font-semibold text-neutral-500">TOTAL</td>
+                              <td colSpan={3} className="px-3 py-2 pl-4 text-xs font-semibold text-neutral-500">TOTAL</td>
                               <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalBudget)}</td>
                               <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalMO)}</td>
                               <td className="px-3 py-2 text-[11px] text-neutral-400">{avgMarge != null ? `${Math.round(avgMarge)}% moy.` : ""}</td>
@@ -4787,6 +4909,8 @@ useEffect(() => {
                               <td className={`px-3 py-2 ${margeColor(totalBudget > 0 ? (totalMarge / totalBudget) * 100 : null)}`}>
                                 {totalBudget > 0 ? `${formatEUR(totalMarge)} (${Math.round((totalMarge / totalBudget) * 100)}%)` : "—"}
                               </td>
+                              <td className="px-3 py-2 text-sky-700 font-semibold">{totalFactureGlobal > 0 ? formatEUR(totalFactureGlobal) : "—"}</td>
+                              <td className="px-3 py-2 font-semibold text-neutral-700">{totalBudget > 0 ? formatEUR(totalBudget - totalFactureGlobal) : "—"}</td>
                             </tr>
                           </tfoot>
                         )}

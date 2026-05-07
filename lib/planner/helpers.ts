@@ -261,11 +261,17 @@ export const normalizeSiteRecord = (site: any) => {
     contactName:
       (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
     contactPhone: (base as any)?.contactPhone || "",
-    tauxMateriel: Number.isFinite(Number((base as any)?.tauxMateriel)) ? Number((base as any).tauxMateriel) : null,
+    tauxMateriel: Number.isFinite(Number((base as any)?.tauxMateriel)) ? Number((base as any).tauxMateriel) : 15,
     couts: Array.isArray((base as any)?.couts) ? (base as any).couts.map((c: any) => ({
       id: c?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `cout-${Date.now()}-${Math.random()}`),
       label: typeof c?.label === "string" ? c.label : "",
       montant: Number.isFinite(Number(c?.montant)) ? Number(c.montant) : 0,
+    })) : [],
+    situations: Array.isArray((base as any)?.situations) ? (base as any).situations.map((s: any) => ({
+      id: s?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `sit-${Date.now()}-${Math.random()}`),
+      label: typeof s?.label === "string" ? s.label : "",
+      montant: Number.isFinite(Number(s?.montant)) ? Number(s.montant) : 0,
+      date: typeof s?.date === "string" ? s.date : "",
     })) : [],
   };
 };
