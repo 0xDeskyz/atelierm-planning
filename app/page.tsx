@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 import {
   DndContext,
@@ -805,20 +804,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
             </div>
 
             {/* Matériel */}
-            <div className="space-y-1">
-              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Matériel (% de la MO)</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number" min={0} max={200} step={1}
-                  value={tauxMateriel}
-                  onChange={(e: any) => setTauxMateriel(e.target.value)}
-                  placeholder={String(tauxMDefault)}
-                  className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm text-right"
-                />
-                <span className="text-neutral-500">% du devis → <strong>{formatEUR(coutMateriel)}</strong></span>
-                {tauxMateriel === "" && <span className="text-[11px] text-neutral-400">(taux global : {tauxMDefault}%)</span>}
-                {budget === 0 && <span className="text-[11px] text-neutral-400">— pas de budget défini</span>}
-              </div>
+            <div className="flex items-center justify-between py-1 border-b border-neutral-50">
+              <span className="text-neutral-600">Matériel ({tauxMat}% du devis)</span>
+              <span className="font-medium">{budget > 0 ? formatEUR(coutMateriel) : <span className="text-neutral-300 text-xs">budget non défini</span>}</span>
             </div>
 
             {/* Coûts divers */}
@@ -4765,8 +4753,19 @@ useEffect(() => {
                               <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
                               <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
                               <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
-                              <td className="px-3 py-2.5">
-                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">{tauxMat}%{s.tauxMateriel != null ? " ✎" : ""}</span>
+                              <td className="px-3 py-2 w-24">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number" min={0} max={200} step={1}
+                                    value={s.tauxMateriel ?? tauxMaterielDefault}
+                                    onChange={(e: any) => {
+                                      const val = e.target.value === "" ? null : Number(e.target.value);
+                                      setSites((prev: any[]) => prev.map((x: any) => x.id === s.id ? { ...x, tauxMateriel: val } : x));
+                                    }}
+                                    className="w-12 border border-neutral-200 rounded px-1.5 py-0.5 text-xs text-right"
+                                  />
+                                  <span className="text-[11px] text-neutral-400">%</span>
+                                </div>
                               </td>
                               <td className="px-3 py-2.5 text-neutral-700">{formatEUR(coutTotal)}</td>
                               <td className={`px-3 py-2.5 ${margeColor(margePercent)}`}>
@@ -4795,34 +4794,6 @@ useEffect(() => {
                     </CardContent>
                   </Card>
 
-                  {/* Bar chart: marge par chantier */}
-                  {sorted.filter((r: any) => r.budget > 0).length > 0 && (
-                    <Card>
-                      <CardContent className="p-4 space-y-3">
-                        <div className="text-sm font-semibold text-neutral-800">Marge par chantier (%)</div>
-                        <div className="h-56">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={sorted.filter((r: any) => r.budget > 0).map((r: any) => ({ name: r.site.name.length > 14 ? r.site.name.slice(0, 14) + "…" : r.site.name, marge: r.margePercent != null ? Math.round(r.margePercent) : 0, fill: (r.margePercent ?? 0) >= 20 ? "#10b981" : (r.margePercent ?? 0) >= 5 ? "#f59e0b" : "#f43f5e" }))} margin={{ top: 4, right: 8, bottom: 24, left: 0 }}>
-                              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" />
-                              <YAxis tick={{ fontSize: 11 }} unit="%" />
-                              <Tooltip formatter={(v: any) => `${v}%`} />
-                              <ReferenceLine y={0} stroke="#e5e7eb" />
-                              <Bar dataKey="marge" radius={[4, 4, 0, 0]}>
-                                {sorted.filter((r: any) => r.budget > 0).map((r: any, idx: number) => (
-                                  <Cell key={idx} fill={(r.margePercent ?? 0) >= 20 ? "#10b981" : (r.margePercent ?? 0) >= 5 ? "#f59e0b" : "#f43f5e"} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className="flex items-center gap-4 text-[11px] text-neutral-500">
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" /> Bonne marge (≥ 20%)</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Marge correcte (5–20%)</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" /> Marge faible (&lt; 5%)</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
                 </div>
               );
             })()}
