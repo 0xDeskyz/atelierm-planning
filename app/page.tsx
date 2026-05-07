@@ -726,30 +726,38 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         unavailable ? "opacity-90" : ""
       )}
       ref={setNodeRef}
-      title={meta.text || meta?.brNote?.text || ""}
+      title={meta.text || ""}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          {publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 font-medium" title={publicHoliday}>{publicHoliday === "Pont" ? "🌉 Pont" : `🎌 ${publicHoliday}`}</div>)}
-          {meta.holiday && !publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</div>)}
-          {meta.blocked && !meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200">Indispo</div>)}
-          {meta.text && (
-            <div className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
-              {meta.text}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 font-medium">{publicHoliday === "Pont" ? "🌉 Pont" : `🎌 ${publicHoliday}`}</div>)}
+          {meta.holiday && !publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-medium">🏖 Non travaillé</div>)}
+          {meta.blocked && !meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 font-medium">🚧 Indisponible</div>)}
+          {meta.eventType && (() => {
+            const et = EVENT_TYPES.find((e) => e.id === meta.eventType);
+            return et ? (
+              <div className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>
+                {et.icon} {et.label}{meta.text ? ` · ${meta.text}` : ""}
+              </div>
+            ) : null;
+          })()}
+          {!meta.eventType && meta.text && (
+            <div className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200 max-w-[80%] truncate" title={meta.text}>
+              📝 {meta.text}
             </div>
           )}
           {hoursLabel && (
-            <div className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures spécifiques pour cette case">
-              {hoursLabel}
+            <div className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200" title="Heures spécifiques">
+              ⏱ {hoursLabel}
             </div>
           )}
         </div>
-        <div className="text-[11px] text-neutral-500">{date.getDate()}</div>
+        <div className="text-[11px] text-neutral-400 shrink-0 ml-1">{date.getDate()}</div>
       </div>
 
       {/* Assignments list */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {todays.map((a: any) => {
           const p = people.find((pp: any) => pp.id === a.personId);
           const conflictKey = `${a.personId}|${a.date}`;
@@ -765,7 +773,7 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
                 conflict={conflict}
               />
               {absence && (
-                <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
+                <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
                   {absence}
                 </span>
               )}
@@ -774,17 +782,10 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
         })}
       </div>
 
-      {/* Bottom bar */}
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-2 flex-wrap min-h-[18px]">
-          {meta.brNote?.text && (
-            <div className={cx("text-[10px] px-1.5 py-0.5 rounded shadow border", meta.brNote.color && PASTELS[meta.brNote.color]?.bg)} title={meta.brNote.text}>
-              {meta.brNote.text}
-            </div>
-          )}
-        </div>
-        <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
-          <Edit3 className="w-4 h-4" />
+      {/* Edit button */}
+      <div className="mt-1.5 flex justify-end">
+        <button onClick={() => onEditNote(date, site)} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
+          <Edit3 className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
@@ -1648,113 +1649,160 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
   );
 }
 
+const EVENT_TYPES = [
+  { id: "reunion", label: "Réunion", icon: "🗣", color: "bg-violet-100 text-violet-800 border-violet-200" },
+  { id: "livraison", label: "Livraison", icon: "🚚", color: "bg-sky-100 text-sky-800 border-sky-200" },
+  { id: "inspection", label: "Inspection", icon: "🔍", color: "bg-amber-100 text-amber-800 border-amber-200" },
+  { id: "autre", label: "Autre", icon: "📌", color: "bg-neutral-100 text-neutral-700 border-neutral-200" },
+] as const;
+type EventType = typeof EVENT_TYPES[number]["id"] | null;
+
+const EVENT_CELL_STYLE: Record<string, string> = {
+  reunion: "bg-violet-100 text-violet-800",
+  livraison: "bg-sky-100 text-sky-800",
+  inspection: "bg-amber-100 text-amber-800",
+  autre: "bg-neutral-100 text-neutral-700",
+};
+
 function AnnotationDialog({ open, setOpen, value, onSave }: any) {
   const initial = typeof value === "string" ? { text: value } : value || {};
+
+  const getStatus = (i: any) => i.holiday ? "nontravaille" : i.blocked ? "indisponible" : "disponible";
+
+  const [status, setStatus] = useState<"disponible" | "indisponible" | "nontravaille">(getStatus(initial));
+  const [eventType, setEventType] = useState<EventType>(initial.eventType || null);
   const [text, setText] = useState<string>(initial.text || "");
-  const [holiday, setHoliday] = useState<boolean>(!!initial.holiday);
-  const [blocked, setBlocked] = useState<boolean>(!!initial.blocked);
-  const [brText, setBrText] = useState<string>(initial.brNote?.text || "");
-  const [brColor, setBrColor] = useState<string>(initial.brNote?.color || "mint");
   const [highlight, setHighlight] = useState<string>(initial.highlight || "");
-  const [hoursOverride, setHoursOverride] = useState<string | number>(
-    initial.hoursOverride ?? ""
-  );
+  const [hoursOverride, setHoursOverride] = useState<string | number>(initial.hoursOverride ?? "");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     const i = typeof value === "string" ? { text: value } : value || {};
+    setStatus(getStatus(i));
+    setEventType(i.eventType || null);
     setText(i.text || "");
-    setHoliday(!!i.holiday);
-    setBlocked(!!i.blocked);
-    setBrText(i.brNote?.text || "");
-    setBrColor(i.brNote?.color || "mint");
     setHighlight(i.highlight || "");
     setHoursOverride(i.hoursOverride ?? "");
+    setAdvancedOpen(false);
   }, [value]);
 
-  const ColorDot = ({ c, selected, onClick, label = "Choisir cette couleur" }: any) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx("w-7 h-7 rounded-full border", PASTELS[c].bg, selected ? "ring-2 ring-black" : "")}
-      aria-label={label}
-    >
-      <span className="sr-only">{label}</span>
-    </button>
-  );
+  const STATUS_OPTIONS = [
+    { id: "disponible", label: "Disponible", icon: "✅", cls: "border-green-200 bg-green-50 text-green-800" },
+    { id: "indisponible", label: "Indisponible", icon: "🚧", cls: "border-red-200 bg-red-50 text-red-800" },
+    { id: "nontravaille", label: "Non travaillé", icon: "🏖", cls: "border-slate-200 bg-slate-50 text-slate-700" },
+  ] as const;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Éditer la case</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          {/* Disponibilité */}
-          <div className="flex items-center gap-4 text-sm">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={holiday} onChange={(e) => setHoliday(e.target.checked)} />Jour férié</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={blocked} onChange={(e) => setBlocked(e.target.checked)} />Chantier indisponible</label>
-          </div>
-          {/* Note principale */}
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Note principale</div>
-            <Textarea className="min-h-24" value={text} onChange={(e: any) => setText(e.target.value)} placeholder="Note générale de la case" />
-          </div>
-          {/* Bas-droit (mini post-it) */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Post-it bas-droit</div>
-            <Input value={brText} onChange={(e: any) => setBrText(e.target.value)} placeholder="Court texte du post-it" />
-            <div className="flex items-center gap-2">
-              {["mint", "sky", "peach"].map((c) => (
-                <ColorDot key={c} c={c} selected={brColor === c} onClick={() => setBrColor(c)} />
-              ))}
-            </div>
-          </div>
-          {/* Surlignage */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Surlignage de la case</div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setHighlight("")}
-                className={cx(
-                  "w-7 h-7 rounded-full border border-neutral-400 bg-white flex items-center justify-center",
-                  !highlight ? "ring-2 ring-black" : ""
-                )}
-                aria-label="Sans surlignage"
-              >
-                <span className="sr-only">Sans surlignage</span>
-              </button>
-              {["mint", "sky", "peach"].map((c) => (
-                <ColorDot
-                  key={c}
-                  c={c}
-                  selected={highlight === c}
-                  onClick={() => setHighlight(c)}
-                  label="Choisir cette couleur"
-                />
+        <div className="space-y-4">
+
+          {/* Statut */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Statut</div>
+            <div className="grid grid-cols-3 gap-2">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStatus(s.id)}
+                  className={cx(
+                    "flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border-2 text-xs font-medium transition",
+                    status === s.id ? s.cls + " border-current" : "border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300"
+                  )}
+                >
+                  <span className="text-lg leading-none">{s.icon}</span>
+                  {s.label}
+                </button>
               ))}
             </div>
           </div>
 
-          {/* Heures */}
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Heures de la case (optionnel)</div>
+          {/* Événement */}
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Événement</div>
+            <div className="flex flex-wrap gap-2">
+              {EVENT_TYPES.map((et) => (
+                <button
+                  key={et.id}
+                  type="button"
+                  onClick={() => setEventType(eventType === et.id ? null : et.id)}
+                  className={cx(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition",
+                    eventType === et.id ? et.color + " border-current ring-2 ring-offset-1 ring-current/30" : "border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300"
+                  )}
+                >
+                  <span>{et.icon}</span>{et.label}
+                </button>
+              ))}
+            </div>
             <Input
-              type="number"
-              min={0}
-              step={0.5}
-              value={hoursOverride}
-              onChange={(e: any) => setHoursOverride(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="Laisser vide pour utiliser les heures/jour"
+              value={text}
+              onChange={(e: any) => setText(e.target.value)}
+              placeholder={eventType ? `Détails (optionnel)` : "Ajouter une note…"}
+              className="text-sm"
             />
           </div>
+
+          {/* Options avancées */}
+          <div className="border rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-neutral-500 uppercase tracking-wide hover:bg-neutral-50"
+            >
+              Options avancées
+              {advancedOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            {advancedOpen && (
+              <div className="px-3 pb-3 space-y-3 border-t">
+                <div className="space-y-1.5 pt-3">
+                  <div className="text-xs font-medium text-neutral-600">Couleur de la case</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setHighlight("")}
+                      className={cx("w-7 h-7 rounded-full border-2 bg-white flex items-center justify-center text-neutral-400", !highlight ? "border-black" : "border-neutral-300 hover:border-neutral-400")}
+                      aria-label="Aucune couleur"
+                    >✕</button>
+                    {Object.entries(PASTELS).map(([c, p]) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setHighlight(c)}
+                        className={cx("w-7 h-7 rounded-full border-2", p.bg, highlight === c ? "border-black" : "border-transparent hover:border-neutral-400")}
+                        aria-label={c}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-xs font-medium text-neutral-600">Heures spécifiques <span className="text-neutral-400 font-normal">(remplace la valeur par défaut)</span></div>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={hoursOverride}
+                    onChange={(e: any) => setHoursOverride(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="ex : 4"
+                    className="w-24 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        <DialogFooter>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
           <Button
             onClick={() => {
               onSave({
-                text,
-                holiday,
-                blocked,
-                brNote: brText ? { text: brText, color: brColor } : undefined,
+                text: text || undefined,
+                holiday: status === "nontravaille" || undefined,
+                blocked: status === "indisponible" || undefined,
+                eventType: eventType || undefined,
                 highlight: highlight || undefined,
                 hoursOverride: hoursOverride === "" ? undefined : hoursOverride,
               });
