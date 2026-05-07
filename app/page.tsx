@@ -915,7 +915,7 @@ function QuoteColumn({ col, items, onOpenQuote }: any) {
   );
 }
 
-function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, getInfo }: any) {
+function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, onRemoveAssignment, getInfo }: any) {
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
   const raw = notes[key];
@@ -985,6 +985,11 @@ function HoursCell({ date, site, assignments, people, notes, hoursPerDay, confli
                       : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
                   )}
                 >½</button>
+                <button
+                  onClick={() => onRemoveAssignment(a.id)}
+                  className="h-7 w-7 rounded-lg border border-neutral-200 bg-white text-neutral-300 hover:border-red-300 hover:text-red-400 transition flex items-center justify-center text-sm"
+                  title="Retirer l'affectation"
+                >×</button>
               </div>
             </div>
           );
@@ -4364,6 +4369,7 @@ useEffect(() => {
                           conflictMap={conflictMap}
                           onEditNote={openNote}
                           onUpdateAssignment={updateAssignment}
+                          onRemoveAssignment={(id: string) => setAssignments((prev: any) => prev.filter((a: any) => a.id !== id))}
                           getInfo={getAssignmentHoursInfo}
                         />
                       ))}
