@@ -564,7 +564,8 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [] }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [] }: any) {
+  const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
   const [globalNotes, setGlobalNotes] = useState<string>("");
@@ -580,8 +581,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
   const [color, setColor] = useState<string>(SITE_COLORS[0]);
   const [tauxMateriel, setTauxMateriel] = useState<string>("");
+  const [couts, setCouts] = useState<any[]>([]);
+  const [newCoutLabel, setNewCoutLabel] = useState("");
+  const [newCoutMontant, setNewCoutMontant] = useState("");
 
   useEffect(() => {
+    setTab("infos");
     setName(site?.name || "");
     setStatus(site?.status || "pending");
     setClientName(site?.clientName || site?.quoteSnapshot?.client || "");
@@ -591,13 +596,16 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setContactPhone(site?.contactPhone || "");
     const initialWeeks = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
     setWeeks(initialWeeks.join(", "));
-            setSelectedWeeks(initialWeeks);
+    setSelectedWeeks(initialWeeks);
     const firstWeek = initialWeeks[0];
     const parsed = firstWeek ? parseWeekKey(firstWeek) : null;
     setPickerYear(parsed?.year || new Date().getFullYear());
     setColor(site?.color || SITE_COLORS[0]);
     setGlobalNotes(site?.globalNotes || "");
     setTauxMateriel(site?.tauxMateriel != null ? String(site.tauxMateriel) : "");
+    setCouts(Array.isArray(site?.couts) ? site.couts : []);
+    setNewCoutLabel("");
+    setNewCoutMontant("");
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -624,115 +632,261 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       color,
       globalNotes,
       tauxMateriel: parsedTauxMat,
+      couts,
     });
   };
 
+  // Rentabilité calculations
+  const siteAssignments = (assignmentsProp || []).filter((a: any) => a.siteId === site?.id);
+  const moByPerson = peopleProp.reduce((acc: any[], p: any) => {
+    const pAss = siteAssignments.filter((a: any) => a.personId === p.id);
+    if (!pAss.length) return acc;
+    const jours = pAss.reduce((s: number, a: any) => s + getPortion(a.portion), 0);
+    const rate = Number.isFinite(Number(p.tauxJournalier)) ? Number(p.tauxJournalier) : null;
+    return [...acc, { person: p, jours, rate, cout: rate != null ? jours * rate : null }];
+  }, []);
+  const moKnown = moByPerson.reduce((s: number, r: any) => s + (r.cout ?? 0), 0);
+  const moUnknown = moByPerson.filter((r: any) => r.rate == null);
+  const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
+  const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
+  const coutMateriel = moKnown * (tauxMat / 100);
+  const coutTotal = moKnown + coutMateriel + totalCouts;
+  const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
+  const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? 0);
+  const marge = budget > 0 ? budget - coutTotal : null;
+  const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
+
+  const isArchived = site?.status === "archived";
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Détail du chantier</DialogTitle>
-          <DialogDescription>Modifier ou planifier ce chantier, même s'il est déjà actif.</DialogDescription>
+          <DialogTitle className="flex items-center gap-3">
+            <div className={cx("w-3.5 h-3.5 rounded-full shrink-0", color)} />
+            {name || "Détail du chantier"}
+          </DialogTitle>
+          <DialogDescription>Modifier, planifier ou analyser la rentabilité de ce chantier.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={status === "pending" ? "default" : "outline"}
-              onClick={() => setStatus("pending")}
-            >
-              À planifier
-            </Button>
-            <Button
-              size="sm"
-              variant={status === "planned" ? "default" : "outline"}
-              onClick={() => setStatus("planned")}
-            >
-              Planifié
-            </Button>
-            <span className="text-[11px] text-neutral-500">Statut éditable à tout moment</span>
-          </div>
+        {/* Tabs */}
+        <div className="flex border-b border-neutral-100 -mx-1 mb-2">
+          {([["infos", "Infos"], ["rentabilite", "Rentabilité"]] as const).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)} className={cx("px-4 py-2 text-sm font-medium transition border-b-2 -mb-px", tab === t ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-700")}>
+              {label}
+            </button>
+          ))}
+        </div>
 
-          <div className="grid md:grid-cols-2 gap-3">
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Nom</span>
-              <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du chantier" />
-            </label>
-            <label className="space-y-1 md:col-span-2">
-              <span className="text-[11px] text-neutral-600">Couleur</span>
-              <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Client</span>
-              <Input value={clientName} onChange={(e: any) => setClientName(e.target.value)} placeholder="Nom du client" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Ville ou code postal</span>
-              <Input value={city} onChange={(e: any) => setCity(e.target.value)} placeholder="Ex: 75012 Paris" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Adresse</span>
-              <Input value={address} onChange={(e: any) => setAddress(e.target.value)} placeholder="Adresse du chantier" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Contact</span>
-              <Input value={contactName} onChange={(e: any) => setContactName(e.target.value)} placeholder="Interlocuteur" />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-neutral-600">Téléphone</span>
-              <Input value={contactPhone} onChange={(e: any) => setContactPhone(e.target.value)} placeholder="Téléphone" />
-            </label>
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-neutral-600 font-semibold">Semaines</span>
-                  {selectedWeeks.length > 0 && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black text-white font-semibold">{selectedWeeks.length}</span>
-                  )}
+        {/* ── Infos tab ── */}
+        {tab === "infos" && (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant={status === "pending" ? "default" : "outline"} onClick={() => setStatus("pending")}>À planifier</Button>
+              <Button size="sm" variant={status === "planned" ? "default" : "outline"} onClick={() => setStatus("planned")}>Planifié</Button>
+              <span className="text-[11px] text-neutral-500">Statut éditable à tout moment</span>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Nom</span>
+                <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du chantier" />
+              </label>
+              <label className="space-y-1 md:col-span-2">
+                <span className="text-[11px] text-neutral-600">Couleur</span>
+                <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Client</span>
+                <Input value={clientName} onChange={(e: any) => setClientName(e.target.value)} placeholder="Nom du client" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Ville ou code postal</span>
+                <Input value={city} onChange={(e: any) => setCity(e.target.value)} placeholder="Ex: 75012 Paris" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Adresse</span>
+                <Input value={address} onChange={(e: any) => setAddress(e.target.value)} placeholder="Adresse du chantier" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Contact</span>
+                <Input value={contactName} onChange={(e: any) => setContactName(e.target.value)} placeholder="Interlocuteur" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Téléphone</span>
+                <Input value={contactPhone} onChange={(e: any) => setContactPhone(e.target.value)} placeholder="Téléphone" />
+              </label>
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-neutral-600 font-semibold">Semaines</span>
+                    {selectedWeeks.length > 0 && (
+                      <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black text-white font-semibold">{selectedWeeks.length}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)}><ChevronLeft className="w-3 h-3" /></Button>
+                    <span className="text-xs font-semibold w-10 text-center">{pickerYear}</span>
+                    <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)}><ChevronRight className="w-3 h-3" /></Button>
+                    {selectedWeeks.length > 0 && (
+                      <button type="button" className="text-[11px] text-neutral-400 underline ml-1" onClick={() => { setSelectedWeeks([]); setWeeks(""); }}>Vider</button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)}><ChevronLeft className="w-3 h-3" /></Button>
-                  <span className="text-xs font-semibold w-10 text-center">{pickerYear}</span>
-                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)}><ChevronRight className="w-3 h-3" /></Button>
-                  {selectedWeeks.length > 0 && (
-                    <button type="button" className="text-[11px] text-neutral-400 underline ml-1" onClick={() => { setSelectedWeeks([]); setWeeks(""); }}>Vider</button>
-                  )}
-                </div>
+                <p className="text-[11px] text-neutral-400">Mois = sélectionner toutes ses semaines. Laisser vide = toute l'année.</p>
+                <WeekPicker
+                  year={pickerYear}
+                  selectedWeeks={selectedWeeks}
+                  onToggleWeek={(wkKey: string) => setSelectedWeeks((prev) => {
+                    const next = prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
+                    setWeeks(next.join(", "));
+                    return next;
+                  })}
+                  onToggleMonth={(keys: string[], allSelected: boolean) => setSelectedWeeks((prev) => {
+                    const next = allSelected ? prev.filter((w) => !keys.includes(w)) : Array.from(new Set([...prev, ...keys]));
+                    setWeeks(next.join(", "));
+                    return next;
+                  })}
+                />
               </div>
-              <p className="text-[11px] text-neutral-400">Mois = sélectionner toutes ses semaines. Laisser vide = toute l'année.</p>
-              <WeekPicker
-                year={pickerYear}
-                selectedWeeks={selectedWeeks}
-                onToggleWeek={(wkKey) => setSelectedWeeks((prev) => {
-                  const next = prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
-                  setWeeks(next.join(", "));
-                  return next;
-                })}
-                onToggleMonth={(keys, allSelected) => setSelectedWeeks((prev) => {
-                  const next = allSelected ? prev.filter((w) => !keys.includes(w)) : Array.from(new Set([...prev, ...keys]));
-                  setWeeks(next.join(", "));
-                  return next;
-                })}
-              />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[11px] text-neutral-600 font-semibold">Notes</span>
+              <Textarea value={globalNotes} onChange={(e: any) => setGlobalNotes(e.target.value)} placeholder="Notes internes, informations chantier…" rows={3} className="text-sm resize-none" />
             </div>
           </div>
+        )}
 
-          <div className="space-y-1">
-            <span className="text-[11px] text-neutral-600 font-semibold">Taux matériel spécifique (%)</span>
-            <Input type="number" min={0} max={200} value={tauxMateriel} onChange={(e: any) => setTauxMateriel(e.target.value)} placeholder="Ex: 15 (laisser vide pour utiliser le taux global)" />
+        {/* ── Rentabilité tab ── */}
+        {tab === "rentabilite" && (
+          <div className="space-y-4 text-sm">
+
+            {/* Budget */}
+            <div className="rounded-lg border border-neutral-200 p-3 space-y-1">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Budget devis</div>
+              {budget > 0 ? (
+                <div className="text-xl font-bold text-neutral-900">{formatEUR(budget)}</div>
+              ) : (
+                <div className="text-neutral-400 text-xs">Pas de devis lié — associez un devis à ce chantier pour calculer la marge.</div>
+              )}
+              {linkedQuote && <div className="text-[11px] text-neutral-400">{linkedQuote.title}</div>}
+            </div>
+
+            {/* Main d'œuvre */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Main d'œuvre</div>
+              {moByPerson.length === 0 && (
+                <div className="text-neutral-400 text-xs">Aucun salarié affecté à ce chantier dans le planning.</div>
+              )}
+              {moByPerson.map((r: any) => (
+                <div key={r.person.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-neutral-50">
+                  <div className="flex items-center gap-2">
+                    <div className={cx("w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0", r.person.color || "bg-neutral-400")}>
+                      {r.person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                    </div>
+                    <span className="font-medium">{r.person.name}</span>
+                    <span className="text-neutral-400 text-[11px]">{r.jours}j</span>
+                  </div>
+                  <div className="text-right">
+                    {r.rate != null ? (
+                      <span className="font-semibold text-neutral-800">{formatEUR(r.cout)}</span>
+                    ) : (
+                      <span className="text-amber-600 text-[11px]">Taux non défini — aller dans Salariés</span>
+                    )}
+                    {r.rate != null && <div className="text-[10px] text-neutral-400">{r.rate} €/j</div>}
+                  </div>
+                </div>
+              ))}
+              {moByPerson.length > 0 && (
+                <div className="flex justify-between font-semibold pt-1">
+                  <span>Total MO{moUnknown.length > 0 ? ` (${moUnknown.length} sans taux)` : ""}</span>
+                  <span>{formatEUR(moKnown)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Matériel */}
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Matériel (% de la MO)</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={200} step={1}
+                  value={tauxMateriel}
+                  onChange={(e: any) => setTauxMateriel(e.target.value)}
+                  placeholder={String(tauxMDefault)}
+                  className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm text-right"
+                />
+                <span className="text-neutral-500">% → <strong>{formatEUR(coutMateriel)}</strong></span>
+                {tauxMateriel === "" && <span className="text-[11px] text-neutral-400">(taux global : {tauxMDefault}%)</span>}
+              </div>
+            </div>
+
+            {/* Coûts divers */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Coûts divers (sous-traitants, location, etc.)</div>
+              {couts.length === 0 && <div className="text-neutral-400 text-xs">Aucun coût ajouté.</div>}
+              {couts.map((c: any) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <Input
+                    value={c.label}
+                    onChange={(e: any) => setCouts(prev => prev.map((x: any) => x.id === c.id ? { ...x, label: e.target.value } : x))}
+                    placeholder="Libellé"
+                    className="flex-1 text-sm"
+                  />
+                  <input
+                    type="number" min={0}
+                    value={c.montant}
+                    onChange={(e: any) => setCouts(prev => prev.map((x: any) => x.id === c.id ? { ...x, montant: Number(e.target.value) || 0 } : x))}
+                    className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm text-right"
+                  />
+                  <span className="text-neutral-400 text-xs shrink-0">€</span>
+                  <button onClick={() => setCouts(prev => prev.filter((x: any) => x.id !== c.id))} className="text-red-400 hover:text-red-600 shrink-0 p-1">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 pt-1">
+                <Input value={newCoutLabel} onChange={(e: any) => setNewCoutLabel(e.target.value)} placeholder="Ex: Sous-traitant maçonnerie" className="flex-1 text-sm" />
+                <input
+                  type="number" min={0}
+                  value={newCoutMontant}
+                  onChange={(e: any) => setNewCoutMontant(e.target.value)}
+                  placeholder="Montant €"
+                  className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm text-right"
+                />
+                <Button size="sm" variant="outline" onClick={() => {
+                  if (!newCoutLabel.trim()) return;
+                  const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `c${Date.now()}`;
+                  setCouts(prev => [...prev, { id, label: newCoutLabel.trim(), montant: Number(newCoutMontant) || 0 }]);
+                  setNewCoutLabel("");
+                  setNewCoutMontant("");
+                }}>Ajouter</Button>
+              </div>
+              {couts.length > 0 && (
+                <div className="flex justify-between font-semibold pt-1">
+                  <span>Total coûts divers</span>
+                  <span>{formatEUR(totalCouts)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Récap */}
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-2">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Récapitulatif</div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-neutral-600">Main d'œuvre</span><span>{formatEUR(moKnown)}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-600">Matériel ({tauxMat}%)</span><span>{formatEUR(coutMateriel)}</span></div>
+                {couts.length > 0 && <div className="flex justify-between"><span className="text-neutral-600">Coûts divers</span><span>{formatEUR(totalCouts)}</span></div>}
+                <div className="flex justify-between font-semibold border-t pt-1"><span>Coût total estimé</span><span>{formatEUR(coutTotal)}</span></div>
+                {budget > 0 && (
+                  <div className={cx("flex justify-between font-bold text-base pt-1", (marge ?? 0) >= 0 ? "text-emerald-700" : "text-red-600")}>
+                    <span>Marge</span>
+                    <span>{formatEUR(marge ?? 0)} ({margePercent != null ? Math.round(margePercent) : 0}%)</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="space-y-1">
-            <span className="text-[11px] text-neutral-600 font-semibold">Notes</span>
-            <Textarea
-              value={globalNotes}
-              onChange={(e: any) => setGlobalNotes(e.target.value)}
-              placeholder="Notes internes, informations chantier…"
-              rows={3}
-              className="text-sm resize-none"
-            />
-          </div>
-        </div>
+        )}
 
         <DialogFooter className="flex-col gap-2 sm:flex-col items-stretch">
           {confirmArchive && (
@@ -753,25 +907,23 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
               </div>
             </div>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-2">
-              {onDuplicate && !confirmArchive && !confirmDelete && (
-                <Button variant="outline" size="sm" onClick={() => { onDuplicate(site?.id); onClose(); }}>
-                  <Copy className="w-3.5 h-3.5 mr-1" /> Dupliquer
-                </Button>
-              )}
-              {onArchive && !confirmArchive && !confirmDelete && (
-                <Button variant="outline" size="sm" onClick={() => setConfirmArchive(true)}>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              {!isArchived && (
+                <Button size="sm" variant="outline" onClick={() => { setConfirmArchive(true); setConfirmDelete(false); }}>
                   <Archive className="w-3.5 h-3.5 mr-1" /> Archiver
                 </Button>
               )}
-              {onDelete && !confirmDelete && !confirmArchive && (
-                <Button variant="outline" size="sm" onClick={() => setConfirmDelete(true)} className="text-red-600 border-red-200 hover:bg-red-50">
-                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+              {onDuplicate && (
+                <Button size="sm" variant="outline" onClick={() => { onDuplicate(site); onClose(); }}>
+                  Dupliquer
                 </Button>
               )}
+              <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50 border-red-200" onClick={() => { setConfirmDelete(true); setConfirmArchive(false); }}>
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+              </Button>
             </div>
-            <div className="flex gap-2 ml-auto">
+            <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={onClose}>Fermer</Button>
               <Button variant="outline" size="sm" onClick={() => handleSave("planned")}>Planifier</Button>
               <Button size="sm" onClick={() => handleSave()}>Enregistrer</Button>
@@ -782,6 +934,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     </Dialog>
   );
 }
+
 
 function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColors = [] }: any) {
   const [name, setName] = useState("");
@@ -4392,23 +4545,111 @@ useEffect(() => {
               </div>
             )}
 
+            {view === "salaries" && (
+              <div className="space-y-3">
+                <Card>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-base font-semibold flex items-center gap-2">
+                        <span>Mes salariés</span>
+                        <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
+                          {safePeople.filter((p: any) => p.status !== "archived").length} actif{safePeople.filter((p: any) => p.status !== "archived").length > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                      {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => (
+                        <button
+                          key={p.id}
+                          onClick={() => openPersonDetail(p.id)}
+                          className={cx(
+                            "rounded-lg border p-3 bg-white shadow-sm flex items-start gap-3 text-left hover:border-neutral-300 transition",
+                            p.status === "disabled" ? "border-amber-100 opacity-60" : "border-neutral-200"
+                          )}
+                        >
+                          <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5", p.color || "bg-neutral-400")}>
+                            {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <div className="font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
+                              {p.name}
+                              {p.role && <span className="text-[11px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full">{p.role}</span>}
+                              {p.status === "disabled" && <span className="text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">Désactivé</span>}
+                            </div>
+                            {p.tauxJournalier != null && (
+                              <div className="text-[11px] text-emerald-700 font-semibold">{p.tauxJournalier} €/j</div>
+                            )}
+                            {(p.phone || p.email) && (
+                              <div className="text-[11px] text-neutral-500 space-y-0.5">
+                                {p.phone && <div>📞 {p.phone}</div>}
+                                {p.email && <div>✉ {p.email}</div>}
+                              </div>
+                            )}
+                            {p.skills?.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {p.skills.slice(0, 3).map((s: any, idx: number) => (
+                                  <span key={idx} className="text-[11px] px-2 py-0.5 bg-sky-50 border border-sky-100 text-sky-700 rounded-full">{s}</span>
+                                ))}
+                                {p.skills.length > 3 && <span className="text-[11px] text-neutral-400">+{p.skills.length - 3}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                      {safePeople.filter((p: any) => p.status !== "archived").length === 0 && (
+                        <div className="text-sm text-neutral-500 md:col-span-2">Aucun salarié actif.</div>
+                      )}
+                    </div>
+                    {safePeople.filter((p: any) => p.status === "archived").length > 0 && (
+                      <div className="border-t pt-3 space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-2">
+                          <Archive className="w-3.5 h-3.5" />
+                          Archivés ({safePeople.filter((p: any) => p.status === "archived").length})
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {safePeople.filter((p: any) => p.status === "archived").map((p: any) => (
+                            <button
+                              key={p.id}
+                              onClick={() => openPersonDetail(p.id)}
+                              className="rounded-lg border border-neutral-100 p-3 bg-neutral-50 flex items-start gap-3 text-left hover:border-neutral-200 transition"
+                            >
+                              <div className={cx("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 grayscale", p.color || "bg-neutral-400")}>
+                                {p.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-medium text-neutral-500 text-sm">{p.name}</div>
+                                {p.role && <div className="text-[11px] text-neutral-400">{p.role}</div>}
+                                <div className="text-[11px] text-neutral-400 mt-0.5">Cliquer pour restaurer ou supprimer</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             {view === "rentabilite" && (() => {
+              const noTauxWarning = safePeople.filter((p: any) => p.status !== "archived" && p.tauxJournalier == null).length;
               const rentaRows = safeSites.filter((s: any) => s.status !== "archived").map((s: any) => {
                 const siteAssignments = assignments.filter((a: any) => a.siteId === s.id);
                 const mainOeuvre = siteAssignments.reduce((sum: number, a: any) => {
                   const person = people.find((p: any) => p.id === a.personId);
-                  const rate = Number.isFinite(Number(person?.tauxJournalier)) ? Number(person.tauxJournalier) : tauxJournalierDefault;
-                  const portion = a.portion === "half" ? 0.5 : 1;
-                  return sum + rate * portion;
+                  if (!Number.isFinite(Number(person?.tauxJournalier))) return sum;
+                  return sum + Number(person.tauxJournalier) * getPortion(a.portion);
                 }, 0);
                 const tauxMat = s.tauxMateriel != null ? s.tauxMateriel : tauxMaterielDefault;
                 const coutMateriel = mainOeuvre * (tauxMat / 100);
-                const coutTotal = mainOeuvre + coutMateriel;
+                const extraCouts = (s.couts || []).reduce((sum: number, c: any) => sum + (Number(c.montant) || 0), 0);
+                const coutTotal = mainOeuvre + coutMateriel + extraCouts;
                 const linkedQuote = s.quoteId ? safeQuotes.find((q: any) => q.id === s.quoteId) : null;
                 const budget = Number(linkedQuote?.amount ?? s.quoteSnapshot?.amount ?? 0);
                 const marge = budget > 0 ? budget - coutTotal : null;
                 const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
-                return { site: s, mainOeuvre, coutMateriel, coutTotal, budget, marge, margePercent, tauxMat, nbJours: siteAssignments.reduce((s: number, a: any) => s + (a.portion === "half" ? 0.5 : 1), 0) };
+                return { site: s, mainOeuvre, coutMateriel, extraCouts, coutTotal, budget, marge, margePercent, tauxMat, nbJours: siteAssignments.reduce((s: number, a: any) => s + getPortion(a.portion), 0) };
               });
 
               const sorted = [...rentaRows].sort((a, b) => {
@@ -4470,22 +4711,22 @@ useEffect(() => {
                     ))}
                   </div>
 
-                  {/* Settings row */}
-                  <Card>
-                    <CardContent className="p-3 flex flex-wrap items-center gap-4 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-neutral-500 text-xs">Taux journalier global</span>
-                        <input type="number" min={0} step={10} value={tauxJournalierDefault} onChange={(e: any) => setTauxJournalierDefault(Number(e.target.value))} className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
-                        <span className="text-neutral-400 text-xs">€/j</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-neutral-500 text-xs">Taux matériel global</span>
+                  {/* Settings + warnings */}
+                  <div className="flex flex-wrap gap-3 items-start">
+                    <Card className="flex-1 min-w-[220px]">
+                      <CardContent className="p-3 flex items-center gap-3 text-sm">
+                        <span className="text-neutral-500 text-xs whitespace-nowrap">Taux matériel global</span>
                         <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-16 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
-                        <span className="text-neutral-400 text-xs">% de la MO</span>
+                        <span className="text-neutral-400 text-xs">% MO</span>
+                        <span className="text-[11px] text-neutral-400">(overridable par chantier)</span>
+                      </CardContent>
+                    </Card>
+                    {noTauxWarning > 0 && (
+                      <div className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        ⚠️ {noTauxWarning} salarié{noTauxWarning > 1 ? "s" : ""} sans taux journalier défini — la MO de ces salariés n'est pas comptabilisée. Allez dans <strong>Salariés</strong> pour les configurer.
                       </div>
-                      <div className="text-[11px] text-neutral-400">Les taux par chantier/salarié remplacent ces valeurs globales.</div>
-                    </CardContent>
-                  </Card>
+                    )}
+                  </div>
 
                   {/* Table */}
                   <Card>
@@ -4509,10 +4750,10 @@ useEffect(() => {
                           {sorted.map(({ site: s, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours }: any) => (
                             <tr key={s.id} className={`hover:bg-neutral-50 transition ${rowColor(margePercent)}`}>
                               <td className="px-3 py-2.5 pl-4">
-                                <div className="flex items-center gap-2">
+                                <button onClick={() => openSiteDetail(s.id)} className="flex items-center gap-2 hover:underline text-left">
                                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
                                   <span className="font-medium text-neutral-900">{s.name}</span>
-                                </div>
+                                </button>
                               </td>
                               <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
                               <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
@@ -4777,6 +5018,11 @@ useEffect(() => {
           onDelete={(id: string) => removeSite(id)}
           onDuplicate={duplicateSite}
           usedColors={safeSites.filter((s: any) => s.id !== siteDetail?.id).map((s: any) => s.color)}
+          assignments={assignments}
+          people={people}
+          tauxJournalierDefault={tauxJournalierDefault}
+          tauxMaterielDefault={tauxMaterielDefault}
+          quotes={quotes}
         />
       )}
 
