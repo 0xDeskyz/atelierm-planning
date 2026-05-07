@@ -934,95 +934,63 @@ function HoursCell({ date, site, assignments, people, notes, hoursPerDay, confli
           ? "bg-sky-50 ring-2 ring-sky-300 border-sky-200"
           : "border-neutral-200"
       )}
-      title={meta.text || meta?.brNote?.text || ""}
+      title={meta.text || ""}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 flex-wrap text-xs">
-          <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{toLocalKey(date)}</span>
-          {meta.holiday && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</span>
-          )}
-          {meta.blocked && !meta.holiday && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200">Indispo</span>
-          )}
-          {meta.text && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
-              {meta.text}
-            </span>
-          )}
-          {meta.hoursOverride !== undefined && meta.hoursOverride !== null && meta.hoursOverride !== "" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Heures propres à la case">
-              {meta.hoursOverride}h / jour
-            </span>
-          )}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-semibold text-neutral-700">{date.getDate()}</span>
+          {meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">🏖 Non travaillé</span>}
+          {meta.blocked && !meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">🚧 Indispo</span>}
+          {meta.eventType && (() => { const et = EVENT_TYPES.find((e) => e.id === meta.eventType); return et ? <span className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>{et.icon}</span> : null; })()}
+          {meta.text && !meta.eventType && <span className="text-[10px] text-neutral-400 truncate max-w-[80px]" title={meta.text}>{meta.text}</span>}
         </div>
-        <button onClick={() => onEditNote(date, site)} className="opacity-70 hover:opacity-100" aria-label="Éditer la case" title="Éditer la case">
-          <Edit3 className="w-4 h-4" />
+        <button onClick={() => onEditNote(date, site)} className="opacity-30 hover:opacity-70 transition" title="Éditer">
+          <Edit3 className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {todays.map((a: any) => {
           const p = people.find((pp: any) => pp.id === a.personId);
           if (!p) return null;
           const info = getInfo(a, meta);
           const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
-          const portionLabel = info.portion === 1 ? "journée" : info.portion === 0.5 ? "½ journée" : `${info.portion} j`;
-          const displayHours = Number.isFinite(info.hours) ? info.hours : 0;
+          const isFullDay = info.portion === 1;
+          const isHalfDay = info.portion === 0.5;
           return (
-            <div key={a.id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-2">
-                    <span className={cx("inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-[11px] font-semibold text-white shadow", p.color)}>
-                      <span className="w-2 h-2 rounded-full bg-white/70" />
-                      {p.name}
-                    </span>
-                    <span className="text-[11px] rounded-full bg-white px-2 py-0.5 border border-neutral-200">{portionLabel}</span>
-                  </span>
-                  {conflict && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">Conflit possible</span>
-                  )}
-                </div>
-                <span className="text-[11px] text-neutral-600">{displayHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h</span>
+            <div key={a.id} className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className={cx("w-2 h-2 rounded-full shrink-0", p.color || "bg-neutral-400")} />
+                <span className="text-xs font-medium truncate">{p.name.split(" ")[0]}</span>
+                {conflict && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 shrink-0">!</span>}
               </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <Button size="sm" variant={info.portion === 1 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 1 })}>
-                  Journée
-                </Button>
-                <Button size="sm" variant={info.portion === 0.5 && !info.hasCustomHours ? "default" : "outline"} disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { portion: 0.5 })}>
-                  ½ journée
-                </Button>
-                <Input
-                  type="number"
-                  step={0.25}
-                  min={0}
-                  className="w-24 h-8"
+              <div className="flex items-center gap-1 shrink-0">
+                <button
                   disabled={unavailable}
-                  value={info.hasCustomHours ? info.hours : ""}
-                  placeholder={info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
-                  onChange={(e: any) => onUpdateAssignment(a.id, { hours: e.target.value === "" ? "" : Number(e.target.value) })}
-                />
-                <Button size="sm" variant="ghost" disabled={unavailable} onClick={() => onUpdateAssignment(a.id, { hours: "" })}>
-                  Défaut
-                </Button>
-              </div>
-
-              <div className="text-[11px] text-neutral-500 leading-snug">
-                Base {baseValue}h × {info.portion} = {info.suggestedHours.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} h
-                {info.hasCustomHours
-                  ? " (override manuel)"
-                  : meta.hoursOverride
-                  ? " (heures de la case)"
-                  : ` (heure/jour globale ${hoursPerDay}h)`}
+                  onClick={() => onUpdateAssignment(a.id, { portion: 1, hours: "" })}
+                  className={cx(
+                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
+                    isFullDay && !info.hasCustomHours
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
+                  )}
+                >J</button>
+                <button
+                  disabled={unavailable}
+                  onClick={() => onUpdateAssignment(a.id, { portion: 0.5, hours: "" })}
+                  className={cx(
+                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
+                    isHalfDay && !info.hasCustomHours
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
+                  )}
+                >½</button>
               </div>
             </div>
           );
         })}
-
         {todays.length === 0 && (
-          <div className="text-[11px] text-neutral-500">Aucune affectation sur ce jour.</div>
+          <div className="text-[11px] text-neutral-400 italic">Aucune affectation</div>
         )}
       </div>
     </div>
