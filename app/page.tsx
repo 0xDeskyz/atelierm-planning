@@ -632,9 +632,13 @@ function PersonChip({ person }: any) {
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: "none" }
     : { touchAction: "none" };
+  const initials = person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={`select-none inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-white text-xs ${person.color} shadow cursor-grab`}>
-      <Users className="w-3.5 h-3.5" /> {person.name}
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes}
+      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs shadow cursor-grab hover:brightness-110 transition", person.color || "bg-neutral-500")}
+    >
+      <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center font-semibold text-[10px] shrink-0">{initials}</span>
+      <span className="font-medium">{person.name}</span>
     </div>
   );
 }
@@ -670,13 +674,21 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`px-2.5 py-1 rounded-full text-white text-sm ${person.color} flex items-center gap-1.5 select-none ${isDragging ? "opacity-80 ring-2 ring-black/30" : ""} ${conflict ? "ring-2 ring-amber-400" : ""}`}
-      title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} journée(s)` : person.name}
+      className={cx(
+        "pl-1 pr-2 py-0.5 rounded-full text-white text-xs flex items-center gap-1.5 select-none transition",
+        person.color || "bg-neutral-500",
+        isDragging ? "opacity-80 ring-2 ring-black/30" : "hover:brightness-105",
+        conflict ? "ring-2 ring-amber-400" : ""
+      )}
+      title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} j.` : person.name}
     >
-      <span>{person.name}</span>
-      {extraLabel && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black/30">{extraLabel}</span>}
-      {conflict && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-900">Conflit</span>}
-      <button className="ml-1 w-4 h-4 leading-none rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center" title="Retirer du jour" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
+      <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center font-bold text-[9px] shrink-0">
+        {person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
+      </span>
+      <span className="font-medium leading-none">{person.name.split(" ")[0]}</span>
+      {extraLabel && <span className="text-[10px] px-1 py-0.5 rounded-full bg-black/25">{extraLabel}</span>}
+      {conflict && <span className="text-[10px] px-1 py-0.5 rounded-full bg-amber-200 text-amber-900">!</span>}
+      <button className="w-3.5 h-3.5 rounded-full bg-black/25 hover:bg-black/50 text-white flex items-center justify-center shrink-0 leading-none" title="Retirer" aria-label={`Retirer ${person.name}`} onClick={onRemove}>×</button>
     </div>
   );
 }
@@ -684,7 +696,9 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday }: any) {
+const ABSENCE_BADGE: Record<string, string> = { CP: "bg-amber-400", MAL: "bg-red-400", OFF: "bg-slate-400" };
+
+function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -740,15 +754,22 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
           const p = people.find((pp: any) => pp.id === a.personId);
           const conflictKey = `${a.personId}|${a.date}`;
           const conflict = (conflictMap?.[conflictKey] || 0) > 1;
+          const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
           return p ? (
-            <AssignmentChip
-              key={a.id}
-              a={a}
-              person={p}
-              onRemove={() => onRemoveAssignment(a.id)}
-              baseHours={baseHours}
-              conflict={conflict}
-            />
+            <div key={a.id} className="flex items-center gap-1">
+              <AssignmentChip
+                a={a}
+                person={p}
+                onRemove={() => onRemoveAssignment(a.id)}
+                baseHours={baseHours}
+                conflict={conflict}
+              />
+              {absence && (
+                <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
+                  {absence}
+                </span>
+              )}
+            </div>
           ) : null;
         })}
       </div>
@@ -1780,6 +1801,7 @@ export default function Page() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [notes, setNotes] = useState<Record<string, any>>({});
   const [absencesByWeek, setAbsencesByWeek] = useState<Record<string, Record<string, boolean>>>({});
+  const [absencesByDay, setAbsencesByDay] = useState<Record<string, Record<string, "CP" | "MAL" | "OFF">>>({});
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
@@ -2788,6 +2810,25 @@ export default function Page() {
     });
   };
 
+  const ABSENCE_TYPES = ["CP", "MAL", "OFF"] as const;
+  type AbsenceType = typeof ABSENCE_TYPES[number];
+  const ABSENCE_COLORS: Record<AbsenceType, string> = { CP: "bg-amber-400", MAL: "bg-red-400", OFF: "bg-slate-400" };
+  const ABSENCE_LABELS: Record<AbsenceType, string> = { CP: "Congé payé", MAL: "Maladie", OFF: "Jour off / RTT" };
+
+  const getDayAbsence = (pid: string, dateKey: string): AbsenceType | null =>
+    (absencesByDay[dateKey]?.[pid] as AbsenceType) || null;
+
+  const cycleDayAbsence = (pid: string, dateKey: string) => {
+    const current = getDayAbsence(pid, dateKey);
+    const idx = current ? ABSENCE_TYPES.indexOf(current) : -1;
+    const next = idx < ABSENCE_TYPES.length - 1 ? ABSENCE_TYPES[idx + 1] : null;
+    setAbsencesByDay((prev) => {
+      const day = { ...(prev[dateKey] || {}) };
+      if (next) day[pid] = next; else delete day[pid];
+      return { ...prev, [dateKey]: day };
+    });
+  };
+
   const onDragEnd = (e: any) => {
     const { active, over } = e;
     if (!over || !active?.data?.current) return;
@@ -3127,6 +3168,7 @@ export default function Page() {
     setAssignments(toArray(state.assignments));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
+    setAbsencesByDay(state.absencesByDay || {});
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
@@ -3297,6 +3339,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     assignments,
     notes,
     absencesByWeek,
+    absencesByDay,
     siteWeekVisibility,
     hoursPerDay,
     quotes,
@@ -3304,7 +3347,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3557,7 +3600,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -4019,43 +4062,64 @@ useEffect(() => {
                     <div className="font-medium">Salariés</div>
                     <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                   </div>
-                  <div className="space-y-1.5">
-                    {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => (
-                      <div key={p.id} className={cx("flex items-center justify-between gap-2", p.status === "disabled" && "opacity-50")}>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <PersonChip person={p} />
-                          {p.status === "disabled" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 shrink-0">off</span>}
+                  <div className="space-y-2">
+                    {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => {
+                      const DAY_LABELS = ["L","Ma","Me","J","V"];
+                      return (
+                        <div key={p.id} className={cx("rounded-lg border border-neutral-100 bg-neutral-50 p-2 space-y-1.5", p.status === "disabled" && "opacity-50")}>
+                          {/* Row 1: chip + actions */}
+                          <div className="flex items-center justify-between gap-1">
+                            <PersonChip person={p} />
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
+                                onClick={() => {
+                                  const siteId = sitesForCurrentWeek[0]?.id;
+                                  if (!siteId) return;
+                                  weekDateKeys.forEach((dateKey) => {
+                                    if (isAbsentOnWeek(p.id, currentWeekKey)) return;
+                                    if (getDayAbsence(p.id, dateKey)) return;
+                                    const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
+                                    if (already) return;
+                                    const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
+                                    setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
+                                  });
+                                }}
+                              ><CalendarRange className="w-3.5 h-3.5" /></Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openPersonDetail(p.id)}><Edit3 className="w-3.5 h-3.5" /></Button>
+                            </div>
+                          </div>
+                          {/* Row 2: pastilles jours absence */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-neutral-400 w-8 shrink-0">Abs.</span>
+                            {weekDays.map((d, i) => {
+                              const dk = toLocalKey(d);
+                              const abs = getDayAbsence(p.id, dk);
+                              return (
+                                <button
+                                  key={dk}
+                                  onClick={() => cycleDayAbsence(p.id, dk)}
+                                  title={abs ? ABSENCE_LABELS[abs] : `Marquer absence ${DAY_LABELS[i]}`}
+                                  className={cx(
+                                    "w-7 h-5 rounded text-[9px] font-bold transition border",
+                                    abs
+                                      ? cx(ABSENCE_COLORS[abs], "text-white border-transparent")
+                                      : "bg-white text-neutral-300 border-neutral-200 hover:border-neutral-400"
+                                  )}
+                                >
+                                  {abs || DAY_LABELS[i]}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <label className="text-xs flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={isAbsentOnWeek(p.id, currentWeekKey)} onChange={() => toggleAbsentThisWeek(p.id)} />
-                            Abs.
-                          </label>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
-                            onClick={() => {
-                              const siteId = sitesForCurrentWeek[0]?.id;
-                              if (!siteId) return;
-                              weekDateKeys.forEach((dateKey) => {
-                                if (isAbsentOnWeek(p.id, currentWeekKey)) return;
-                                const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
-                                if (already) return;
-                                const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
-                                setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
-                              });
-                            }}
-                            aria-label={`Affecter ${p.name} toute la semaine`}
-                          >
-                            <CalendarRange className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => openPersonDetail(p.id)} aria-label={`Modifier ${p.name}`}><Edit3 className="w-4 h-4" /></Button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                  <p className="text-xs text-neutral-500">L'absence ne vaut que pour la <b>semaine affichée</b>. Le <CalendarRange className="w-3 h-3 inline" /> affecte sur le 1er chantier de la semaine.</p>
+                  <p className="text-[10px] text-neutral-400">Clic sur L/Ma/Me/J/V pour cycler CP → MAL → OFF → rien. <CalendarRange className="w-3 h-3 inline" /> affecte sur le 1er chantier.</p>
                 </CardContent>
               </Card>
 
@@ -4179,7 +4243,8 @@ useEffect(() => {
                             hoursPerDay={hoursPerDay}
                             conflictMap={conflictMap}
                             onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                          publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                            publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                            absencesByDay={absencesByDay}
                           />
                         ))}
                       </div>
@@ -4314,7 +4379,8 @@ useEffect(() => {
                                   hoursPerDay={hoursPerDay}
                                   conflictMap={conflictMap}
                                   onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                          publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                  publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                  absencesByDay={absencesByDay}
                                 />
                               ))}
                             </div>
