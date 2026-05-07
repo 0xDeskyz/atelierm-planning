@@ -1612,6 +1612,7 @@ export default function Page() {
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string>("");
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [customizationOpen, setCustomizationOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -3058,6 +3059,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     const payload = buildSyncPayload(stamp);
     try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
     setSaving(true);
+    setSaveStatusMessage("");
     try {
       const res = await fetch(`/api/state/${currentWeekKey}`, {
         method: "PUT",
@@ -3069,11 +3071,17 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       const data = await res.json().catch(() => ({}));
       const storage = String((data as any)?.storage || "");
       if (storage === "memory") {
-        alert("Sauvegarde en mode temporaire (mémoire serveur). Vérifie la config BLOB_READ_WRITE_TOKEN sur Vercel.");
+        setSaveStatusMessage("Sauvegarde temporaire côté serveur (mémoire). Configure BLOB_READ_WRITE_TOKEN sur Vercel.");
+      } else if (storage === "blob" || storage === "blob+local") {
+        setSaveStatusMessage("Sauvegarde serveur OK.");
+      } else if (storage === "local") {
+        setSaveStatusMessage("Sauvegarde locale serveur uniquement (fallback). Vérifie la config Blob.");
+      } else {
+        setSaveStatusMessage("Sauvegarde effectuée.");
       }
     } catch (err) {
       console.error("Enregistrement distant impossible", err);
-      alert("Impossible d'enregistrer sur le serveur. Les données restent seulement locales sur cet appareil.");
+      setSaveStatusMessage("Impossible d'enregistrer sur le serveur. Les données restent locales sur cet appareil.");
     } finally {
       setSaving(false);
     }
@@ -3357,6 +3365,9 @@ useEffect(() => {
                   <RotateCcw className="w-4 h-4 mr-2" />
                   {refreshing ? "Rechargement..." : "Recharger"}
                 </Button>
+                {saveStatusMessage ? (
+                  <span className="text-xs text-amber-700 max-w-[28rem]">{saveStatusMessage}</span>
+                ) : null}
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
                 <div className="relative">
                   <Button
