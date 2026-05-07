@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import {
   DndContext,
   DragOverlay,
@@ -15,6 +16,7 @@ import {
 
 import {
   AlertTriangle,
+  Archive,
   CalendarRange,
   ChevronDown,
   ChevronLeft,
@@ -112,52 +114,112 @@ function TabsTrigger({ value, children }: any) {
 function Dialog({ open, onOpenChange, children }: any) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange?.(false)} />
       {children}
     </div>
   );
 }
 function DialogContent({ children, className = "" }: any) {
-  return <div className={cx("relative z-10 w-full max-w-lg rounded-xl bg-white p-4 shadow-lg", className)}>{children}</div>;
+  const arr = React.Children.toArray(children);
+  const header = arr.find((c: any) => c?.type === DialogHeader);
+  const footer = arr.find((c: any) => c?.type === DialogFooter);
+  const body = arr.filter((c: any) => c?.type !== DialogHeader && c?.type !== DialogFooter);
+  const footerChildren = (footer as any)?.props?.children;
+  return (
+    <div className={cx("relative z-10 w-full max-w-lg rounded-xl bg-white shadow-lg flex flex-col max-h-[90vh]", className)}>
+      {header && (
+        <div className="px-5 pt-5 pb-3 shrink-0">
+          {(header as any)?.props?.children}
+        </div>
+      )}
+      <div className="overflow-y-auto flex-1 min-h-0 px-5 pb-3 space-y-3">
+        {body}
+      </div>
+      {footer && (
+        <div className="px-5 py-3 shrink-0 border-t border-neutral-100 flex flex-col gap-2">
+          {footerChildren}
+        </div>
+      )}
+    </div>
+  );
 }
-function DialogHeader({ children }: any) {
-  return <div className="mb-2">{children}</div>;
-}
+function DialogHeader({ children }: any) { return null; }
 function DialogTitle({ children }: any) {
   return <div className="text-lg font-semibold">{children}</div>;
 }
 function DialogDescription({ children, className = "" }: any) {
-  return <p className={cx("text-sm text-neutral-600", className)}>{children}</p>;
+  return <p className={cx("text-sm text-neutral-500 mt-0.5", className)}>{children}</p>;
 }
-function DialogFooter({ children }: any) {
-  return <div className="mt-3 flex items-center justify-end gap-2">{children}</div>;
-}
+function DialogFooter({ children, className = "" }: any) { return null; }
 
 // ==================================
 // Constantes & Démo
 // ==================================
+// Palette triée arc-en-ciel : rouge → orange → jaune → vert → cyan → bleu → indigo → violet → rose → neutres
 const COLORS = [
-  "bg-rose-500",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-sky-500",
-  "bg-violet-500",
-  "bg-pink-500",
-  "bg-indigo-500",
-  "bg-cyan-500",
-  "bg-lime-500",
-  "bg-teal-500",
-  "bg-orange-500",
-  "bg-fuchsia-500",
-  "bg-blue-600",
-  "bg-red-400",
-  "bg-yellow-400",
-  "bg-green-400",
-  "bg-purple-400",
-  "bg-slate-500",
+  // Rouges
+  "bg-red-400", "bg-red-500", "bg-red-600",
+  "bg-rose-400", "bg-rose-500", "bg-rose-600",
+  // Oranges
+  "bg-orange-400", "bg-orange-500", "bg-orange-600",
+  "bg-amber-400", "bg-amber-500", "bg-amber-600",
+  // Jaunes
+  "bg-yellow-400", "bg-yellow-500",
+  // Limes / Verts
+  "bg-lime-400", "bg-lime-500",
+  "bg-green-400", "bg-green-500", "bg-green-600",
+  "bg-emerald-400", "bg-emerald-500", "bg-emerald-600",
+  // Teals / Cyans
+  "bg-teal-400", "bg-teal-500",
+  "bg-cyan-400", "bg-cyan-500",
+  // Bleus
+  "bg-sky-400", "bg-sky-500",
+  "bg-blue-400", "bg-blue-500", "bg-blue-600",
+  // Indigos / Violets
+  "bg-indigo-400", "bg-indigo-500",
+  "bg-violet-400", "bg-violet-500",
+  "bg-purple-400", "bg-purple-500",
+  // Fuchsia / Roses
+  "bg-fuchsia-400", "bg-fuchsia-500",
+  "bg-pink-400", "bg-pink-500",
+  // Neutres
+  "bg-slate-400", "bg-slate-500", "bg-slate-600",
+  "bg-zinc-500", "bg-neutral-600",
 ];
 const SITE_COLORS = COLORS;
+
+function ColorPicker({ value, onChange, usedColors = [] }: { value: string; onChange: (c: string) => void; usedColors?: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {COLORS.map((c) => {
+        const isSelected = value === c;
+        const isTaken = !isSelected && usedColors.includes(c);
+        return (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onChange(c)}
+            aria-label={`Couleur${isTaken ? " (déjà utilisée)" : ""}`}
+            title={isTaken ? "Déjà utilisée" : undefined}
+            className={cx(
+              "relative w-6 h-6 rounded-full border transition-transform",
+              c,
+              isSelected ? "ring-2 ring-offset-1 ring-black border-black scale-110" : "border-transparent hover:scale-110",
+              isTaken ? "opacity-35" : ""
+            )}
+          >
+            {isTaken && (
+              <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/80 ring-1 ring-black/20" />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // Pastels (3 options) pour mini post-it & surlignage
 const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
@@ -286,6 +348,60 @@ const endOfYearLocal = (year: number) => {
   dt.setHours(0, 0, 0, 0);
   return dt;
 };
+
+// ── Jours fériés français ────────────────────────────────────────────────────
+function getEasterDate(year: number): Date {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function getFrenchHolidays(year: number): Map<string, string> {
+  const map = new Map<string, string>();
+  const add = (d: Date, name: string) => map.set(toLocalKey(d), name);
+  const d = (m: number, day: number) => new Date(year, m - 1, day);
+  const easter = getEasterDate(year);
+  const addDays = (base: Date, n: number) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + n);
+
+  add(d(1, 1), "Jour de l'an");
+  add(addDays(easter, 1), "Lundi de Pâques");
+  add(d(5, 1), "Fête du Travail");
+  add(d(5, 8), "Victoire 1945");
+  add(addDays(easter, 39), "Ascension");
+  add(addDays(easter, 50), "Lundi de Pentecôte");
+  add(d(7, 14), "Fête Nationale");
+  add(d(8, 15), "Assomption");
+  add(d(11, 1), "Toussaint");
+  add(d(11, 11), "Armistice");
+  add(d(12, 25), "Noël");
+  return map;
+}
+
+function getFrenchHolidaysWithBridges(year: number): Map<string, string> {
+  const holidays = getFrenchHolidays(year);
+  const result = new Map(holidays);
+  holidays.forEach((_name, key) => {
+    const [y, m, day] = key.split("-").map(Number);
+    const date = new Date(y, m - 1, day);
+    const dow = date.getDay(); // 0=Sun, 1=Mon…
+    if (dow === 2) { // Mardi → Lundi est un pont
+      const bridge = new Date(y, m - 1, day - 1);
+      if (!result.has(toLocalKey(bridge))) result.set(toLocalKey(bridge), "Pont");
+    }
+    if (dow === 4) { // Jeudi → Vendredi est un pont
+      const bridge = new Date(y, m - 1, day + 1);
+      if (!result.has(toLocalKey(bridge))) result.set(toLocalKey(bridge), "Pont");
+    }
+  });
+  return result;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const todayKey = toLocalKey(new Date());
 const nextMonthKey = (() => {
@@ -430,7 +546,7 @@ const normalizeSiteRecord = (site: any) => {
   const end = (base as any)?.endDate || start;
   const colorIndex = hashString(String((base as any)?.id || (base as any)?.name || start)) % SITE_COLORS.length;
   const color = (base as any)?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
-  const status = (base as any)?.status === "pending" ? "pending" : "planned";
+  const status = (base as any)?.status === "archived" ? "archived" : (base as any)?.status === "pending" ? "pending" : "planned";
   const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
   return {
     ...base,
@@ -567,7 +683,7 @@ function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap }: any) {
+function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -600,7 +716,8 @@ function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveA
       {/* Top bar */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 flex-wrap">
-          {meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</div>)}
+          {publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 font-medium" title={publicHoliday}>{publicHoliday === "Pont" ? "🌉 Pont" : `🎌 ${publicHoliday}`}</div>)}
+          {meta.holiday && !publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">Férié</div>)}
           {meta.blocked && !meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200">Indispo</div>)}
           {meta.text && (
             <div className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 max-w-[60%] truncate" title={meta.text}>
@@ -892,7 +1009,7 @@ function HoursCell({ date, site, assignments, people, notes, hoursPerDay, confli
 // ==================================
 // Dialogs
 // ==================================
-function AddPersonDialog({ open, setOpen, onAdd }: any) {
+function AddPersonDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [phone, setPhone] = useState("");
@@ -909,11 +1026,7 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
             <Input placeholder="Téléphone" value={phone} onChange={(e: any) => setPhone(e.target.value)} />
             <Input placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} className="md:col-span-2" />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map((c) => (
-              <div key={c} onClick={() => setColor(c)} className={`w-6 h-6 rounded-full cursor-pointer ${c} ${color === c ? "ring-2 ring-black" : ""}`} title={c} />
-            ))}
-          </div>
+          <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
         </div>
         <DialogFooter>
           <Button
@@ -945,16 +1058,99 @@ function AddPersonDialog({ open, setOpen, onAdd }: any) {
   );
 }
 
-function AddSiteDialog({ open, setOpen, onAdd }: any) {
+// Retourne le lundi de la semaine ISO n de l'année donnée
+function isoWeekStart(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const d = new Date(jan4);
+  d.setDate(jan4.getDate() - dow + 1 + (week - 1) * 7);
+  return d;
+}
+
+// Groupe les semaines ISO d'une année par mois (via le jeudi de la semaine)
+function weeksByMonth(year: number): Record<number, number[]> {
+  const total = Math.max(52, getISOWeeksInYear(year));
+  const result: Record<number, number[]> = {};
+  for (let wk = 1; wk <= total; wk++) {
+    const thursday = isoWeekStart(year, wk);
+    thursday.setDate(thursday.getDate() + 3);
+    const m = thursday.getMonth();
+    if (!result[m]) result[m] = [];
+    result[m].push(wk);
+  }
+  return result;
+}
+
+const MONTH_SHORT = ["Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc."];
+
+function WeekPicker({
+  year,
+  selectedWeeks,
+  onToggleWeek,
+  onToggleMonth,
+}: {
+  year: number;
+  selectedWeeks: string[];
+  onToggleWeek: (wkKey: string) => void;
+  onToggleMonth: (wkKeys: string[], allSelected: boolean) => void;
+}) {
+  const groups = weeksByMonth(year);
+  return (
+    <div className="space-y-0.5">
+      {Object.entries(groups).map(([m, weeks]) => {
+        const monthWkKeys = (weeks as number[]).map((wk) => `${year}-W${pad2(wk)}`);
+        const allSelected = monthWkKeys.every((k) => selectedWeeks.includes(k));
+        const someSelected = monthWkKeys.some((k) => selectedWeeks.includes(k));
+        return (
+          <div key={m} className="flex items-center gap-1.5 py-0.5">
+            <button
+              type="button"
+              onClick={() => onToggleMonth(monthWkKeys, allSelected)}
+              title={allSelected ? "Désélectionner le mois" : "Sélectionner le mois"}
+              className={cx(
+                "text-[11px] font-semibold w-11 shrink-0 text-left rounded px-1 py-0.5 transition hover:bg-neutral-100",
+                allSelected ? "text-black" : someSelected ? "text-neutral-600" : "text-neutral-400"
+              )}
+            >
+              {MONTH_SHORT[Number(m)]}
+            </button>
+            <div className="flex flex-wrap gap-1">
+              {(weeks as number[]).map((wk) => {
+                const wkKey = `${year}-W${pad2(wk)}`;
+                const active = selectedWeeks.includes(wkKey);
+                return (
+                  <button
+                    key={wkKey}
+                    type="button"
+                    onClick={() => onToggleWeek(wkKey)}
+                    className={cx(
+                      "text-[11px] rounded border px-1.5 py-0.5 transition leading-none",
+                      active
+                        ? "bg-black text-white border-black"
+                        : "border-neutral-200 hover:bg-neutral-100 text-neutral-500"
+                    )}
+                  >
+                    {pad2(wk)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
   const [name, setName] = useState("");
   const [color, setColor] = useState<string>(SITE_COLORS[6]);
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>([]);
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
-  const weeksInYear = Math.max(54, getISOWeeksInYear(pickerYear));
-  const weeksList = Array.from({ length: weeksInYear }, (_, i) => i + 1);
-  const toggleWeek = (wkKey: string) => {
-    setSelectedWeeks((prev) => (prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey]));
-  };
+  const toggleWeek = (wkKey: string) =>
+    setSelectedWeeks((prev) => prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey]);
+  const toggleMonth = (keys: string[], allSelected: boolean) =>
+    setSelectedWeeks((prev) => allSelected ? prev.filter((w) => !keys.includes(w)) : Array.from(new Set([...prev, ...keys])));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
@@ -963,56 +1159,27 @@ function AddSiteDialog({ open, setOpen, onAdd }: any) {
           <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
           <div className="space-y-1">
             <div className="text-xs text-neutral-600">Couleur</div>
-            <div className="flex flex-wrap gap-2">
-              {SITE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cx(
-                    "w-7 h-7 rounded-full border transition",
-                    c,
-                    color === c ? "ring-2 ring-black border-black" : "border-transparent"
-                  )}
-                  aria-label={`Choisir la couleur ${c}`}
-                  title={c}
-                />
-              ))}
-            </div>
+            <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-medium text-neutral-700">Semaines prévues</div>
               <div className="flex items-center gap-2">
-                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente"><ChevronLeft className="w-4 h-4" /></Button>
-                <div className="text-sm font-semibold w-14 text-center">{pickerYear}</div>
-                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante"><ChevronRight className="w-4 h-4" /></Button>
+                <div className="text-sm font-medium text-neutral-700">Semaines prévues</div>
+                {selectedWeeks.length > 0 && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black text-white font-semibold">{selectedWeeks.length}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+                <span className="text-xs font-semibold w-10 text-center">{pickerYear}</span>
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)}><ChevronRight className="w-4 h-4" /></Button>
+                {selectedWeeks.length > 0 && (
+                  <button type="button" className="text-[11px] text-neutral-500 underline ml-1" onClick={() => setSelectedWeeks([])}>Vider</button>
+                )}
               </div>
             </div>
-            <p className="text-xs text-neutral-500">Sélectionnez les semaines à planifier. Sans sélection, le chantier restera visible toute l'année.</p>
-            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
-              {weeksList.map((wk) => {
-                const wkKey = `${pickerYear}-W${pad2(wk)}`;
-                const active = selectedWeeks.includes(wkKey);
-                return (
-                  <button
-                    key={wkKey}
-                    type="button"
-                    onClick={() => toggleWeek(wkKey)}
-                    className={cx(
-                      "text-xs rounded-md border px-2 py-1 text-center transition",
-                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
-                    )}
-                  >
-                    S{pad2(wk)}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center justify-between text-xs text-neutral-600">
-              <button type="button" className="underline" onClick={() => setSelectedWeeks([])}>Toutes les semaines</button>
-              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); setPickerYear(new Date().getFullYear()); }}>Réinitialiser</button>
-            </div>
+            <p className="text-[11px] text-neutral-400">Cliquer sur un mois pour le sélectionner entier, ou sur les numéros de semaine. Laisser vide = toute l'année.</p>
+            <WeekPicker year={pickerYear} selectedWeeks={selectedWeeks} onToggleWeek={toggleWeek} onToggleMonth={toggleMonth} />
           </div>
         </div>
         <DialogFooter>
@@ -1046,6 +1213,7 @@ function RenameDialog({
   onWeekSelectionChange,
   initialYear,
   color,
+  usedColors = [],
 }: any) {
   const [val, setVal] = useState<string>(name || "");
   const [pickerYear, setPickerYear] = useState<number>(initialYear || new Date().getFullYear());
@@ -1066,8 +1234,6 @@ function RenameDialog({
     });
   };
 
-  const weeksInYear = Math.max(54, getISOWeeksInYear(pickerYear));
-  const weeksList = Array.from({ length: weeksInYear }, (_, i) => i + 1);
   const renderWeekPicker = typeof weekSelection !== 'undefined';
 
   return (
@@ -1078,58 +1244,38 @@ function RenameDialog({
         {typeof color !== "undefined" && (
           <div className="mt-3 space-y-1">
             <div className="text-neutral-600 text-sm">Couleur du chantier</div>
-            <div className="flex flex-wrap gap-2">
-              {SITE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setSiteColor(c)}
-                  className={cx(
-                    "w-7 h-7 rounded-full border transition",
-                    c,
-                    siteColor === c ? "ring-2 ring-black border-black" : "border-transparent"
-                  )}
-                  aria-label={`Couleur ${c}`}
-                  title={c}
-                />
-              ))}
-            </div>
+            <ColorPicker value={siteColor} onChange={setSiteColor} usedColors={usedColors} />
           </div>
         )}
         {renderWeekPicker && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">Semaines visibles</div>
               <div className="flex items-center gap-2">
-                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente"><ChevronLeft className="w-4 h-4" /></Button>
-                <div className="text-sm font-semibold w-14 text-center">{pickerYear}</div>
-                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante"><ChevronRight className="w-4 h-4" /></Button>
+                <span className="text-sm font-medium">Semaines visibles</span>
+                {selectedWeeks.length > 0 && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black text-white font-semibold">{selectedWeeks.length}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)}><ChevronLeft className="w-3 h-3" /></Button>
+                <span className="text-xs font-semibold w-10 text-center">{pickerYear}</span>
+                <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)}><ChevronRight className="w-3 h-3" /></Button>
+                {selectedWeeks.length > 0 && (
+                  <button type="button" className="text-[11px] text-neutral-400 underline ml-1" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); }}>Vider</button>
+                )}
               </div>
             </div>
-            <p className="text-xs text-neutral-500">Sélectionnez les semaines où le chantier doit s'afficher. Sans sélection, il restera visible toute l'année.</p>
-            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
-              {weeksList.map((wk) => {
-                const wkKey = `${pickerYear}-W${pad2(wk)}`;
-                const active = selectedWeeks.includes(wkKey);
-                return (
-                  <button
-                    key={wkKey}
-                    type="button"
-                    onClick={() => toggleWeek(wkKey)}
-                    className={cx(
-                      "text-xs rounded-md border px-2 py-1 text-center transition",
-                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
-                    )}
-                  >
-                    S{pad2(wk)}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center justify-between text-xs text-neutral-600">
-              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); }}>Toutes les semaines</button>
-              <button type="button" className="underline" onClick={() => { setSelectedWeeks([]); onWeekSelectionChange?.([]); setPickerYear(initialYear || new Date().getFullYear()); }}>Réinitialiser</button>
-            </div>
+            <p className="text-[11px] text-neutral-400">Mois = sélectionner toutes ses semaines. Laisser vide = toute l'année.</p>
+            <WeekPicker
+              year={pickerYear}
+              selectedWeeks={selectedWeeks}
+              onToggleWeek={toggleWeek}
+              onToggleMonth={(keys, allSelected) => {
+                const next = allSelected ? selectedWeeks.filter((w) => !keys.includes(w)) : Array.from(new Set([...selectedWeeks, ...keys]));
+                setSelectedWeeks(next);
+                onWeekSelectionChange?.(next);
+              }}
+            />
           </div>
         )}
         <DialogFooter>
@@ -1152,9 +1298,12 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [] }: any) {
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
+  const [globalNotes, setGlobalNotes] = useState<string>("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [clientName, setClientName] = useState<string>("");
   const [address, setAddress] = useState<string>("");
   const [city, setCity] = useState<string>("");
@@ -1180,6 +1329,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
     const parsed = firstWeek ? parseWeekKey(firstWeek) : null;
     setPickerYear(parsed?.year || new Date().getFullYear());
     setColor(site?.color || SITE_COLORS[0]);
+    setGlobalNotes(site?.globalNotes || "");
+    setConfirmArchive(false);
+    setConfirmDelete(false);
   }, [site]);
 
   const handleSave = (nextStatus?: "planned" | "pending") => {
@@ -1201,6 +1353,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
       contactPhone,
       planningWeeks: parsedWeeks,
       color,
+      globalNotes,
     });
   };
 
@@ -1236,23 +1389,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
               <span className="text-[11px] text-neutral-600">Nom</span>
               <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du chantier" />
             </label>
-            <label className="space-y-1">
+            <label className="space-y-1 md:col-span-2">
               <span className="text-[11px] text-neutral-600">Couleur</span>
-              <div className="flex flex-wrap gap-2">
-                {SITE_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={cx(
-                      "w-7 h-7 rounded-full border",
-                      c,
-                      color === c ? "ring-2 ring-black border-black" : "border-transparent"
-                    )}
-                    onClick={() => setColor(c)}
-                    aria-label={`Choisir la couleur ${c}`}
-                  />
-                ))}
-              </div>
+              <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
             </label>
             <label className="space-y-1">
               <span className="text-[11px] text-neutral-600">Client</span>
@@ -1276,89 +1415,93 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
             </label>
             <div className="space-y-2 md:col-span-2">
               <div className="flex items-center justify-between">
-                <div className="text-[11px] text-neutral-600 font-semibold">Semaines (optionnel)</div>
                 <div className="flex items-center gap-2">
-                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)} aria-label="Année précédente">
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <div className="text-xs font-semibold w-14 text-center">{pickerYear}</div>
-                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)} aria-label="Année suivante">
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
+                  <span className="text-[11px] text-neutral-600 font-semibold">Semaines</span>
+                  {selectedWeeks.length > 0 && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-black text-white font-semibold">{selectedWeeks.length}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y - 1)}><ChevronLeft className="w-3 h-3" /></Button>
+                  <span className="text-xs font-semibold w-10 text-center">{pickerYear}</span>
+                  <Button size="icon" variant="ghost" onClick={() => setPickerYear((y: number) => y + 1)}><ChevronRight className="w-3 h-3" /></Button>
+                  {selectedWeeks.length > 0 && (
+                    <button type="button" className="text-[11px] text-neutral-400 underline ml-1" onClick={() => { setSelectedWeeks([]); setWeeks(""); }}>Vider</button>
+                  )}
                 </div>
               </div>
-              <p className="text-[11px] text-neutral-500">Sélectionnez les semaines visibles. Sans sélection, le chantier reste visible toute l'année.</p>
-            <div className="grid grid-cols-6 gap-2 max-h-60 overflow-auto pr-1">
-              {Array.from({ length: Math.max(54, getISOWeeksInYear(pickerYear)) }, (_, idx) => idx + 1).map((wk) => {
-                const wkKey = `${pickerYear}-W${pad2(wk)}`;
-                const active = selectedWeeks.includes(wkKey);
-                return (
-                  <button
-                    key={wkKey}
-                    type="button"
-                    onClick={() =>
-                      setSelectedWeeks((prev) => {
-                        const next = prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
-                        setWeeks(next.join(", "));
-                        return next;
-                      })
-                    }
-                    className={cx(
-                      "text-xs rounded-md border px-2 py-1 text-center transition",
-                      active ? "bg-black text-white border-black" : "border-neutral-200 hover:bg-neutral-100"
-                    )}
-                  >
-                    S{pad2(wk)}
-                  </button>
-                );
-              })}
+              <p className="text-[11px] text-neutral-400">Mois = sélectionner toutes ses semaines. Laisser vide = toute l'année.</p>
+              <WeekPicker
+                year={pickerYear}
+                selectedWeeks={selectedWeeks}
+                onToggleWeek={(wkKey) => setSelectedWeeks((prev) => {
+                  const next = prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey];
+                  setWeeks(next.join(", "));
+                  return next;
+                })}
+                onToggleMonth={(keys, allSelected) => setSelectedWeeks((prev) => {
+                  const next = allSelected ? prev.filter((w) => !keys.includes(w)) : Array.from(new Set([...prev, ...keys]));
+                  setWeeks(next.join(", "));
+                  return next;
+                })}
+              />
             </div>
-            <div className="flex items-center justify-between text-[11px] text-neutral-600">
-              <button
-                type="button"
-                className="underline"
-                onClick={() => {
-                  setSelectedWeeks([]);
-                  setWeeks("");
-                }}
-              >
-                Toutes les semaines
-              </button>
-              <button
-                type="button"
-                className="underline"
-                onClick={() => {
-                  setSelectedWeeks([]);
-                  setWeeks("");
-                  setPickerYear(fallbackYear);
-                }}
-              >
-                Réinitialiser
-              </button>
-            </div>
-            <Input
-              value={weeks}
-              onChange={(e: any) => {
-                const value = e.target.value;
-                setWeeks(value);
-                setSelectedWeeks(parseWeekList(value, fallbackYear));
-              }}
-              placeholder={`Ex: ${fallbackYear}-W12, W13`}
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-[11px] text-neutral-600 font-semibold">Notes</span>
+            <Textarea
+              value={globalNotes}
+              onChange={(e: any) => setGlobalNotes(e.target.value)}
+              placeholder="Notes internes, informations chantier…"
+              rows={3}
+              className="text-sm resize-none"
             />
-              <span className="text-[11px] text-neutral-500">Saisie rapide: laisser vide pour toutes les semaines.</span>
-            </div>
           </div>
         </div>
 
-        <DialogFooter className="flex items-center justify-between">
-          <Button variant="ghost" onClick={onClose}>
-            Fermer
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleSave("planned")}>
-              Planifier
-            </Button>
-            <Button onClick={() => handleSave()}>Enregistrer</Button>
+        <DialogFooter className="flex-col gap-2 sm:flex-col items-stretch">
+          {confirmArchive && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 space-y-2">
+              <p>Confirmer l'archivage de <strong>"{site?.name}"</strong> ?</p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => { setConfirmArchive(false); onArchive?.(site?.id); onClose(); }}>Archiver</Button>
+                <Button size="sm" variant="outline" onClick={() => setConfirmArchive(false)}>Annuler</Button>
+              </div>
+            </div>
+          )}
+          {confirmDelete && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 space-y-2">
+              <p>Supprimer définitivement <strong>"{site?.name}"</strong> ? Cette action est irréversible.</p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => { setConfirmDelete(false); onDelete?.(site?.id); onClose(); }}>Supprimer</Button>
+                <Button size="sm" variant="outline" onClick={() => setConfirmDelete(false)}>Annuler</Button>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-2">
+              {onDuplicate && !confirmArchive && !confirmDelete && (
+                <Button variant="outline" size="sm" onClick={() => { onDuplicate(site?.id); onClose(); }}>
+                  <Copy className="w-3.5 h-3.5 mr-1" /> Dupliquer
+                </Button>
+              )}
+              {onArchive && !confirmArchive && !confirmDelete && (
+                <Button variant="outline" size="sm" onClick={() => setConfirmArchive(true)}>
+                  <Archive className="w-3.5 h-3.5 mr-1" /> Archiver
+                </Button>
+              )}
+              {onDelete && !confirmDelete && !confirmArchive && (
+                <Button variant="outline" size="sm" onClick={() => setConfirmDelete(true)} className="text-red-600 border-red-200 hover:bg-red-50">
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2 ml-auto">
+              <Button variant="ghost" size="sm" onClick={onClose}>Fermer</Button>
+              <Button variant="outline" size="sm" onClick={() => handleSave("planned")}>Planifier</Button>
+              <Button size="sm" onClick={() => handleSave()}>Enregistrer</Button>
+            </div>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1366,7 +1509,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, fallbackYear }: any) {
   );
 }
 
-function PersonDetailDialog({ open, person, onClose, onSave }: any) {
+function PersonDetailDialog({ open, person, onClose, onSave, usedColors = [] }: any) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [phone, setPhone] = useState("");
@@ -1427,21 +1570,7 @@ function PersonDetailDialog({ open, person, onClose, onSave }: any) {
           <Textarea value={notes} onChange={(e: any) => setNotes(e.target.value)} placeholder="Notes internes, disponibilités..." />
           <div className="space-y-1">
             <div className="text-xs text-neutral-600">Couleur</div>
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cx(
-                    "w-7 h-7 rounded-full border transition",
-                    c,
-                    color === c ? "ring-2 ring-black border-black" : "border-transparent"
-                  )}
-                  aria-label={`Choisir la couleur ${c}`}
-                />
-              ))}
-            </div>
+            <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
           </div>
         </div>
 
@@ -1578,21 +1707,21 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
 // ==================================
 // Small helpers
 // ==================================
-function AddPerson({ onAdd }: { onAdd: (name: string, color: string, extra?: any) => void }) {
+function AddPerson({ onAdd, usedColors = [] }: { onAdd: (name: string, color: string, extra?: any) => void; usedColors?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button size="sm" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
-      <AddPersonDialog open={open} setOpen={setOpen} onAdd={onAdd} />
+      <AddPersonDialog open={open} setOpen={setOpen} onAdd={onAdd} usedColors={usedColors} />
     </>
   );
 }
-function AddSite({ onAdd }: { onAdd: (name: string, planningWeeks: string[], color: string) => void }) {
+function AddSite({ onAdd, usedColors = [] }: { onAdd: (name: string, planningWeeks: string[], color: string) => void; usedColors?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
-      <AddSiteDialog open={open} setOpen={setOpen} onAdd={onAdd} />
+      <AddSiteDialog open={open} setOpen={setOpen} onAdd={onAdd} usedColors={usedColors} />
     </>
   );
 }
@@ -1613,9 +1742,12 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatusMessage, setSaveStatusMessage] = useState<string>("");
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "error">("idle");
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [customizationOpen, setCustomizationOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const [exportType, setExportType] = useState<"planning" | "hours">("planning");
   const [exportPreset, setExportPreset] = useState<"week" | "month" | "year" | "custom">("month");
   const [exportStartDate, setExportStartDate] = useState<string>(toLocalKey(startOfMonthLocal(new Date())));
@@ -1655,6 +1787,12 @@ export default function Page() {
     "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries"
   >("planning");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
+  const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
+  const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
+  const [sidebarArchivedOpen, setSidebarArchivedOpen] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const toggleSiteCollapsed = (id: string) =>
+    setCollapsedSites((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const [timelineScope, setTimelineScope] = useState<"month" | "quarter" | "year">("month");
   const [calendarScope, setCalendarScope] = useState<"month" | "quarter" | "year" | "projection">("projection");
   const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
@@ -1697,6 +1835,11 @@ export default function Page() {
     return getWeekDatesLocal(d);
   }, [anchor]);
   const monthWeeks = useMemo(() => getMonthWeeks(anchor), [anchor]);
+  const publicHolidays = useMemo(() => {
+    const year = anchor.getFullYear();
+    const m = new Map([...getFrenchHolidaysWithBridges(year), ...getFrenchHolidaysWithBridges(year + 1)]);
+    return m;
+  }, [anchor]);
   const isWeekend = useCallback((d: Date) => {
     const day = d.getDay();
     return day === 0 || day === 6;
@@ -1792,7 +1935,8 @@ export default function Page() {
   const safeSites = Array.isArray(sites) ? sites : [];
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
-  const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") !== "planned"), [safeSites]);
+  const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "pending"), [safeSites]);
+  const archivedSites = useMemo(() => safeSites.filter((s) => s.status === "archived"), [safeSites]);
   const visiblePlannedSites = useMemo(
     () => (plannedCalendarVisible ? plannedSites : []),
     [plannedCalendarVisible, plannedSites]
@@ -1827,6 +1971,23 @@ export default function Page() {
     () => plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
     [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
   );
+  const allSitesCollapsed = sitesForCurrentWeek.length > 0 && sitesForCurrentWeek.every((s) => collapsedSites.has(s.id));
+  const toggleAllSites = () =>
+    setCollapsedSites(allSitesCollapsed ? new Set() : new Set(sitesForCurrentWeek.map((s) => s.id)));
+
+  // Chantiers à afficher dans la sidebar selon la vue (semaine ou mois)
+  const sidebarVisiblePlannedSites = useMemo(() => {
+    if (isPlanningWeek || view === "hours") {
+      return plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey));
+    }
+    if (isPlanningMonth) {
+      const monthWkKeys = new Set(monthWeeks.map((w: Date[]) => weekKeyOf(w[0])));
+      return plannedSites.filter((s) =>
+        Array.from(monthWkKeys).some((wk) => isSiteVisibleOnWeek(s.id, wk as string))
+      );
+    }
+    return plannedSites;
+  }, [isPlanningWeek, isPlanningMonth, view, plannedSites, isSiteVisibleOnWeek, currentWeekKey, monthWeeks]);
 
   const getCellMeta = useCallback(
     (siteId: string, dateKey: string) => {
@@ -2830,6 +2991,15 @@ export default function Page() {
       setSiteWeekVisibility((prev) => ({ ...prev, [id]: planningWeeks }));
     }
   };
+  const duplicateSite = (id: string) => {
+    const original = safeSites.find((s) => s.id === id);
+    if (!original) return;
+    const newId = ensureId(original.name + "-copy", "site");
+    const copy = normalizeSiteRecord({ ...original, id: newId, name: `${original.name} (copie)`, status: "planned" });
+    setSites((prev) => [...prev, copy]);
+    setSiteWeekVisibility((prev) => original.planningWeeks?.length ? { ...prev, [newId]: original.planningWeeks } : prev);
+    showToast(`"${original.name}" dupliqué`);
+  };
   const removeSite = (id: string) => {
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
@@ -3025,6 +3195,34 @@ useEffect(() => {
   loadWeekState(true);
 }, [currentWeekKey, loadWeekState]);
 
+// Supabase Realtime — sync multi-client
+useEffect(() => {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const channel = supabase
+    .channel(`planner:${currentWeekKey}`)
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "planner_state", filter: `key=eq.${currentWeekKey}` },
+      (payload: any) => {
+        const remote = payload.new?.data;
+        if (!remote) return;
+        const remoteClient = remote.clientId;
+        const remoteVersion = Number(remote.updatedAt || 0);
+        if (remoteClient === clientIdRef.current) return; // c'est notre propre update
+        if (remoteVersion <= syncVersionRef.current) return; // on a déjà plus récent
+        applyState(remote, false);
+        syncVersionRef.current = remoteVersion;
+        setSyncStatus("synced");
+      }
+    )
+    .subscribe();
+
+  return () => { supabase.removeChannel(channel); };
+}, [currentWeekKey, applyState]);
+
 const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   try {
     const res = await fetch(`/api/state/${wk}`, {
@@ -3059,6 +3257,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     const payload = buildSyncPayload(stamp);
     try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
     setSaving(true);
+    setSyncStatus("syncing");
     setSaveStatusMessage("");
     try {
       const res = await fetch(`/api/state/${currentWeekKey}`, {
@@ -3067,21 +3266,11 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
-
-      const data = await res.json().catch(() => ({}));
-      const storage = String((data as any)?.storage || "");
-      if (storage === "memory") {
-        setSaveStatusMessage("Sauvegarde temporaire côté serveur (mémoire). Configure BLOB_READ_WRITE_TOKEN sur Vercel.");
-      } else if (storage === "blob" || storage === "blob+local") {
-        setSaveStatusMessage("Sauvegarde serveur OK.");
-      } else if (storage === "local") {
-        setSaveStatusMessage("Sauvegarde locale serveur uniquement (fallback). Vérifie la config Blob.");
-      } else {
-        setSaveStatusMessage("Sauvegarde effectuée.");
-      }
+      setSyncStatus("synced");
     } catch (err) {
       console.error("Enregistrement distant impossible", err);
-      setSaveStatusMessage("Impossible d'enregistrer sur le serveur. Les données restent locales sur cet appareil.");
+      setSyncStatus("error");
+      setSaveStatusMessage("Impossible d'enregistrer sur le serveur.");
     } finally {
       setSaving(false);
     }
@@ -3365,9 +3554,24 @@ useEffect(() => {
                   <RotateCcw className="w-4 h-4 mr-2" />
                   {refreshing ? "Rechargement..." : "Recharger"}
                 </Button>
-                {saveStatusMessage ? (
-                  <span className="text-xs text-amber-700 max-w-[28rem]">{saveStatusMessage}</span>
-                ) : null}
+                {syncStatus === "syncing" && (
+                  <span className="text-xs text-sky-600 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                    Sync en cours…
+                  </span>
+                )}
+                {syncStatus === "synced" && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
+                    Synchronisé
+                  </span>
+                )}
+                {syncStatus === "error" && (
+                  <span className="text-xs text-red-500 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
+                    {saveStatusMessage || "Erreur de sync"}
+                  </span>
+                )}
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
                 <div className="relative">
                   <Button
@@ -3555,14 +3759,6 @@ useEffect(() => {
             )}
             {(isPlanningWeek || view === "hours") && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={copyFromPreviousWeek}
-                  aria-label="Copier semaine précédente"
-                  title="Copie les affectations, notes et absences de la semaine N-1"
-                >
-                  <Copy className="w-4 h-4 mr-1" /> Copier N-1
-                </Button>
                 <Button
                   variant="outline"
                   onClick={clearCurrentWeek}
@@ -3833,7 +4029,7 @@ useEffect(() => {
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="font-medium">Salariés</div>
-                    <AddPerson onAdd={addPerson} />
+                    <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                   </div>
                 <div className="space-y-1.5">
                   {people.map((p) => (
@@ -3856,41 +4052,54 @@ useEffect(() => {
 
               <Card>
                 <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium flex items-center gap-2">
+                  <div className="flex items-center justify-between w-full">
+                    <div
+                      className="font-medium flex items-center gap-2 cursor-pointer flex-1"
+                      onClick={() => setSidebarChantierOpen((v) => !v)}
+                    >
+                      {sidebarChantierOpen ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
                       Chantiers
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500 font-semibold">
+                        {sidebarVisiblePlannedSites.length}
+                      </span>
                       {pendingSites.length > 0 && (
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
                           {pendingSites.length} à planifier
                         </span>
                       )}
                     </div>
-                    <AddSite onAdd={addSite} />
+                    <AddSite onAdd={addSite} usedColors={safeSites.map((s: any) => s.color)} />
                   </div>
-                <div className="space-y-1.5">
-                  {plannedSites.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2">
-                        <span className={cx("w-2.5 h-2.5 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
-                        {s.name}
-                      </span>
-                        <div className="flex items-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                              setRenameTarget({ type: 'site', id: s.id, name: s.name, color: s.color });
-                              setRenameWeeks(siteWeekVisibility[s.id] || []);
-                              setRenamePickerYear(getISOWeekYear(anchor));
-                              setRenameOpen(true);
-                            }}
-                            aria-label={`Renommer ${s.name}`}
+                  {sidebarChantierOpen && (
+                    <div className="space-y-1.5">
+                      {sidebarVisiblePlannedSites.length > 3 && (
+                        <Input
+                          placeholder="Rechercher…"
+                          value={sidebarSearch}
+                          onChange={(e: any) => setSidebarSearch(e.target.value)}
+                          className="h-7 text-xs"
+                        />
+                      )}
+                      {sidebarVisiblePlannedSites.filter((s) => s.name.toLowerCase().includes(sidebarSearch.toLowerCase())).length === 0 && (
+                        <p className="text-xs text-neutral-400 italic">{sidebarSearch ? "Aucun résultat." : "Aucun chantier sur cette période."}</p>
+                      )}
+                      {sidebarVisiblePlannedSites.filter((s) => s.name.toLowerCase().includes(sidebarSearch.toLowerCase())).map((s) => (
+                        <div key={s.id} className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-2">
+                            <span className={cx("w-2.5 h-2.5 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
+                            {s.name}
+                          </span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => openSiteDetail(s.id)}
+                            aria-label={`Modifier ${s.name}`}
                           ><Edit3 className="w-4 h-4" /></Button>
-                          <Button size="icon" variant="ghost" onClick={() => removeSite(s.id)} aria-label={`Supprimer ${s.name}`}><Trash2 className="w-4 h-4" /></Button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
+
                 </CardContent>
               </Card>
             </div>
@@ -3903,43 +4112,70 @@ useEffect(() => {
               <div className="space-y-2">
                 <div className="grid grid-cols-6 text-xs text-neutral-500">
                   <div className="px-1 flex items-center gap-2">
+                    <button
+                      onClick={toggleAllSites}
+                      className="flex items-center gap-1 hover:text-neutral-800 transition-colors"
+                      title={allSitesCollapsed ? "Tout déplier" : "Tout réduire"}
+                    >
+                      {allSitesCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
                     <span>Sem. {getISOWeek(weekDays[0])}</span>
                     {isViewingCurrentWeek && (
                       <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
                     )}
                   </div>
-                  {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                  {weekDays.map((d, i) => {
+                    const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+                    const holiday = publicHolidays.get(toLocalKey(d));
+                    return (
+                      <div key={i} className={cx("text-center", holiday ? "text-red-600 font-semibold" : "")}>
+                        {dayNames[i]}
+                        {holiday && <div className="text-[9px] leading-tight truncate" title={holiday}>{holiday}</div>}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="space-y-2">
-                  {sitesForCurrentWeek.map((site) => (
-                    <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
-                      <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
-                        <span
-                          className={cx(
-                            "w-3 h-3 rounded-full border", 
-                            site.color || "bg-neutral-300",
-                            site.color ? "border-black/10" : "border-neutral-200"
-                          )}
-                          aria-hidden
-                        />
-                        {site.name}
+                  {sitesForCurrentWeek.map((site) => {
+                    const isCollapsed = collapsedSites.has(site.id);
+                    return (
+                      <div key={site.id} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6")}>
+                        <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                          <button
+                            onClick={() => toggleSiteCollapsed(site.id)}
+                            className="flex-shrink-0 text-neutral-400 hover:text-neutral-700 transition-colors"
+                            title={isCollapsed ? "Déplier" : "Réduire"}
+                          >
+                            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                          <span
+                            className={cx(
+                              "w-3 h-3 rounded-full border flex-shrink-0",
+                              site.color || "bg-neutral-300",
+                              site.color ? "border-black/10" : "border-neutral-200"
+                            )}
+                            aria-hidden
+                          />
+                          {site.name}
+                        </div>
+                        {!isCollapsed && weekDays.map((d) => (
+                          <DayCell
+                            key={`${site.id}-${toLocalKey(d)}`}
+                            date={d}
+                            site={site}
+                            people={people}
+                            assignments={assignments}
+                            onEditNote={openNote}
+                            notes={notes}
+                            hoursPerDay={hoursPerDay}
+                            conflictMap={conflictMap}
+                            onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                          publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                          />
+                        ))}
                       </div>
-                      {weekDays.map((d) => (
-                        <DayCell
-                          key={`${site.id}-${toLocalKey(d)}`}
-                          date={d}
-                          site={site}
-                          people={people}
-                          assignments={assignments}
-                          onEditNote={openNote}
-                          notes={notes}
-                          hoursPerDay={hoursPerDay}
-                          conflictMap={conflictMap}
-                          onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                        />
-                      ))}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -3957,7 +4193,16 @@ useEffect(() => {
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{weekConflictCount} conflits potentiels</span>
                     )}
                   </div>
-                  {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                  {weekDays.map((d, i) => {
+                    const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+                    const holiday = publicHolidays.get(toLocalKey(d));
+                    return (
+                      <div key={i} className={cx("text-center", holiday ? "text-red-600 font-semibold" : "")}>
+                        {dayNames[i]}
+                        {holiday && <div className="text-[9px] leading-tight truncate" title={holiday}>{holiday}</div>}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="space-y-2">
                   {sitesForCurrentWeek.map((site) => (
@@ -4015,37 +4260,57 @@ useEffect(() => {
                               <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800">Semaine en cours</span>
                             )}
                           </div>
-                          {["Lun", "Mar", "Mer", "Jeu", "Ven"].map((d) => (<div key={d} className="text-center">{d}</div>))}
+                          {week.slice(0, 5).map((d: Date, i: number) => {
+                            const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+                            const holiday = publicHolidays.get(toLocalKey(d));
+                            return (
+                              <div key={i} className={cx("text-center", holiday ? "text-red-600 font-semibold" : "")}>
+                                {dayNames[i]}
+                                {holiday && <div className="text-[9px] leading-tight truncate" title={holiday}>{holiday}</div>}
+                              </div>
+                            );
+                          })}
                         </div>
-                        {sitesForWeek.map((site) => (
-                          <div key={`${idx}-${site.id}`} className="grid grid-cols-6 gap-2 items-stretch">
-                            <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
-                              <span
-                                className={cx(
-                                  "w-3 h-3 rounded-full border",
-                                  site.color || "bg-neutral-300",
-                                  site.color ? "border-black/10" : "border-neutral-200"
-                                )}
-                                aria-hidden
-                              />
-                              {site.name}
+                        {sitesForWeek.map((site) => {
+                          const isCollapsed = collapsedSites.has(site.id);
+                          return (
+                            <div key={`${idx}-${site.id}`} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6")}>
+                              <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
+                                <button
+                                  onClick={() => toggleSiteCollapsed(site.id)}
+                                  className="flex-shrink-0 text-neutral-400 hover:text-neutral-700 transition-colors"
+                                  title={isCollapsed ? "Déplier" : "Réduire"}
+                                >
+                                  {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </button>
+                                <span
+                                  className={cx(
+                                    "w-3 h-3 rounded-full border flex-shrink-0",
+                                    site.color || "bg-neutral-300",
+                                    site.color ? "border-black/10" : "border-neutral-200"
+                                  )}
+                                  aria-hidden
+                                />
+                                {site.name}
+                              </div>
+                              {!isCollapsed && week.slice(0, 5).map((d) => (
+                                <DayCell
+                                  key={`${site.id}-${toLocalKey(d)}`}
+                                  date={d}
+                                  site={site}
+                                  people={people}
+                                  assignments={assignments}
+                                  onEditNote={openNote}
+                                  notes={notes}
+                                  hoursPerDay={hoursPerDay}
+                                  conflictMap={conflictMap}
+                                  onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                          publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                />
+                              ))}
                             </div>
-                            {week.slice(0, 5).map((d) => (
-                              <DayCell
-                                key={`${site.id}-${toLocalKey(d)}`}
-                                date={d}
-                                site={site}
-                                people={people}
-                                assignments={assignments}
-                                onEditNote={openNote}
-                                notes={notes}
-                                hoursPerDay={hoursPerDay}
-                                conflictMap={conflictMap}
-                                onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                              />
-                            ))}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -4727,7 +4992,7 @@ useEffect(() => {
                     <div className="text-base font-semibold flex items-center gap-2">
                       <span>Mes chantiers</span>
                       <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                        {plannedSites.length + pendingSites.length} chantier{sites.length > 1 ? "s" : ""}
+                        {plannedSites.length + pendingSites.length + archivedSites.length} chantier{(plannedSites.length + pendingSites.length + archivedSites.length) > 1 ? "s" : ""}
                       </span>
                     </div>
                     <div className="space-y-4">
@@ -4842,6 +5107,9 @@ useEffect(() => {
                                     )}
                                   </div>
                                 )}
+                                {site.globalNotes && (
+                                  <div className="text-[11px] text-neutral-500 italic truncate" title={site.globalNotes}>{site.globalNotes}</div>
+                                )}
                                 <div className="text-[11px] text-sky-700">Cliquer pour modifier</div>
                               </div>
                             </button>
@@ -4851,6 +5119,51 @@ useEffect(() => {
                           )}
                         </div>
                       </div>
+
+                      {archivedSites.length > 0 && (
+                        <div className="space-y-2">
+                          <button
+                            className="flex items-center gap-2 text-sm font-semibold text-neutral-500 hover:text-neutral-700 w-full"
+                            onClick={() => setSidebarArchivedOpen((v) => !v)}
+                          >
+                            {sidebarArchivedOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                            Chantiers archivés
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-400 font-semibold">{archivedSites.length}</span>
+                          </button>
+                          {sidebarArchivedOpen && (
+                            <div className="grid md:grid-cols-2 gap-2">
+                              {archivedSites.map((site) => (
+                                <div
+                                  key={site.id}
+                                  className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 flex items-start gap-3 opacity-60"
+                                >
+                                  <span className={cx("w-3 h-3 rounded-full mt-1 border flex-shrink-0", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} aria-hidden />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-semibold text-neutral-700 line-through truncate">{site.name}</div>
+                                    {site.clientName && <div className="text-[11px] text-neutral-500">{site.clientName}</div>}
+                                  </div>
+                                  <div className="flex gap-1 flex-shrink-0">
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => setSites((prev) => prev.map((x) => x.id === site.id ? { ...x, status: "planned" } : x))}
+                                      title="Restaurer"
+                                      className="h-7 w-7"
+                                    ><RotateCcw className="w-3.5 h-3.5" /></Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => removeSite(site.id)}
+                                      title="Supprimer définitivement"
+                                      className="h-7 w-7 text-red-400 hover:text-red-600"
+                                    ><Trash2 className="w-3.5 h-3.5" /></Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -4868,7 +5181,7 @@ useEffect(() => {
                           {safePeople.length} personne{safePeople.length > 1 ? "s" : ""}
                         </span>
                       </div>
-                      <AddPerson onAdd={addPerson} />
+                      <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                     </div>
                     <div className="grid md:grid-cols-2 gap-2">
                       {safePeople.map((p) => (
@@ -5102,6 +5415,10 @@ useEffect(() => {
             setSiteDetail(null);
           }}
           onSave={saveSiteDetail}
+          onArchive={(id: string) => { setSites((prev) => prev.map((x) => x.id === id ? { ...x, status: "archived" } : x)); showToast(`"${siteDetail?.name}" a été archivé`); }}
+          onDelete={(id: string) => removeSite(id)}
+          onDuplicate={duplicateSite}
+          usedColors={safeSites.filter((s: any) => s.id !== siteDetail?.id).map((s: any) => s.color)}
         />
       )}
 
@@ -5114,6 +5431,7 @@ useEffect(() => {
             setPersonDetail(null);
           }}
           onSave={savePersonDetail}
+          usedColors={safePeople.filter((p: any) => p.id !== personDetail?.id).map((p: any) => p.color)}
         />
       )}
 
@@ -5293,17 +5611,11 @@ useEffect(() => {
             />
             <div className="space-y-1">
               <label className="text-xs font-semibold text-neutral-600">Couleur</label>
-              <div className="flex flex-wrap gap-2">
-                {COLORS.slice(0, 12).map((c) => (
-                  <button
-                    key={c}
-                    className={cx("w-6 h-6 rounded-full border", c, calendarDraft.color === c && "ring-2 ring-black")}
-                    onClick={() => setCalendarDraft((prev) => ({ ...prev, color: c }))}
-                    type="button"
-                    aria-label={`Couleur ${c}`}
-                  />
-                ))}
-              </div>
+              <ColorPicker
+                value={calendarDraft.color}
+                onChange={(c) => setCalendarDraft((prev) => ({ ...prev, color: c }))}
+                usedColors={eventCalendars.map((cal: any) => cal.color)}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -5323,6 +5635,9 @@ useEffect(() => {
         onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
         initialYear={renamePickerYear}
         color={renameTarget?.type === 'site' ? renameTarget?.color : undefined}
+        usedColors={renameTarget?.type === 'site'
+          ? safeSites.filter((s: any) => s.id !== renameTarget?.id).map((s: any) => s.color)
+          : safePeople.filter((p: any) => p.id !== renameTarget?.id).map((p: any) => p.color)}
         onSave={(newName: string, weeks?: string[], colorChoice?: string) => {
           if (!renameTarget) return;
           const n = newName.trim();
@@ -5354,6 +5669,13 @@ useEffect(() => {
           setRenameOpen(false);
         }}
       />
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg animate-in fade-in slide-in-from-bottom-2">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
