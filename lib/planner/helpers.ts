@@ -208,6 +208,19 @@ export const normalizePersonRecord = (p: any) => ({
   notes: typeof p?.notes === "string" ? p.notes : "",
   skills: Array.isArray(p?.skills) ? p.skills.map(String) : [],
   status: ["active","disabled","archived"].includes(p?.status) ? p.status : "active" as "active" | "disabled" | "archived",
+  tauxJournalier: Number.isFinite(Number(p?.tauxJournalier)) ? Number(p.tauxJournalier) : null,
+});
+
+export const normalizeClientRecord = (c: any) => ({
+  id: typeof c?.id === "string" ? c.id : (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `c${Date.now()}`),
+  name: typeof c?.name === "string" ? c.name : "",
+  contactName: c?.contactName || "",
+  phone: c?.phone || "",
+  email: c?.email || "",
+  address: c?.address || "",
+  city: c?.city || "",
+  notes: c?.notes || "",
+  tauxJournalier: Number.isFinite(Number(c?.tauxJournalier)) ? Number(c.tauxJournalier) : null,
 });
 
 export const hashString = (s: string) => {
