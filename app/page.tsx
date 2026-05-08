@@ -4894,50 +4894,18 @@ useEffect(() => {
                           <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{safeQuotes.length}</span>
                         </div>
                         <button
-                          onClick={() => setDevisFormOpen((v) => !v)}
+                          onClick={() => {
+                            const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
+                            const base = { id, title: "", client: "", status: "todo" };
+                            const normalized = normalizeQuoteForSave(base);
+                            setQuotes((prev) => [...prev, normalized]);
+                            openQuoteDetail(normalized);
+                          }}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition"
                         >
                           <Plus className="w-4 h-4" /> Nouveau devis
                         </button>
                       </div>
-
-                      {/* Inline add devis form */}
-                      {devisFormOpen && (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                          <div className="flex flex-wrap gap-2 items-end">
-                            <div className="flex flex-col gap-1 min-w-[180px]">
-                              <label className="text-[11px] text-neutral-600">Titre du devis</label>
-                              <input
-                                value={newQuote.title}
-                                onChange={(e) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
-                                placeholder="Ex : Rénovation salle de bain"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1 min-w-[160px]">
-                              <label className="text-[11px] text-neutral-600">Client</label>
-                              <input
-                                value={newQuote.client}
-                                onChange={(e) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
-                                placeholder="Nom du client (optionnel)"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                              />
-                            </div>
-                            <button
-                              onClick={() => { addQuote(); setDevisFormOpen(false); }}
-                              className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition self-end"
-                            >
-                              Créer
-                            </button>
-                            <button
-                              onClick={() => setDevisFormOpen(false)}
-                              className="px-3 py-1.5 rounded-lg border border-neutral-300 text-sm text-neutral-600 hover:bg-neutral-100 transition self-end"
-                            >
-                              Annuler
-                            </button>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Filter pills */}
                       <div className="flex flex-wrap gap-1.5">
