@@ -272,6 +272,49 @@ function QuoteColumn({ col, items, onOpenQuote, onCreateSite }: any) {
 }
 
 // ==================================
+// Calendar drag & drop helpers
+// ==================================
+function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `calendar-site-${site.id}-${weekKey}`,
+    data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
+  });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={cx(className, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
+      title={site.name}
+    >
+      {site.name}
+    </div>
+  );
+}
+
+function CalendarWeekDropZone({ weekKey, children, isCurrentWeek }: { weekKey: string; children: React.ReactNode; isCurrentWeek: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `calendar-week-${weekKey}`,
+    data: { type: "calendar-week", weekKey },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cx(
+        "flex-shrink-0 border-r last:border-r-0 flex flex-col",
+        isCurrentWeek ? "bg-sky-50" : "bg-white",
+        isOver && "ring-2 ring-sky-300 ring-inset"
+      )}
+      style={{ width: 152 }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ==================================
 // Dialogs
 // ==================================
 function AddPersonDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
@@ -1293,6 +1336,11 @@ export default function Page() {
   const [fraisFixesDefault, setFraisFixesDefault] = useState<number>(0);
   const [rentaSort, setRentaSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "marge", dir: "desc" });
   const [expandedRentaRows, setExpandedRentaRows] = useState<Set<string>>(new Set());
+  const [weekAssignPickerPersonId, setWeekAssignPickerPersonId] = useState<string | null>(null);
+  const [rentaFilter, setRentaFilter] = useState<"active" | "all" | "archived">("active");
+  const [rentaSearch, setRentaSearch] = useState("");
+  const [rentaYear, setRentaYear] = useState<number | null>(null);
+  const [rentaSettingsOpen, setRentaSettingsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatusMessage, setSaveStatusMessage] = useState<string>("");
@@ -2348,6 +2396,49 @@ export default function Page() {
       if (!newStatus || data.status === newStatus) return;
       setQuotes((prev) => prev.map((q) => (q.id === data.quoteId ? normalizeQuoteForSave({ ...q, status: newStatus }) : q)));
       setQuoteDetail((prev) => (prev && prev.id === data.quoteId ? normalizeQuoteForSave({ ...prev, status: newStatus }) : prev));
+      return;
+    }
+
+    if (data.type === "calendar-site" && over.data?.current?.type === "calendar-week") {
+      const fromWeekKey: string = data.fromWeekKey;
+      const toWeekKey: string = over.data.current.weekKey;
+      if (fromWeekKey === toWeekKey) return;
+      const siteId: string = data.siteId;
+      // Compute delta in ISO weeks
+      const fromParsed = parseWeekKey(fromWeekKey);
+      const toParsed = parseWeekKey(toWeekKey);
+      if (!fromParsed || !toParsed) return;
+      const fromAbs = fromParsed.year * 53 + fromParsed.week;
+      const toAbs = toParsed.year * 53 + toParsed.week;
+      const deltaDays = (toAbs - fromAbs) * 7;
+      const shiftWeekKey = (wk: string): string => {
+        const parsed = parseWeekKey(wk);
+        if (!parsed) return wk;
+        const d = isoWeekStart(parsed.year, parsed.week);
+        d.setDate(d.getDate() + deltaDays);
+        return weekKeyOf(d);
+      };
+      setSites((prev: any[]) => prev.map((s: any) => {
+        if (s.id !== siteId) return s;
+        const newPlanningWeeks = Array.isArray(s.planningWeeks)
+          ? s.planningWeeks.map(shiftWeekKey)
+          : s.planningWeeks;
+        // Shift startDate / endDate
+        const shiftDateKey = (dk: string | null | undefined): string | null => {
+          if (!dk) return dk ?? null;
+          try {
+            const d = fromLocalKey(dk);
+            d.setDate(d.getDate() + deltaDays);
+            return toLocalKey(d);
+          } catch { return dk; }
+        };
+        return {
+          ...s,
+          planningWeeks: newPlanningWeeks,
+          startDate: shiftDateKey(s.startDate),
+          endDate: shiftDateKey(s.endDate),
+        };
+      }));
       return;
     }
 
@@ -3621,24 +3712,56 @@ useEffect(() => {
                                   <span className="text-[9px] leading-none px-0.5">abs</span>
                                 )}
                               </button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-7 w-7"
-                                title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
-                                onClick={() => {
-                                  const siteId = sitesForCurrentWeek[0]?.id;
-                                  if (!siteId) return;
-                                  weekDateKeys.forEach((dateKey) => {
-                                    if (isAbsentOnWeek(p.id, currentWeekKey)) return;
-                                    if (getDayAbsence(p.id, dateKey)) return;
-                                    const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
-                                    if (already) return;
-                                    const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
-                                    setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
-                                  });
-                                }}
-                              ><CalendarRange className="w-3.5 h-3.5" /></Button>
+                              <div className="relative">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                  title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
+                                  onClick={() => {
+                                    if (sitesForCurrentWeek.length === 0) return;
+                                    if (sitesForCurrentWeek.length === 1) {
+                                      const siteId = sitesForCurrentWeek[0].id;
+                                      weekDateKeys.forEach((dateKey) => {
+                                        if (isAbsentOnWeek(p.id, currentWeekKey)) return;
+                                        if (getDayAbsence(p.id, dateKey)) return;
+                                        const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
+                                        if (already) return;
+                                        const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
+                                        setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
+                                      });
+                                    } else {
+                                      setWeekAssignPickerPersonId((prev) => prev === p.id ? null : p.id);
+                                    }
+                                  }}
+                                ><CalendarRange className="w-3.5 h-3.5" /></Button>
+                                {weekAssignPickerPersonId === p.id && (
+                                  <div className="absolute right-0 top-8 z-50 bg-white border border-neutral-200 rounded-lg shadow-lg p-2 min-w-[140px] space-y-1">
+                                    <div className="text-[10px] text-neutral-400 font-semibold px-1 pb-1">Choisir le chantier</div>
+                                    {sitesForCurrentWeek.map((site: any) => (
+                                      <button
+                                        key={site.id}
+                                        onClick={() => {
+                                          const siteId = site.id;
+                                          weekDateKeys.forEach((dateKey) => {
+                                            if (isAbsentOnWeek(p.id, currentWeekKey)) return;
+                                            if (getDayAbsence(p.id, dateKey)) return;
+                                            const already = assignments.some((a: any) => a.personId === p.id && a.date === dateKey && a.siteId === siteId);
+                                            if (already) return;
+                                            const id = (crypto as any).randomUUID?.() ?? `${p.id}-${siteId}-${dateKey}-${Date.now()}`;
+                                            setAssignments((prev: any) => [...prev, { id, personId: p.id, siteId, date: dateKey }]);
+                                          });
+                                          setWeekAssignPickerPersonId(null);
+                                        }}
+                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-neutral-100 transition text-xs"
+                                      >
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${site.color || "bg-neutral-400"}`} />
+                                        <span className="truncate">{site.name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openPersonDetail(p.id)}><Edit3 className="w-3.5 h-3.5" /></Button>
                             </div>
                           </div>
@@ -4019,14 +4142,7 @@ useEffect(() => {
                         const isCurrentWeek = week.weekKey === weekKeyOf(new Date());
                         const monthStart = week.weekNum === 1 || (week.weekNum > 1 && projectionWeekSummaries[projectionWeekSummaries.indexOf(week) - 1]?.start.getMonth() !== week.start.getMonth());
                         return (
-                          <div
-                            key={week.weekKey}
-                            className={cx(
-                              "flex-shrink-0 border-r last:border-r-0 flex flex-col",
-                              isCurrentWeek ? "bg-sky-50" : "bg-white"
-                            )}
-                            style={{ width: 152 }}
-                          >
+                          <CalendarWeekDropZone key={week.weekKey} weekKey={week.weekKey} isCurrentWeek={isCurrentWeek}>
                             {/* Header semaine */}
                             <div className={cx(
                               "px-2 py-2 border-b sticky top-0 z-10",
@@ -4056,19 +4172,21 @@ useEffect(() => {
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés */}
                               {calFilterPlanned && week.planned.map((site: any) => (
-                                <div
+                                <CalendarSiteChip
                                   key={`p-${site.id}`}
+                                  site={site}
+                                  weekKey={week.weekKey}
                                   className={cx("text-[11px] px-2 py-0.5 rounded-md truncate font-medium text-white shadow-sm", site.color || "bg-sky-500")}
-                                  title={site.name}
-                                >{site.name}</div>
+                                />
                               ))}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
-                                <div
+                                <CalendarSiteChip
                                   key={`w-${site.id}`}
+                                  site={site}
+                                  weekKey={week.weekKey}
                                   className="text-[11px] px-2 py-0.5 rounded-md truncate font-medium bg-amber-100 text-amber-800 border border-amber-200"
-                                  title={site.name}
-                                >⏳ {site.name}</div>
+                                />
                               ))}
                               {/* Absences */}
                               {calFilterAbsences && week.absences.map((name: string) => (
@@ -4098,7 +4216,7 @@ useEffect(() => {
                                 <div className="h-4" />
                               )}
                             </div>
-                          </div>
+                          </CalendarWeekDropZone>
                         );
                       })}
                     </div>
@@ -4682,7 +4800,9 @@ useEffect(() => {
 
             {view === "rentabilite" && (() => {
               const noTauxWarning = safePeople.filter((p: any) => p.status !== "archived" && p.tauxJournalier == null).length;
-              const rentaRows = safeSites.filter((s: any) => s.status !== "archived").map((s: any) => {
+
+              // Build all rows (unfiltered for KPIs/spotlights)
+              const allRentaRows = safeSites.map((s: any) => {
                 const siteAss = assignments.filter((a: any) => a.siteId === s.id);
                 const moByPerson = people
                   .map((p: any) => {
@@ -4709,6 +4829,49 @@ useEffect(() => {
                 return { site: s, moByPerson, mainOeuvre, coutMateriel, extraCouts, fraisFixes, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer };
               });
 
+              // KPI aggregates on all non-archived rows
+              const kpiRows = allRentaRows.filter((r: any) => r.site.status !== "archived");
+              const totalBudget = kpiRows.reduce((s: number, r: any) => s + r.budget, 0);
+              const totalMO = kpiRows.reduce((s: number, r: any) => s + r.mainOeuvre, 0);
+              const totalCout = kpiRows.reduce((s: number, r: any) => s + r.coutTotal, 0);
+              const totalMarge = totalBudget > 0 ? totalBudget - totalCout : 0;
+              const totalFactureGlobal = kpiRows.reduce((s: number, r: any) => s + r.totalFacture, 0);
+              const avgMarge = kpiRows.filter((r: any) => r.margePercent != null).length > 0
+                ? kpiRows.filter((r: any) => r.margePercent != null).reduce((s: number, r: any) => s + (r.margePercent ?? 0), 0) / kpiRows.filter((r: any) => r.margePercent != null).length
+                : null;
+
+              // Spotlight: top 3 by marge%, bottom 3 at risk (budget defined)
+              const rowsWithMarge = kpiRows.filter((r: any) => r.margePercent != null && r.budget > 0);
+              const sortedByMarge = [...rowsWithMarge].sort((a: any, b: any) => b.margePercent - a.margePercent);
+              const top3 = sortedByMarge.slice(0, 3);
+              const bottom3 = sortedByMarge.slice(-3).reverse();
+
+              // Year filter options
+              const allYears = Array.from(new Set(
+                safeSites.flatMap((s: any) =>
+                  Array.isArray(s.planningWeeks)
+                    ? s.planningWeeks.map((wk: string) => parseInt(wk.slice(0, 4), 10)).filter(Number.isFinite)
+                    : []
+                )
+              )).sort() as number[];
+
+              // Apply filters
+              const rentaRows = allRentaRows.filter((r: any) => {
+                const s = r.site;
+                if (rentaFilter === "active" && s.status === "archived") return false;
+                if (rentaFilter === "archived" && s.status !== "archived") return false;
+                if (rentaSearch.trim()) {
+                  const q = rentaSearch.trim().toLowerCase();
+                  const hay = `${s.name || ""} ${s.clientName || ""}`.toLowerCase();
+                  if (!hay.includes(q)) return false;
+                }
+                if (rentaYear !== null) {
+                  const hasYear = Array.isArray(s.planningWeeks) && s.planningWeeks.some((wk: string) => parseInt(wk.slice(0, 4), 10) === rentaYear);
+                  if (!hasYear) return false;
+                }
+                return true;
+              });
+
               const sorted = [...rentaRows].sort((a, b) => {
                 const { col, dir } = rentaSort;
                 const mult = dir === "asc" ? 1 : -1;
@@ -4717,15 +4880,6 @@ useEffect(() => {
                 if (typeof va === "string") return mult * va.localeCompare(vb as string);
                 return mult * ((va as number) - (vb as number));
               });
-
-              const totalBudget = rentaRows.reduce((s: number, r: any) => s + r.budget, 0);
-              const totalMO = rentaRows.reduce((s: number, r: any) => s + r.mainOeuvre, 0);
-              const totalCout = rentaRows.reduce((s: number, r: any) => s + r.coutTotal, 0);
-              const totalMarge = totalBudget > 0 ? totalBudget - totalCout : 0;
-              const totalFactureGlobal = rentaRows.reduce((s: number, r: any) => s + r.totalFacture, 0);
-              const avgMarge = rentaRows.filter((r: any) => r.margePercent != null).length > 0
-                ? rentaRows.filter((r: any) => r.margePercent != null).reduce((s: number, r: any) => s + (r.margePercent ?? 0), 0) / rentaRows.filter((r: any) => r.margePercent != null).length
-                : null;
 
               const SortTh = ({ col, label, className = "" }: any) => (
                 <th
@@ -4754,8 +4908,8 @@ useEffect(() => {
                   {/* KPI cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: "CA total devis", value: formatEUR(totalBudget), sub: `${rentaRows.filter((r: any) => r.budget > 0).length} chantiers avec budget` },
-                      { label: "Main d'œuvre totale", value: formatEUR(totalMO), sub: `${rentaRows.reduce((s: number, r: any) => s + r.nbJours, 0).toFixed(1)} jours planifiés` },
+                      { label: "CA total devis", value: formatEUR(totalBudget), sub: `${kpiRows.filter((r: any) => r.budget > 0).length} chantiers avec budget` },
+                      { label: "Main d'œuvre totale", value: formatEUR(totalMO), sub: `${kpiRows.reduce((s: number, r: any) => s + r.nbJours, 0).toFixed(1)} jours planifiés` },
                       { label: "Coût total estimé", value: formatEUR(totalCout), sub: "MO + matériel + frais fixes" },
                       { label: "Marge globale", value: totalBudget > 0 ? `${Math.round((totalMarge / totalBudget) * 100)}%` : "—", sub: totalBudget > 0 ? formatEUR(totalMarge) : "Aucun budget", color: totalBudget > 0 && totalMarge >= 0 ? "text-emerald-600" : "text-red-500" },
                     ].map((kpi: any) => (
@@ -4769,32 +4923,124 @@ useEffect(() => {
                     ))}
                   </div>
 
-                  {/* Settings bar */}
-                  <div className="flex flex-wrap gap-3 items-start">
-                    <Card className="flex-1 min-w-[320px]">
-                      <CardContent className="p-3 flex flex-wrap items-center gap-4 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Settings className="w-3.5 h-3.5 text-neutral-400" />
-                          <span className="text-neutral-500 text-xs font-semibold uppercase tracking-wide">Paramètres</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-neutral-500 text-xs whitespace-nowrap">Matériel global</span>
-                          <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
-                          <span className="text-neutral-400 text-xs">% du devis</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-neutral-500 text-xs whitespace-nowrap">Frais fixes</span>
-                          <input type="number" min={0} max={100} step={0.5} value={fraisFixesDefault} onChange={(e: any) => setFraisFixesDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
-                          <span className="text-neutral-400 text-xs">% du devis</span>
-                        </div>
-                        <span className="text-[11px] text-neutral-400">Matériel overridable par chantier</span>
+                  {/* Analytics spotlight */}
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {/* Top performers */}
+                    <Card>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Top marge</div>
+                        {top3.length === 0 && <div className="text-xs text-neutral-400">Aucun chantier avec budget défini.</div>}
+                        {top3.map((r: any) => (
+                          <div key={r.site.id} className="flex items-center gap-2">
+                            <span className="flex-1 text-xs text-neutral-800 truncate">{r.site.name}</span>
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{Math.round(r.margePercent)}%</span>
+                          </div>
+                        ))}
                       </CardContent>
                     </Card>
+                    {/* At-risk */}
+                    <Card>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Chantiers à risque</div>
+                        {bottom3.length === 0 && <div className="text-xs text-neutral-400">Aucun chantier avec budget défini.</div>}
+                        {bottom3.map((r: any) => (
+                          <div key={r.site.id} className="flex items-center gap-2">
+                            <span className="flex-1 text-xs text-neutral-800 truncate">{r.site.name}</span>
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${r.margePercent < 5 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{Math.round(r.margePercent)}%</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                    {/* Facturation progress */}
+                    <Card>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Facturation</div>
+                        <div className="text-xs text-neutral-600">
+                          <span className="font-semibold text-sky-700">{formatEUR(totalFactureGlobal)}</span>
+                          {totalBudget > 0 && <span className="text-neutral-400"> / {formatEUR(totalBudget)}</span>}
+                        </div>
+                        {totalBudget > 0 && (
+                          <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-sky-500 h-2 rounded-full transition-all"
+                              style={{ width: `${Math.min(100, Math.round((totalFactureGlobal / totalBudget) * 100))}%` }}
+                            />
+                          </div>
+                        )}
+                        {totalBudget > 0 && (
+                          <div className="text-[11px] text-neutral-400">{Math.round((totalFactureGlobal / totalBudget) * 100)}% facturé — reste {formatEUR(totalBudget - totalFactureGlobal)}</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Settings collapsible */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setRentaSettingsOpen(v => !v)}
+                      className="flex items-center gap-2 text-xs text-neutral-500 hover:text-neutral-800 transition font-medium"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                      Paramètres
+                      {rentaSettingsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                    {rentaSettingsOpen && (
+                      <Card>
+                        <CardContent className="p-3 flex flex-wrap items-center gap-4 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-neutral-500 text-xs whitespace-nowrap">Matériel global</span>
+                            <input type="number" min={0} max={200} step={1} value={tauxMaterielDefault} onChange={(e: any) => setTauxMaterielDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                            <span className="text-neutral-400 text-xs">% du devis</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-neutral-500 text-xs whitespace-nowrap">Frais fixes</span>
+                            <input type="number" min={0} max={100} step={0.5} value={fraisFixesDefault} onChange={(e: any) => setFraisFixesDefault(Number(e.target.value))} className="w-14 border border-neutral-200 rounded px-2 py-1 text-sm text-right" />
+                            <span className="text-neutral-400 text-xs">% du devis</span>
+                          </div>
+                          <span className="text-[11px] text-neutral-400">Matériel overridable par chantier</span>
+                        </CardContent>
+                      </Card>
+                    )}
                     {noTauxWarning > 0 && (
                       <div className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                         ⚠️ {noTauxWarning} salarié{noTauxWarning > 1 ? "s" : ""} sans taux journalier défini — la MO de ces salariés n'est pas comptabilisée. Allez dans <strong>Salariés</strong> pour les configurer.
                       </div>
                     )}
+                  </div>
+
+                  {/* Filter bar */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={rentaSearch}
+                      onChange={(e: any) => setRentaSearch(e.target.value)}
+                      placeholder="Rechercher par nom ou client…"
+                      className="border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300 w-56"
+                    />
+                    <div className="flex items-center gap-1">
+                      {(["active", "all", "archived"] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setRentaFilter(f)}
+                          className={cx(
+                            "px-3 py-1.5 rounded-lg text-xs font-medium border transition",
+                            rentaFilter === f ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                          )}
+                        >
+                          {f === "active" ? "En cours" : f === "all" ? "Tous" : "Archivés"}
+                        </button>
+                      ))}
+                    </div>
+                    {allYears.length > 0 && (
+                      <select
+                        value={rentaYear ?? ""}
+                        onChange={(e: any) => setRentaYear(e.target.value ? Number(e.target.value) : null)}
+                        className="border border-neutral-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-300"
+                      >
+                        <option value="">Toutes années</option>
+                        {allYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    )}
+                    <span className="text-xs text-neutral-400 ml-auto">{sorted.length} chantier{sorted.length !== 1 ? "s" : ""} affiché{sorted.length !== 1 ? "s" : ""}</span>
                   </div>
 
                   {/* Table */}
@@ -4817,7 +5063,7 @@ useEffect(() => {
                         </thead>
                         <tbody className="divide-y divide-neutral-50">
                           {sorted.length === 0 && (
-                            <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier actif. Ajoutez des chantiers et affectez des salariés.</td></tr>
+                            <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier correspondant aux filtres.</td></tr>
                           )}
                           {sorted.map(({ site: s, moByPerson, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer }: any) => {
                             const isExpanded = expandedRentaRows.has(s.id);
@@ -4842,6 +5088,7 @@ useEffect(() => {
                                     <button onClick={() => openSiteDetail(s.id)} className="flex items-center gap-2 hover:underline text-left">
                                       <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
                                       <span className="font-medium text-neutral-900">{s.name}</span>
+                                      {s.status === "archived" && <span className="text-[10px] text-neutral-400 border border-neutral-200 rounded px-1">archivé</span>}
                                     </button>
                                   </td>
                                   <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
@@ -4901,7 +5148,7 @@ useEffect(() => {
                         {sorted.length > 0 && (
                           <tfoot className="border-t-2 border-neutral-200 bg-neutral-50">
                             <tr>
-                              <td colSpan={3} className="px-3 py-2 pl-4 text-xs font-semibold text-neutral-500">TOTAL</td>
+                              <td colSpan={3} className="px-3 py-2 pl-4 text-xs font-semibold text-neutral-500">TOTAL ({sorted.length})</td>
                               <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalBudget)}</td>
                               <td className="px-3 py-2 font-semibold text-neutral-800">{formatEUR(totalMO)}</td>
                               <td className="px-3 py-2 text-[11px] text-neutral-400">{avgMarge != null ? `${Math.round(avgMarge)}% moy.` : ""}</td>
