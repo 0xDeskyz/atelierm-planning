@@ -212,15 +212,12 @@ export const normalizePersonRecord = (p: any) => ({
 });
 
 export const normalizeClientRecord = (c: any) => ({
-  id: typeof c?.id === "string" ? c.id : (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `c${Date.now()}`),
-  name: typeof c?.name === "string" ? c.name : "",
-  contactName: c?.contactName || "",
-  phone: c?.phone || "",
-  email: c?.email || "",
-  address: c?.address || "",
-  city: c?.city || "",
-  notes: c?.notes || "",
-  tauxJournalier: Number.isFinite(Number(c?.tauxJournalier)) ? Number(c.tauxJournalier) : null,
+  id: c?.id || ensureId(String(c?.name || Date.now()), "client"),
+  name: typeof c?.name === "string" ? c.name.trim() : "",
+  phone: typeof c?.phone === "string" ? c.phone.trim() : "",
+  email: typeof c?.email === "string" ? c.email.trim() : "",
+  notes: typeof c?.notes === "string" ? c.notes.trim() : "",
+  createdAt: c?.createdAt || new Date().toISOString(),
 });
 
 export const hashString = (s: string) => {

@@ -3,9 +3,8 @@
   "configurations": [
     {
       "name": "atelierm-planning",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/apn/atelierm-planning",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd /Users/apn/atelierm-planning && npm run dev"],
       "port": 3000
     }
   ]

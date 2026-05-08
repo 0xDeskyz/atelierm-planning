@@ -27,6 +27,7 @@ import {
   Download,
   Edit3,
   Eraser,
+  Home,
   ListChecks,
   Plus,
   RotateCcw,
@@ -81,6 +82,7 @@ import {
   normalizeSiteRecord,
   normalizeQuoteRecord,
   normalizeTenderRecord,
+  normalizeClientRecord,
   isDateWithin,
   cellKey,
   mapWeekDates,
@@ -607,7 +609,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [] }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory }: any) {
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
@@ -750,7 +752,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                 <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
               </label>
               <label className="space-y-1">
-                <span className="text-[11px] text-neutral-600">Client</span>
+                <span className="text-[11px] text-neutral-600 flex items-center gap-2">
+                  Client
+                  {clientName.trim() && onOpenClientHistory && (
+                    <button type="button" onClick={() => onOpenClientHistory(clientName)} className="text-sky-600 hover:underline text-[11px]">Voir historique</button>
+                  )}
+                </span>
                 <Input value={clientName} onChange={(e: any) => setClientName(e.target.value)} placeholder="Nom du client" />
               </label>
               <label className="space-y-1">
@@ -1296,6 +1303,157 @@ function AnnotationDialog({ open, setOpen, value, onSave }: any) {
 }
 
 // ==================================
+// ClientHistoryDialog
+// ==================================
+function ClientHistoryDialog({ open, onOpenChange, clientName, sites, quotes, tenders, clients, onSaveClient }: any) {
+  const matchClient = (a: string, b: string) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+  const clientSites = (sites || []).filter((s: any) => matchClient(s.clientName || s.quoteSnapshot?.client || "", clientName));
+  const clientQuotes = (quotes || []).filter((q: any) => matchClient(q.client || "", clientName));
+  const clientTenders = (tenders || []).filter((t: any) => matchClient(t.client || "", clientName));
+  const nbSites = clientSites.length;
+  const caTotal = clientSites.reduce((s: number, site: any) => s + Number(site.quoteSnapshot?.amount ?? 0), 0);
+  const nbDevis = clientQuotes.length;
+  const nbAo = clientTenders.length;
+  const registeredClient = (clients || []).find((c: any) => matchClient(c.name, clientName));
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "", notes: "" });
+  useEffect(() => {
+    if (registeredClient) {
+      setEditForm({ name: registeredClient.name, phone: registeredClient.phone || "", email: registeredClient.email || "", notes: registeredClient.notes || "" });
+    } else {
+      setEditForm({ name: clientName || "", phone: "", email: "", notes: "" });
+    }
+    setEditing(false);
+  }, [clientName]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tenderStatutLabel: Record<string, string> = {
+    a_repondre: "À répondre", depose: "Déposé", gagne: "Gagné", perdu: "Perdu", abandonne: "Abandonné",
+  };
+  const quoteStatusLabel: Record<string, string> = {
+    draft: "Brouillon", todo: "À faire", pending: "En attente", sent: "Envoyé", won: "Accepté", lost: "Refusé", expired: "Expiré",
+  };
+  const badgeCls = (status: string, type: "tender" | "quote") => {
+    if (type === "tender") {
+      const m: Record<string, string> = { a_repondre: "bg-amber-100 text-amber-800", depose: "bg-blue-100 text-blue-800", gagne: "bg-emerald-100 text-emerald-800", perdu: "bg-rose-100 text-rose-400", abandonne: "bg-neutral-100 text-neutral-500" };
+      return m[status] || "bg-neutral-100 text-neutral-500";
+    }
+    const m2: Record<string, string> = { draft: "bg-neutral-200 text-neutral-600", todo: "bg-neutral-200 text-neutral-600", pending: "bg-amber-100 text-amber-800", sent: "bg-sky-100 text-sky-800", won: "bg-emerald-100 text-emerald-800", lost: "bg-rose-100 text-rose-700", expired: "bg-neutral-100 text-neutral-500" };
+    return m2[status] || "bg-neutral-100 text-neutral-500";
+  };
+  const fmtEUR = (n: number) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            {editing ? (
+              <Input value={editForm.name} onChange={(e: any) => setEditForm((p: any) => ({ ...p, name: e.target.value }))} className="text-lg font-bold h-8" />
+            ) : (
+              <span>{clientName || "Client"}</span>
+            )}
+            {registeredClient && !editing && (
+              <button onClick={() => setEditing(true)} className="text-neutral-400 hover:text-sky-600 transition p-1 rounded">
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
+          </DialogTitle>
+          <DialogDescription>Historique complet de l&apos;activité pour ce client.</DialogDescription>
+        </DialogHeader>
+        {editing && registeredClient && (
+          <div className="space-y-2 text-sm border rounded-lg p-3 bg-neutral-50 mb-2">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1"><span className="text-[11px] text-neutral-500">Téléphone</span><Input value={editForm.phone} onChange={(e: any) => setEditForm((p: any) => ({ ...p, phone: e.target.value }))} placeholder="Téléphone" /></label>
+              <label className="space-y-1"><span className="text-[11px] text-neutral-500">Email</span><Input value={editForm.email} onChange={(e: any) => setEditForm((p: any) => ({ ...p, email: e.target.value }))} placeholder="Email" /></label>
+            </div>
+            <label className="space-y-1 block"><span className="text-[11px] text-neutral-500">Notes</span><Textarea value={editForm.notes} onChange={(e: any) => setEditForm((p: any) => ({ ...p, notes: e.target.value }))} rows={2} className="resize-none text-sm" /></label>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => { onSaveClient({ ...registeredClient, ...editForm }); setEditing(false); }}>Enregistrer</Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Annuler</Button>
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {[
+            { label: "Chantiers", value: String(nbSites) },
+            { label: "CA total", value: caTotal > 0 ? fmtEUR(caTotal) : "—" },
+            { label: "Devis", value: String(nbDevis) },
+            { label: "AO", value: String(nbAo) },
+          ].map((kpi) => (
+            <div key={kpi.label} className="rounded-lg border bg-neutral-50 p-2">
+              <div className="text-[11px] text-neutral-500 uppercase tracking-wide">{kpi.label}</div>
+              <div className="text-lg font-bold text-neutral-900">{kpi.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2 mt-2">
+          <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Historique</div>
+          {clientTenders.length === 0 && clientQuotes.length === 0 && clientSites.length === 0 && (
+            <div className="text-sm text-neutral-400 text-center py-4">Aucune activité trouvée pour ce client.</div>
+          )}
+          {clientTenders.map((t: any) => (
+            <div key={t.id} className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-2.5 text-sm">
+              <div className="shrink-0 w-2 h-2 rounded-full bg-indigo-400 mt-1.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-neutral-800">{t.objet || t.reference || "AO"}</span>
+                  <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", badgeCls(t.statut, "tender"))}>{tenderStatutLabel[t.statut] || t.statut}</span>
+                </div>
+                <div className="text-[11px] text-neutral-500 flex gap-3">
+                  {t.reference && <span>Réf. {t.reference}</span>}
+                  {t.dateLimite && <span>Limite : {new Date(t.dateLimite).toLocaleDateString("fr-FR")}</span>}
+                  {t.montantEstime != null && <span>{fmtEUR(t.montantEstime)}</span>}
+                </div>
+              </div>
+              <span className="text-[10px] text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded shrink-0">AO</span>
+            </div>
+          ))}
+          {clientQuotes.map((q: any) => (
+            <div key={q.id} className="flex items-start gap-3 rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 text-sm">
+              <div className="shrink-0 w-2 h-2 rounded-full bg-emerald-400 mt-1.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-neutral-800">{q.title || "Devis"}</span>
+                  <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", badgeCls(q.status, "quote"))}>{quoteStatusLabel[q.status] || q.status}</span>
+                </div>
+                <div className="text-[11px] text-neutral-500 flex gap-3">
+                  {q.sentAt && <span>{new Date(q.sentAt).toLocaleDateString("fr-FR")}</span>}
+                  {q.amount != null && <span>{fmtEUR(q.amount)}</span>}
+                </div>
+              </div>
+              <span className="text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">Devis</span>
+            </div>
+          ))}
+          {clientSites.map((s: any) => (
+            <div key={s.id} className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-white p-2.5 text-sm">
+              <div className={cx("shrink-0 w-2 h-2 rounded-full mt-1.5", s.color || "bg-neutral-400")} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-neutral-800">{s.name}</span>
+                  <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", s.status === "archived" ? "bg-neutral-100 text-neutral-400" : s.status === "planned" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700")}>
+                    {s.status === "archived" ? "Archivé" : s.status === "planned" ? "Planifié" : "À planifier"}
+                  </span>
+                </div>
+                <div className="text-[11px] text-neutral-500 flex gap-3">
+                  {s.city && <span>{s.city}</span>}
+                  {s.quoteSnapshot?.amount != null && <span>Budget : {fmtEUR(s.quoteSnapshot.amount)}</span>}
+                </div>
+              </div>
+              <span className="text-[10px] text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded shrink-0">Chantier</span>
+            </div>
+          ))}
+        </div>
+        {!registeredClient && clientName && clientName.trim() && (
+          <div className="border-t pt-3 mt-2">
+            <Button variant="outline" size="sm" className="w-full" onClick={() => onSaveClient({ name: clientName.trim(), phone: "", email: "", notes: "" })}>
+              + Enregistrer ce client
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ==================================
 // Small helpers
 // ==================================
 function AddPerson({ onAdd, usedColors = [] }: { onAdd: (name: string, color: string, extra?: any) => void; usedColors?: string[] }) {
@@ -1333,6 +1491,12 @@ export default function Page() {
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [tenders, setTenders] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [clientHistoryOpen, setClientHistoryOpen] = useState(false);
+  const [clientHistoryName, setClientHistoryName] = useState<string>("");
+  const [clientsCollapsed, setClientsCollapsed] = useState(true);
+  const [clientAddFormOpen, setClientAddFormOpen] = useState(false);
+  const [newClientForm, setNewClientForm] = useState({ name: "", phone: "", email: "" });
   const [aoFormOpen, setAoFormOpen] = useState(false);
   const [aoFilter, setAoFilter] = useState<"all" | "a_repondre" | "depose" | "gagne" | "perdu">("all");
   const [devisFormOpen, setDevisFormOpen] = useState(false);
@@ -1405,8 +1569,8 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries" | "rentabilite"
-  >("planning");
+    "accueil" | "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries" | "rentabilite"
+  >("accueil");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
@@ -1663,6 +1827,14 @@ export default function Page() {
       return dateSet.has(date) ? sum + count : sum;
     }, 0);
   }, [conflictMap, weekDateKeys]);
+
+  const weekConfirmedStats = useMemo(() => {
+    const dateSet = new Set(weekDateKeys);
+    const weekAssignments = assignments.filter((a: any) => dateSet.has(a.date));
+    const confirmed = weekAssignments.filter((a: any) => a.confirmed).length;
+    const planned = weekAssignments.length - confirmed;
+    return { confirmed, planned, total: weekAssignments.length };
+  }, [assignments, weekDateKeys]);
 
   const peopleById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -2295,8 +2467,22 @@ export default function Page() {
     const normalized = normalizeQuoteForSave(quoteDetail);
     setQuotes((prev) => prev.map((q) => (q.id === normalized.id ? normalized : q)));
     upsertChantierFromQuote(normalized);
+    setSites((prev) => {
+      const hasLinked = prev.some((s) => s.quoteId === normalized.id);
+      if (hasLinked) {
+        return prev.map((s) =>
+          s.quoteId === normalized.id
+            ? { ...s, quoteSnapshot: { ...s.quoteSnapshot, amount: normalized.amount, title: normalized.title, client: normalized.client } }
+            : s
+        );
+      }
+      return prev;
+    });
+    if (sites.some((s) => s.quoteId === normalized.id)) {
+      showToast("Budget du chantier lié mis à jour");
+    }
     setQuoteDetailOpen(false);
-  }, [normalizeQuoteForSave, quoteDetail, upsertChantierFromQuote]);
+  }, [normalizeQuoteForSave, quoteDetail, upsertChantierFromQuote, sites]);
 
   const deleteQuote = useCallback(() => {
     if (!quoteDetail) return;
@@ -2715,6 +2901,25 @@ export default function Page() {
   };
   const updateSiteMeta = (id: string, patch: any) =>
     setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, ...patch }) : x)));
+
+  const openClientHistory = (name: string) => {
+    if (!name || !name.trim()) return;
+    setClientHistoryName(name.trim());
+    setClientHistoryOpen(true);
+  };
+  const saveClient = (clientData: any) => {
+    const normalized = normalizeClientRecord(clientData);
+    setClients((prev) => {
+      const idx = prev.findIndex((c) => c.id === normalized.id || c.name.toLowerCase() === normalized.name.toLowerCase());
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...prev[idx], ...normalized };
+        return updated;
+      }
+      return [...prev, normalized];
+    });
+    showToast(`Client "${normalized.name}" enregistré`);
+  };
   const planSite = (id: string, weeks: string[] = []) => {
     const derived = weeks.length ? getWeekRangeFromKeys(weeks) : null;
     setSites((s) =>
@@ -2785,7 +2990,7 @@ export default function Page() {
       });
     });
     setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
-    setAssignments(toArray(state.assignments));
+    setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
     setAbsencesByDay(state.absencesByDay || {});
@@ -2793,6 +2998,7 @@ export default function Page() {
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
     setTenders(toArray(state.tenders).map(normalizeTenderRecord));
+    setClients(toArray(state.clients).map(normalizeClientRecord));
     if (state.tauxJournalierDefault != null) setTauxJournalierDefault(state.tauxJournalierDefault);
     if (state.tauxMaterielDefault != null) setTauxMaterielDefault(state.tauxMaterielDefault);
     if (state.fraisFixesDefault != null) setFraisFixesDefault(state.fraisFixesDefault);
@@ -2968,6 +3174,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     hoursPerDay,
     quotes,
     tenders,
+    clients,
     tauxJournalierDefault,
     tauxMaterielDefault,
     fraisFixesDefault,
@@ -2975,7 +3182,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3219,7 +3426,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3228,7 +3435,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setTenders(toArray(data.tenders).map(normalizeTenderRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false }))); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setTenders(toArray(data.tenders).map(normalizeTenderRecord)); setClients(toArray(data.clients).map(normalizeClientRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -3253,6 +3460,7 @@ useEffect(() => {
             {/* Nav principale */}
             <div className="flex items-center gap-0.5">
               {[
+                { v: "accueil", label: "Accueil", icon: <Home className="w-3.5 h-3.5" /> },
                 { v: "planning", label: "Planning", icon: <CalendarRange className="w-3.5 h-3.5" /> },
                 { v: "hours", label: "Heures", icon: <Clock3 className="w-3.5 h-3.5" /> },
                 { v: "calendar", label: "Calendrier", icon: <CalendarRange className="w-3.5 h-3.5" /> },
@@ -3340,7 +3548,7 @@ useEffect(() => {
         </Tabs>
 
         {/* Barre contextuelle */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 shadow-sm">
+        <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 shadow-sm", view === "accueil" && "hidden")}>
           <div className="flex flex-wrap items-center gap-3">
             {view === "planning" && (
               <div className="flex items-center gap-1 pr-3 border-r border-neutral-200">
@@ -3524,7 +3732,9 @@ useEffect(() => {
                           )}
                         </div>
                         <div className="text-[11px] text-neutral-600 flex items-center gap-2">
-                          <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
+                          {(site.clientName || site.quoteSnapshot?.client) ? (
+                            <button onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName || site.quoteSnapshot?.client); }} className="hover:underline hover:text-sky-700 text-left">{site.clientName || site.quoteSnapshot?.client}</button>
+                          ) : <span>Client</span>}
                           <span className="text-neutral-400">•</span>
                           <span>{formatWeeksSummary(site.planningWeeks || [])}</span>
                         </div>
@@ -3564,7 +3774,9 @@ useEffect(() => {
                           <span className="text-[11px] text-neutral-500">{formatFR(weekDays[0])}</span>
                         </div>
                         <div className="text-[11px] text-neutral-600 flex items-center gap-2">
-                          <span>{site.clientName || site.quoteSnapshot?.client || "Client"}</span>
+                          {(site.clientName || site.quoteSnapshot?.client) ? (
+                            <button onClick={() => openClientHistory(site.clientName || site.quoteSnapshot?.client)} className="hover:underline hover:text-sky-700 text-left">{site.clientName || site.quoteSnapshot?.client}</button>
+                          ) : <span>Client</span>}
                           <span className="text-neutral-400">•</span>
                           <span>{formatWeeksSummary(site.planningWeeks || [])}</span>
                         </div>
@@ -3665,7 +3877,376 @@ useEffect(() => {
         </div>
       )}
 
-      {view !== "dashboard" && (
+      {view === "accueil" && (() => {
+        const now = new Date();
+        const accueilWeekNum = getISOWeek(now);
+        const accueilWeekYear = getISOWeekYear(now);
+        const accueilWeekKey = todayWeekKey;
+        const accueilWeekStart = getISOWeekStart(accueilWeekYear, accueilWeekNum);
+        const accueilWeekDateKeys = Array.from({ length: 5 }, (_, i) => {
+          const d = new Date(accueilWeekStart);
+          d.setDate(d.getDate() + i);
+          return toLocalKey(d);
+        });
+        const accueilWeekDateSet = new Set(accueilWeekDateKeys);
+        const accueilActiveSites = plannedSites.filter((s: any) =>
+          isSiteVisibleOnWeek(s.id, accueilWeekKey)
+        );
+        const accueilWeekAssignments = assignments.filter((a: any) =>
+          accueilWeekDateSet.has(a.date)
+        );
+        const activePeople = safePeople.filter((p: any) => p.status !== "archived");
+        const accueilAlerts: {
+          type: "urgent" | "warning" | "info";
+          icon: string;
+          message: string;
+          action?: () => void;
+        }[] = [];
+
+        tenders.forEach((t: any) => {
+          if ((t.statut === "a_repondre" || t.statut === "depose") && t.dateLimite) {
+            const deadline = new Date(t.dateLimite);
+            const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / 86400000);
+            if (diffDays >= 0 && diffDays <= 7) {
+              const dateLabel = deadline.toLocaleDateString("fr-FR", {
+                day: "2-digit",
+                month: "long",
+              });
+              accueilAlerts.push({
+                type: "urgent",
+                icon: "🔴",
+                message: `AO '${t.reference || t.objet || "sans ref"}' à rendre le ${dateLabel}`,
+                action: () => setView("devis"),
+              });
+            }
+          }
+        });
+
+        safeQuotes.forEach((q: any) => {
+          if (q.status === "pending" && q.sentAt) {
+            const diffDays = Math.floor(
+              (now.getTime() - new Date(q.sentAt).getTime()) / 86400000
+            );
+            if (diffDays > 14) {
+              accueilAlerts.push({
+                type: "warning",
+                icon: "🟡",
+                message: `Devis '${q.title}' pour ${q.client || "client"} envoyé il y a ${diffDays} jours sans réponse`,
+                action: () => setView("devis"),
+              });
+            }
+          }
+        });
+
+        const assignedPersonIds = new Set(
+          accueilWeekAssignments.map((a: any) => a.personId)
+        );
+        const unassignedPeople = activePeople.filter(
+          (p: any) => !assignedPersonIds.has(p.id)
+        );
+        if (unassignedPeople.length > 0) {
+          accueilAlerts.push({
+            type: "warning",
+            icon: "🟡",
+            message: `${unassignedPeople.length} salarié(s) sans affectation cette semaine : ${unassignedPeople.map((p: any) => p.name).join(", ")}`,
+            action: () => setView("planning"),
+          });
+        }
+
+        accueilActiveSites.forEach((s: any) => {
+          if (!accueilWeekAssignments.some((a: any) => a.siteId === s.id)) {
+            accueilAlerts.push({
+              type: "warning",
+              icon: "🟠",
+              message: `Chantier '${s.name}' planifié cette semaine mais aucun salarié affecté`,
+              action: () => openSiteDetail(s.id),
+            });
+          }
+        });
+
+        plannedSites.forEach((s: any) => {
+          const siteBudget = Number(
+            s.quoteSnapshot?.amount ??
+              (s.quoteId
+                ? safeQuotes.find((q: any) => q.id === s.quoteId)?.amount
+                : 0) ??
+              0
+          );
+          const totalFact = (s.situations || []).reduce(
+            (sum: number, sit: any) => sum + (Number(sit.montant) || 0),
+            0
+          );
+          if (siteBudget > 0 && totalFact < siteBudget * 0.5) {
+            const weeks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+            if (weeks.length > 0 && weeks.every((wk: string) => wk < accueilWeekKey)) {
+              accueilAlerts.push({
+                type: "warning",
+                icon: "⚠️",
+                message: `Chantier '${s.name}' terminé avec seulement ${Math.round((totalFact / siteBudget) * 100)}% facturé`,
+                action: () => setView("rentabilite"),
+              });
+            }
+          }
+        });
+
+        const mobilisedIds = new Set(accueilWeekAssignments.map((a: any) => a.personId));
+        const mobilisedCount = mobilisedIds.size;
+        const activeCount = activePeople.length;
+        const tauxOccupation =
+          activeCount > 0 ? Math.round((mobilisedCount / activeCount) * 100) : 0;
+        const caTotalEnCours = accueilActiveSites.reduce(
+          (sum: number, s: any) =>
+            sum +
+            Number(
+              s.quoteSnapshot?.amount ??
+                (s.quoteId
+                  ? safeQuotes.find((q: any) => q.id === s.quoteId)?.amount
+                  : 0) ??
+                0
+            ),
+          0
+        );
+        const aoEnCours = tenders.filter(
+          (t: any) => t.statut === "a_repondre" || t.statut === "depose"
+        ).length;
+
+        return (
+          <div className="space-y-5">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border bg-white px-5 py-4 shadow-sm">
+              <div>
+                <div className="text-xl font-bold text-neutral-900">
+                  Bonjour — Semaine S{pad2(accueilWeekNum)}, {formatFR(now, true)}
+                </div>
+                <div className="text-sm text-neutral-500 mt-0.5">
+                  Clé de semaine :{" "}
+                  <span className="font-mono text-neutral-700">{accueilWeekKey}</span>
+                </div>
+              </div>
+              <span className="shrink-0 text-xs font-semibold text-sky-700 bg-sky-100 px-3 py-1.5 rounded-full">
+                {accueilActiveSites.length} chantier
+                {accueilActiveSites.length !== 1 ? "s" : ""} actif
+                {accueilActiveSites.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Alertes */}
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-neutral-900">⚠ Alertes</span>
+                  {accueilAlerts.length > 0 && (
+                    <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                      {accueilAlerts.length}
+                    </span>
+                  )}
+                </div>
+                {accueilAlerts.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm font-medium text-emerald-800">
+                    <span>✓</span>
+                    <span>Tout est en ordre cette semaine</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {accueilAlerts.map((alert, idx) => (
+                      <button
+                        key={idx}
+                        onClick={alert.action}
+                        className={cx(
+                          "w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg border-l-4 text-sm transition",
+                          alert.type === "urgent"
+                            ? "border-l-red-500 bg-red-50 hover:bg-red-100"
+                            : "border-l-amber-400 bg-amber-50 hover:bg-amber-100"
+                        )}
+                      >
+                        <span className="shrink-0 mt-0.5">{alert.icon}</span>
+                        <span className="flex-1 text-neutral-800">{alert.message}</span>
+                        {alert.action && (
+                          <span className="text-xs text-neutral-400 shrink-0 mt-0.5">→</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* KPIs */}
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardContent className="space-y-1">
+                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                    Chantiers actifs
+                  </div>
+                  <div className="text-3xl font-bold text-neutral-900">
+                    {accueilActiveSites.length}
+                  </div>
+                  <div className="text-xs text-neutral-500">cette semaine</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-1">
+                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                    Salariés mobilisés
+                  </div>
+                  <div className="text-3xl font-bold text-neutral-900">{mobilisedCount}</div>
+                  <div className="text-xs text-neutral-500">sur {activeCount} actifs</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-1">
+                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                    {"Taux d'occupation"}
+                  </div>
+                  <div
+                    className={cx(
+                      "text-3xl font-bold",
+                      tauxOccupation >= 80
+                        ? "text-emerald-600"
+                        : tauxOccupation >= 50
+                          ? "text-amber-500"
+                          : "text-red-500"
+                    )}
+                  >
+                    {tauxOccupation}%
+                  </div>
+                  <div className="text-xs text-neutral-500">mobilisés / actifs</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-1">
+                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                    CA en cours
+                  </div>
+                  <div className="text-2xl font-bold text-neutral-900 truncate">
+                    {caTotalEnCours > 0 ? formatEUR(caTotalEnCours) : "—"}
+                  </div>
+                  <div className="text-xs text-neutral-500">budget chantiers actifs</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Chantiers actifs cette semaine */}
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="text-base font-bold text-neutral-900">
+                  Chantiers actifs cette semaine
+                </div>
+                {accueilActiveSites.length === 0 ? (
+                  <div className="text-sm text-neutral-500">
+                    Aucun chantier planifié cette semaine.
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    {accueilActiveSites.map((site: any) => {
+                      const sitePersonIds = new Set(
+                        accueilWeekAssignments
+                          .filter((a: any) => a.siteId === site.id)
+                          .map((a: any) => a.personId)
+                      );
+                      const assignedPeopleForSite = safePeople.filter((p: any) =>
+                        sitePersonIds.has(p.id)
+                      );
+                      const siteBudget = Number(
+                        site.quoteSnapshot?.amount ??
+                          (site.quoteId
+                            ? safeQuotes.find((q: any) => q.id === site.quoteId)?.amount
+                            : 0) ??
+                          0
+                      );
+                      return (
+                        <button
+                          key={site.id}
+                          onClick={() => openSiteDetail(site.id)}
+                          className="text-left rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-400 hover:shadow-sm transition space-y-2"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span
+                              className={cx(
+                                "mt-0.5 w-3 h-3 rounded-full shrink-0 border",
+                                site.color || "bg-neutral-300",
+                                site.color ? "border-black/10" : "border-neutral-200"
+                              )}
+                              aria-hidden
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-neutral-900 text-sm truncate">
+                                {site.name}
+                              </div>
+                              {(site.clientName || site.quoteSnapshot?.client) && (
+                                <div className="text-xs text-neutral-500 truncate">
+                                  {site.clientName || site.quoteSnapshot?.client}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {assignedPeopleForSite.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {assignedPeopleForSite.map((p: any) => (
+                                <span
+                                  key={p.id}
+                                  title={p.name}
+                                  className={cx(
+                                    "inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-[10px] font-bold border-2 border-white shadow-sm",
+                                    p.color || "bg-neutral-400"
+                                  )}
+                                >
+                                  {p.name
+                                    .split(" ")
+                                    .map((n: string) => n[0])
+                                    .slice(0, 2)
+                                    .join("")
+                                    .toUpperCase()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {siteBudget > 0 && (
+                            <div className="text-xs font-semibold text-neutral-600">
+                              {formatEUR(siteBudget)}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Actions rapides */}
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="text-base font-bold text-neutral-900">
+                  À faire cette semaine
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setView("planning")}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-700 transition"
+                  >
+                    <CalendarRange className="w-4 h-4" /> Voir le planning
+                  </button>
+                  <button
+                    onClick={() => setView("devis")}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-neutral-300 bg-white text-neutral-800 text-sm font-medium hover:bg-neutral-50 transition"
+                  >
+                    <ListChecks className="w-4 h-4" /> Affaires en cours ({aoEnCours})
+                  </button>
+                  <button
+                    onClick={() => setView("rentabilite")}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-neutral-300 bg-white text-neutral-800 text-sm font-medium hover:bg-neutral-50 transition"
+                  >
+                    Rentabilité
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
+
+      {view !== "dashboard" && view !== "accueil" && (
         /* DnD provider */
         <div data-dnd-scope="planning">
           <DndContext
@@ -3909,6 +4490,9 @@ useEffect(() => {
                     {isViewingCurrentWeek && (
                       <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
                     )}
+                    {weekConfirmedStats.total > 0 && weekConfirmedStats.confirmed > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-700">{weekConfirmedStats.confirmed} confirmé{weekConfirmedStats.confirmed > 1 ? "s" : ""}{weekConfirmedStats.planned > 0 ? ` / ${weekConfirmedStats.planned} planifié${weekConfirmedStats.planned > 1 ? "s" : ""}` : ""}</span>
+                    )}
                   </div>
                   {weekDays.map((d, i) => {
                     const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
@@ -3956,6 +4540,7 @@ useEffect(() => {
                             hoursPerDay={hoursPerDay}
                             conflictMap={conflictMap}
                             onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                            onToggleConfirmed={(id:string)=>setAssignments((prev:any[])=>prev.map(a=>a.id===id?{...a,confirmed:!a.confirmed}:a))}
                             publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                             absencesByDay={absencesByDay}
                           />
@@ -4093,6 +4678,7 @@ useEffect(() => {
                                   hoursPerDay={hoursPerDay}
                                   conflictMap={conflictMap}
                                   onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                                  onToggleConfirmed={(id:string)=>setAssignments((prev:any[])=>prev.map(a=>a.id===id?{...a,confirmed:!a.confirmed}:a))}
                                   publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                                   absencesByDay={absencesByDay}
                                 />
@@ -4780,7 +5366,7 @@ useEffect(() => {
                                     })}
                                   >
                                     <td className="px-3 py-2 font-mono text-xs text-neutral-700 whitespace-nowrap">{tender.reference || "—"}</td>
-                                    <td className="px-3 py-2 font-medium text-neutral-900 whitespace-nowrap">{tender.client || "—"}</td>
+                                    <td className="px-3 py-2 font-medium text-neutral-900 whitespace-nowrap">{tender.client ? <button onClick={(e) => { e.stopPropagation(); openClientHistory(tender.client); }} className="hover:underline hover:text-sky-700 text-left">{tender.client}</button> : "—"}</td>
                                     <td className="px-3 py-2 text-neutral-600 max-w-[180px] truncate">{tender.objet || "—"}</td>
                                     <td className="px-3 py-2">
                                       <span className={cx("px-1.5 py-0.5 rounded text-[11px] font-semibold", tender.type === "public" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700")}>
@@ -4960,7 +5546,7 @@ useEffect(() => {
                               return (
                                 <tr key={quote.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition">
                                   <td className="px-3 py-2 font-medium text-neutral-900 max-w-[160px] truncate">{quote.title || "Sans titre"}</td>
-                                  <td className="px-3 py-2 text-neutral-600 whitespace-nowrap">{quote.client || "—"}</td>
+                                  <td className="px-3 py-2 text-neutral-600 whitespace-nowrap">{quote.client ? <button onClick={() => openClientHistory(quote.client)} className="hover:underline hover:text-sky-700 text-left">{quote.client}</button> : "—"}</td>
                                   <td className="px-3 py-2 font-semibold text-neutral-800 whitespace-nowrap">
                                     {quote.amount != null ? formatEUR(quote.amount) : "—"}
                                   </td>
@@ -5067,7 +5653,9 @@ useEffect(() => {
                                   <div className="space-y-0.5">
                                     <div className="font-semibold text-neutral-900 leading-tight">{site.name}</div>
                                     <div className="text-[11px] text-neutral-600">
-                                      {site.clientName || site.quoteSnapshot?.client || "Client inconnu"}
+                                      {(site.clientName || site.quoteSnapshot?.client) ? (
+                                        <button onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName || site.quoteSnapshot?.client); }} className="hover:underline hover:text-sky-700 text-left">{site.clientName || site.quoteSnapshot?.client}</button>
+                                      ) : "Client inconnu"}
                                     </div>
                                     <div className="text-[11px] text-neutral-600">
                                       {formatWeeksSummary(site.planningWeeks || [])}
@@ -5140,7 +5728,7 @@ useEffect(() => {
                                 {(site.address || site.clientName || site.contactPhone) && (
                                   <div className="text-[11px] text-neutral-600 space-y-0.5">
                                     {site.address && <div>{site.address}</div>}
-                                    {site.clientName && <div>Client : {site.clientName}</div>}
+                                    {site.clientName && <div>Client : <button onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName); }} className="hover:underline hover:text-sky-700 text-left">{site.clientName}</button></div>}
                                     {(site.contactName || site.contactPhone) && (
                                       <div>
                                         Contact : {site.contactName}
@@ -5182,7 +5770,7 @@ useEffect(() => {
                                   <span className={cx("w-3 h-3 rounded-full mt-1 border flex-shrink-0", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} aria-hidden />
                                   <div className="flex-1 min-w-0">
                                     <div className="font-semibold text-neutral-700 line-through truncate">{site.name}</div>
-                                    {site.clientName && <div className="text-[11px] text-neutral-500">{site.clientName}</div>}
+                                    {site.clientName && <div className="text-[11px] text-neutral-500"><button onClick={() => openClientHistory(site.clientName)} className="hover:underline hover:text-sky-600 text-left">{site.clientName}</button></div>}
                                   </div>
                                   <div className="flex gap-1 flex-shrink-0">
                                     <Button
@@ -5209,6 +5797,89 @@ useEffect(() => {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* === Clients enregistrés === */}
+                {(() => {
+                  const matchClient = (a: string, b: string) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+                  // Build unique client names from all data sources
+                  const allClientNames = Array.from(new Set([
+                    ...safeSites.map((s: any) => s.clientName || s.quoteSnapshot?.client || "").filter(Boolean),
+                    ...safeQuotes.map((q: any) => q.client || "").filter(Boolean),
+                    ...tenders.map((t: any) => t.client || "").filter(Boolean),
+                  ]));
+                  // Merge with registered clients (case-insensitive dedup)
+                  const registeredNames = clients.map((c: any) => c.name);
+                  const allNamesSet: string[] = [];
+                  const seen = new Set<string>();
+                  [...registeredNames, ...allClientNames].forEach((name) => {
+                    const key = name.trim().toLowerCase();
+                    if (!seen.has(key) && name.trim()) { seen.add(key); allNamesSet.push(name.trim()); }
+                  });
+                  allNamesSet.sort((a, b) => a.localeCompare(b, "fr"));
+                  const countProjects = (name: string) =>
+                    safeSites.filter((s: any) => matchClient(s.clientName || s.quoteSnapshot?.client || "", name)).length +
+                    safeQuotes.filter((q: any) => matchClient(q.client || "", name)).length +
+                    tenders.filter((t: any) => matchClient(t.client || "", name)).length;
+                  return (
+                    <Card>
+                      <CardContent className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <button
+                            className="flex items-center gap-2 text-base font-semibold hover:text-neutral-700 transition w-full text-left"
+                            onClick={() => setClientsCollapsed((v) => !v)}
+                          >
+                            {clientsCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            <span>Clients enregistrés</span>
+                            <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{allNamesSet.length}</span>
+                          </button>
+                          <button
+                            onClick={() => setClientAddFormOpen((v) => !v)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-700 transition shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Ajouter client
+                          </button>
+                        </div>
+                        {clientAddFormOpen && (
+                          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-2">
+                            <div className="text-sm font-semibold">Nouveau client</div>
+                            <div className="grid md:grid-cols-3 gap-2">
+                              <Input value={newClientForm.name} onChange={(e: any) => setNewClientForm((p) => ({ ...p, name: e.target.value }))} placeholder="Nom *" />
+                              <Input value={newClientForm.phone} onChange={(e: any) => setNewClientForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Téléphone" />
+                              <Input value={newClientForm.email} onChange={(e: any) => setNewClientForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => { if (newClientForm.name.trim()) { saveClient(newClientForm); setNewClientForm({ name: "", phone: "", email: "" }); setClientAddFormOpen(false); } }}>Enregistrer</Button>
+                              <Button size="sm" variant="ghost" onClick={() => { setClientAddFormOpen(false); setNewClientForm({ name: "", phone: "", email: "" }); }}>Annuler</Button>
+                            </div>
+                          </div>
+                        )}
+                        {!clientsCollapsed && (
+                          <div className="space-y-1">
+                            {allNamesSet.length === 0 && (
+                              <div className="text-sm text-neutral-400 py-2">Aucun client trouvé. Les noms de clients saisis dans les chantiers, devis et AO apparaissent ici.</div>
+                            )}
+                            {allNamesSet.map((name) => {
+                              const nb = countProjects(name);
+                              const isRegistered = clients.some((c: any) => matchClient(c.name, name));
+                              return (
+                                <div key={name} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-100 px-3 py-2 hover:border-neutral-200 hover:bg-neutral-50 transition">
+                                  <button onClick={() => openClientHistory(name)} className="font-medium text-sm text-neutral-800 hover:text-sky-700 hover:underline text-left flex-1">
+                                    {name}
+                                  </button>
+                                  <div className="flex items-center gap-2 text-[11px] shrink-0">
+                                    {isRegistered && <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Enregistré</span>}
+                                    <span className="text-neutral-400">{nb} projet{nb > 1 ? "s" : ""}</span>
+                                    <button onClick={() => openClientHistory(name)} className="text-neutral-400 hover:text-sky-600 transition text-xs underline">Voir</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
               </div>
             )}
 
@@ -5589,7 +6260,7 @@ useEffect(() => {
                                       {s.status === "archived" && <span className="text-[10px] text-neutral-400 border border-neutral-200 rounded px-1">archivé</span>}
                                     </button>
                                   </td>
-                                  <td className="px-3 py-2.5 text-neutral-600">{s.clientName || <span className="text-neutral-300">—</span>}</td>
+                                  <td className="px-3 py-2.5 text-neutral-600">{s.clientName ? <button onClick={() => openClientHistory(s.clientName)} className="hover:underline hover:text-sky-700 text-left">{s.clientName}</button> : <span className="text-neutral-300">—</span>}</td>
                                   <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
                                   <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
                                   <td className="px-3 py-2 w-24">
@@ -5870,6 +6541,7 @@ useEffect(() => {
           tauxJournalierDefault={tauxJournalierDefault}
           tauxMaterielDefault={tauxMaterielDefault}
           quotes={quotes}
+          onOpenClientHistory={openClientHistory}
         />
       )}
 
@@ -5888,6 +6560,18 @@ useEffect(() => {
       )}
 
       <AnnotationDialog open={noteOpen} setOpen={setNoteOpen} value={currentNoteValue} onSave={saveNote} />
+
+      {/* === ClientHistoryDialog === */}
+      <ClientHistoryDialog
+        open={clientHistoryOpen}
+        onOpenChange={setClientHistoryOpen}
+        clientName={clientHistoryName}
+        sites={safeSites}
+        quotes={safeQuotes}
+        tenders={tenders}
+        clients={clients}
+        onSaveClient={saveClient}
+      />
 
       {/* === Dialogs Clients === */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>

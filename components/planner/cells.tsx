@@ -9,7 +9,7 @@ import { AssignmentChip } from "./chips";
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, onToggleConfirmed, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -80,6 +80,7 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
                 a={a}
                 person={p}
                 onRemove={() => onRemoveAssignment(a.id)}
+                onToggleConfirmed={() => onToggleConfirmed?.(a.id)}
                 baseHours={baseHours}
                 conflict={conflict}
               />
