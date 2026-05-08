@@ -5,6 +5,7 @@
       "name": "atelierm-planning",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/apn/atelierm-planning",
       "port": 3000
     }
   ]

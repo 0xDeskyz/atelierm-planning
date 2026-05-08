@@ -4813,30 +4813,36 @@ useEffect(() => {
                                           <option value="perdu">Perdu</option>
                                           <option value="abandonne">Abandonné</option>
                                         </select>
-                                        {tender.statut === "gagne" && !tender.linkedDevisId && (
+                                        {tender.statut === "gagne" && !tender.linkedSiteId && (
                                           <button
                                             onClick={() => {
-                                              const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
-                                              const base = { id, title: tender.objet || tender.reference || "Devis", client: tender.client, status: "todo" };
-                                              const normalized = normalizeQuoteRecord(base);
-                                              setQuotes((prev) => [...prev, normalized]);
-                                              setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, linkedDevisId: id } : t));
-                                              openQuoteDetail(normalized);
+                                              const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `site-${Date.now()}`;
+                                              const colorIndex = hashString(String(tender.id || tender.objet || Date.now())) % SITE_COLORS.length;
+                                              const newSite = normalizeSiteRecord({
+                                                id,
+                                                name: tender.objet || tender.reference || "Chantier",
+                                                clientName: tender.client || "",
+                                                startDate: toLocalKey(new Date()),
+                                                endDate: toLocalKey(new Date()),
+                                                color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
+                                                status: "pending",
+                                              });
+                                              setSites((prev) => [...prev, newSite]);
+                                              setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, linkedSiteId: id } : t));
+                                              showToast(`Chantier "${newSite.name}" créé`);
+                                              setView("sites");
                                             }}
                                             className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
                                           >
-                                            Créer devis
+                                            Créer chantier
                                           </button>
                                         )}
-                                        {tender.linkedDevisId && (
+                                        {tender.linkedSiteId && (
                                           <button
-                                            onClick={() => {
-                                              const q = safeQuotes.find((x) => x.id === tender.linkedDevisId);
-                                              if (q) openQuoteDetail(q);
-                                            }}
+                                            onClick={() => openSiteDetail(tender.linkedSiteId)}
                                             className="px-2 py-0.5 rounded text-[11px] bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition whitespace-nowrap"
                                           >
-                                            Devis lié →
+                                            Chantier →
                                           </button>
                                         )}
                                         <button
