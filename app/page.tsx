@@ -80,6 +80,7 @@ import {
   normalizePersonRecord,
   normalizeSiteRecord,
   normalizeQuoteRecord,
+  normalizeTenderRecord,
   isDateWithin,
   cellKey,
   mapWeekDates,
@@ -1331,6 +1332,15 @@ export default function Page() {
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
+  const [tenders, setTenders] = useState<any[]>([]);
+  const [aoFormOpen, setAoFormOpen] = useState(false);
+  const [aoFilter, setAoFilter] = useState<"all" | "a_repondre" | "depose" | "gagne" | "perdu">("all");
+  const [devisFormOpen, setDevisFormOpen] = useState(false);
+  const [devisFilter, setDevisFilter] = useState<"all" | "active" | "accepted" | "refused" | "expired">("all");
+  const [aoSort, setAoSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "dateLimite", dir: "asc" });
+  const [devisSort, setDevisSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "sentAt", dir: "desc" });
+  const [expandedTenderRows, setExpandedTenderRows] = useState<Set<string>>(new Set());
+  const [newAo, setNewAo] = useState({ reference: "", client: "", objet: "", type: "prive" as "prive" | "public", dateLimite: "", montantEstime: "" });
   const [tauxJournalierDefault, setTauxJournalierDefault] = useState<number>(350);
   const [tauxMaterielDefault, setTauxMaterielDefault] = useState<number>(15);
   const [fraisFixesDefault, setFraisFixesDefault] = useState<number>(0);
@@ -2782,6 +2792,7 @@ export default function Page() {
     setSiteWeekVisibility(state.siteWeekVisibility || {});
     setHoursPerDay(state.hoursPerDay ?? 8);
     setQuotes(toArray(state.quotes, DEMO_QUOTES).map(normalizeQuoteRecord));
+    setTenders(toArray(state.tenders).map(normalizeTenderRecord));
     if (state.tauxJournalierDefault != null) setTauxJournalierDefault(state.tauxJournalierDefault);
     if (state.tauxMaterielDefault != null) setTauxMaterielDefault(state.tauxMaterielDefault);
     if (state.fraisFixesDefault != null) setFraisFixesDefault(state.fraisFixesDefault);
@@ -2956,6 +2967,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     siteWeekVisibility,
     hoursPerDay,
     quotes,
+    tenders,
     tauxJournalierDefault,
     tauxMaterielDefault,
     fraisFixesDefault,
@@ -2963,7 +2975,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     calendarEvents,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3207,7 +3219,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3216,7 +3228,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments)); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setTenders(toArray(data.tenders).map(normalizeTenderRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -3264,7 +3276,7 @@ useEffect(() => {
             {/* Gestion */}
             <div className="flex items-center gap-0.5">
               {[
-                { v: "devis", label: "Devis" },
+                { v: "devis", label: "Affaires" },
                 { v: "sites", label: "Chantiers" },
                 { v: "salaries", label: "Salariés" },
                 { v: "rentabilite", label: "Rentabilité" },
@@ -4479,55 +4491,562 @@ useEffect(() => {
               </div>
             )}
 
-            {view === "devis" && (
-              <div className="space-y-3">
-                <Card>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-3">
-                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="space-y-1">
-                          <div className="text-base font-semibold">Devis en cours</div>
-                          <p className="text-sm text-neutral-600">
-                            Kanban minimaliste : cliquez sur une carte pour ouvrir le détail complet et l'éditer.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white shadow-sm p-2">
-                          <Input
-                            placeholder="Nouveau devis"
-                            value={newQuote.title}
-                            onChange={(e: any) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
-                            className="w-48 h-9"
-                          />
-                          <Input
-                            placeholder="Client (optionnel)"
-                            value={newQuote.client}
-                            onChange={(e: any) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
-                            className="w-44 h-9"
-                          />
-                          <Button onClick={addQuote} className="h-9 px-3">
-                            <Plus className="w-4 h-4 mr-1" /> Créer
-                          </Button>
-                        </div>
-                      </div>
+            {view === "devis" && (() => {
+              // ── KPI computations ──
+              const aoEnCours = tenders.filter((t) => t.statut === "a_repondre" || t.statut === "depose").length;
+              const gained = tenders.filter((t) => t.statut === "gagne").length;
+              const lost = tenders.filter((t) => t.statut === "perdu").length;
+              const tauxConc = gained + lost > 0 ? Math.round((gained / (gained + lost)) * 100) : null;
+              const caPotTenders = tenders
+                .filter((t) => t.statut === "a_repondre" || t.statut === "depose")
+                .reduce((s, t) => s + (t.montantEstime || 0), 0);
+              const caPotQuotes = safeQuotes
+                .filter((q) => q.status === "pending" || q.status === "todo")
+                .reduce((s, q) => s + (q.amount || 0), 0);
+              const caConfirme = safeQuotes
+                .filter((q) => q.status === "won")
+                .reduce((s, q) => s + (q.amount || 0), 0);
 
-                      <div className="text-xs text-neutral-600">Toutes les colonnes sont visibles sans défilement horizontal. Les cartes affichent l'essentiel et s'ouvrent au clic pour le reste.</div>
+              // ── AO filtering & sorting ──
+              const today = new Date("2026-05-08");
+              const in7Days = new Date("2026-05-08");
+              in7Days.setDate(in7Days.getDate() + 7);
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                        {QUOTE_COLUMNS.map((col) => (
-                          <QuoteColumn
-                            key={col.id}
-                            col={col}
-                            items={quotesByColumn[col.id] || []}
-                            onOpenQuote={openQuoteDetail}
-                            onCreateSite={createSiteFromQuote}
-                          />
-                        ))}
-                      </div>
+              const filteredAo = tenders
+                .filter((t) => aoFilter === "all" || t.statut === aoFilter)
+                .sort((a, b) => {
+                  const dir = aoSort.dir === "asc" ? 1 : -1;
+                  if (aoSort.col === "dateLimite") return (a.dateLimite || "").localeCompare(b.dateLimite || "") * dir;
+                  if (aoSort.col === "montantEstime") return ((a.montantEstime || 0) - (b.montantEstime || 0)) * dir;
+                  if (aoSort.col === "client") return (a.client || "").localeCompare(b.client || "") * dir;
+                  if (aoSort.col === "reference") return (a.reference || "").localeCompare(b.reference || "") * dir;
+                  return 0;
+                });
+
+              // ── Devis filtering & sorting ──
+              const filteredDevis = safeQuotes
+                .filter((q) => {
+                  if (devisFilter === "all") return true;
+                  if (devisFilter === "active") return q.status === "pending" || q.status === "todo" || q.status === "draft";
+                  if (devisFilter === "accepted") return q.status === "won";
+                  if (devisFilter === "refused") return q.status === "lost";
+                  if (devisFilter === "expired") return q.status === "expired";
+                  return true;
+                })
+                .sort((a, b) => {
+                  const dir = devisSort.dir === "asc" ? 1 : -1;
+                  if (devisSort.col === "amount") return ((a.amount || 0) - (b.amount || 0)) * dir;
+                  if (devisSort.col === "title") return (a.title || "").localeCompare(b.title || "") * dir;
+                  if (devisSort.col === "client") return (a.client || "").localeCompare(b.client || "") * dir;
+                  return ((a.sentAt || a.createdAt || "").localeCompare(b.sentAt || b.createdAt || "")) * dir;
+                });
+
+              const SortTh = ({ col, label, currentSort, onSort }: { col: string; label: string; currentSort: { col: string; dir: "asc" | "desc" }; onSort: (c: string) => void }) => (
+                <th
+                  className="px-3 py-2 text-left text-xs font-semibold text-neutral-500 cursor-pointer select-none hover:text-neutral-800 whitespace-nowrap"
+                  onClick={() => onSort(col)}
+                >
+                  {label}
+                  {currentSort.col === col && (
+                    <span className="ml-1">{currentSort.dir === "asc" ? "↑" : "↓"}</span>
+                  )}
+                </th>
+              );
+
+              const tenderStatutBadge = (statut: string) => {
+                const map: Record<string, { bg: string; label: string }> = {
+                  a_repondre: { bg: "bg-amber-100 text-amber-800", label: "À répondre" },
+                  depose: { bg: "bg-blue-100 text-blue-800", label: "Déposé" },
+                  gagne: { bg: "bg-emerald-100 text-emerald-800", label: "Gagné ✓" },
+                  perdu: { bg: "bg-rose-100 text-rose-400", label: "Perdu" },
+                  abandonne: { bg: "bg-neutral-100 text-neutral-500", label: "Abandonné" },
+                };
+                const s = map[statut] || map.a_repondre;
+                return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", s.bg)}>{s.label}</span>;
+              };
+
+              const quoteStatutBadge = (status: string) => {
+                const map: Record<string, { bg: string; label: string }> = {
+                  draft: { bg: "bg-neutral-200 text-neutral-600", label: "Brouillon" },
+                  todo: { bg: "bg-neutral-200 text-neutral-600", label: "À faire" },
+                  pending: { bg: "bg-amber-100 text-amber-800", label: "En attente" },
+                  sent: { bg: "bg-sky-100 text-sky-800", label: "Envoyé" },
+                  won: { bg: "bg-emerald-100 text-emerald-800", label: "Accepté ✓" },
+                  lost: { bg: "bg-rose-100 text-rose-700", label: "Refusé" },
+                  expired: { bg: "bg-neutral-100 text-neutral-500", label: "Expiré" },
+                };
+                const s = map[status] || map.draft;
+                return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", s.bg)}>{s.label}</span>;
+              };
+
+              return (
+                <div className="space-y-6">
+                  {/* ── KPI bar ── */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">AO en cours</div>
+                      <div className="text-2xl font-bold text-neutral-900">{aoEnCours}</div>
+                      <div className="text-[11px] text-neutral-400">À répondre ou déposés</div>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+                    <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Taux de concrétisation</div>
+                      <div className={cx("text-2xl font-bold", tauxConc == null ? "text-neutral-300" : tauxConc >= 50 ? "text-emerald-600" : "text-amber-500")}>
+                        {tauxConc == null ? "—" : `${tauxConc}%`}
+                      </div>
+                      <div className="text-[11px] text-neutral-400">{gained} gagné{gained !== 1 ? "s" : ""}, {lost} perdu{lost !== 1 ? "s" : ""}</div>
+                    </div>
+                    <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CA potentiel</div>
+                      <div className="text-2xl font-bold text-sky-700">{formatEUR(caPotTenders + caPotQuotes)}</div>
+                      <div className="text-[11px] text-neutral-400">AO + devis en cours</div>
+                    </div>
+                    <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CA confirmé</div>
+                      <div className="text-2xl font-bold text-emerald-600">{formatEUR(caConfirme)}</div>
+                      <div className="text-[11px] text-neutral-400">Devis acceptés</div>
+                    </div>
+                  </div>
+
+                  {/* ── Section Appels d'offres ── */}
+                  <Card>
+                    <CardContent className="space-y-4">
+                      {/* Header */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <div className="text-base font-semibold">Appels d'offres</div>
+                          <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{tenders.length}</span>
+                        </div>
+                        <button
+                          onClick={() => setAoFormOpen((v) => !v)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
+                        >
+                          <Plus className="w-4 h-4" /> Nouvel AO
+                        </button>
+                      </div>
+
+                      {/* Inline add form */}
+                      {aoFormOpen && (
+                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                          <div className="flex flex-wrap gap-2 items-end">
+                            <div className="flex flex-col gap-1 min-w-[120px]">
+                              <label className="text-[11px] text-neutral-600">Référence</label>
+                              <input
+                                value={newAo.reference}
+                                onChange={(e) => setNewAo((a) => ({ ...a, reference: e.target.value }))}
+                                placeholder="AO-2026-001"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 min-w-[140px]">
+                              <label className="text-[11px] text-neutral-600">Client</label>
+                              <input
+                                value={newAo.client}
+                                onChange={(e) => setNewAo((a) => ({ ...a, client: e.target.value }))}
+                                placeholder="Nom du client"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+                              <label className="text-[11px] text-neutral-600">Objet</label>
+                              <input
+                                value={newAo.objet}
+                                onChange={(e) => setNewAo((a) => ({ ...a, objet: e.target.value }))}
+                                placeholder="Description courte"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[11px] text-neutral-600">Type</label>
+                              <select
+                                value={newAo.type}
+                                onChange={(e) => setNewAo((a) => ({ ...a, type: e.target.value as "prive" | "public" }))}
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              >
+                                <option value="prive">Privé</option>
+                                <option value="public">Public</option>
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[11px] text-neutral-600">Date limite</label>
+                              <input
+                                type="date"
+                                value={newAo.dateLimite}
+                                onChange={(e) => setNewAo((a) => ({ ...a, dateLimite: e.target.value }))}
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 w-28">
+                              <label className="text-[11px] text-neutral-600">Montant estimé (€)</label>
+                              <input
+                                type="number"
+                                value={newAo.montantEstime}
+                                onChange={(e) => setNewAo((a) => ({ ...a, montantEstime: e.target.value }))}
+                                placeholder="0"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                            <button
+                              onClick={() => {
+                                const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `ao-${Date.now()}`;
+                                const montantNum = Number(newAo.montantEstime);
+                                const tender = normalizeTenderRecord({
+                                  id,
+                                  reference: newAo.reference || `AO-${Date.now()}`,
+                                  client: newAo.client,
+                                  objet: newAo.objet,
+                                  type: newAo.type,
+                                  dateLimite: newAo.dateLimite,
+                                  montantEstime: Number.isFinite(montantNum) && montantNum > 0 ? montantNum : null,
+                                  statut: "a_repondre",
+                                  createdAt: new Date().toISOString(),
+                                });
+                                setTenders((prev) => [...prev, tender]);
+                                setNewAo({ reference: "", client: "", objet: "", type: "prive", dateLimite: "", montantEstime: "" });
+                                setAoFormOpen(false);
+                              }}
+                              className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition self-end"
+                            >
+                              Ajouter
+                            </button>
+                            <button
+                              onClick={() => setAoFormOpen(false)}
+                              className="px-3 py-1.5 rounded-lg border border-neutral-300 text-sm text-neutral-600 hover:bg-neutral-100 transition self-end"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Filter pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {(["all", "a_repondre", "depose", "gagne", "perdu"] as const).map((f) => {
+                          const labels: Record<string, string> = { all: "Tous", a_repondre: "À répondre", depose: "Déposé", gagne: "Gagné", perdu: "Perdu" };
+                          return (
+                            <button
+                              key={f}
+                              onClick={() => setAoFilter(f)}
+                              className={cx(
+                                "px-3 py-1 rounded-full text-xs font-medium transition border",
+                                aoFilter === f
+                                  ? "bg-indigo-600 text-white border-indigo-600"
+                                  : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
+                              )}
+                            >
+                              {labels[f]}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* AO Table */}
+                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-neutral-50 border-b border-neutral-200">
+                            <tr>
+                              <SortTh col="reference" label="Réf" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <SortTh col="client" label="Client" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Objet</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Type</th>
+                              <SortTh col="dateLimite" label="Deadline" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <SortTh col="montantEstime" label="Montant est." currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Statut</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredAo.length === 0 && (
+                              <tr>
+                                <td colSpan={8} className="px-3 py-6 text-center text-sm text-neutral-400">
+                                  Aucun appel d'offres pour ce filtre.
+                                </td>
+                              </tr>
+                            )}
+                            {filteredAo.map((tender) => {
+                              const isExpanded = expandedTenderRows.has(tender.id);
+                              const deadlineDate = tender.dateLimite ? new Date(tender.dateLimite) : null;
+                              const isUrgent = deadlineDate &&
+                                (tender.statut === "a_repondre" || tender.statut === "depose") &&
+                                deadlineDate >= today &&
+                                deadlineDate <= in7Days;
+                              return (
+                                <React.Fragment key={tender.id}>
+                                  <tr
+                                    className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer transition"
+                                    onClick={() => setExpandedTenderRows((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(tender.id)) next.delete(tender.id); else next.add(tender.id);
+                                      return next;
+                                    })}
+                                  >
+                                    <td className="px-3 py-2 font-mono text-xs text-neutral-700 whitespace-nowrap">{tender.reference || "—"}</td>
+                                    <td className="px-3 py-2 font-medium text-neutral-900 whitespace-nowrap">{tender.client || "—"}</td>
+                                    <td className="px-3 py-2 text-neutral-600 max-w-[180px] truncate">{tender.objet || "—"}</td>
+                                    <td className="px-3 py-2">
+                                      <span className={cx("px-1.5 py-0.5 rounded text-[11px] font-semibold", tender.type === "public" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700")}>
+                                        {tender.type === "public" ? "Public" : "Privé"}
+                                      </span>
+                                    </td>
+                                    <td className={cx("px-3 py-2 text-xs whitespace-nowrap", isUrgent ? "text-red-600 font-semibold" : "text-neutral-600")}>
+                                      {isUrgent && "⚠ "}
+                                      {tender.dateLimite ? new Date(tender.dateLimite).toLocaleDateString("fr-FR") : "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-xs text-neutral-700 whitespace-nowrap">
+                                      {tender.montantEstime != null ? formatEUR(tender.montantEstime) : "—"}
+                                    </td>
+                                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                      {tenderStatutBadge(tender.statut)}
+                                    </td>
+                                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <select
+                                          value={tender.statut}
+                                          onChange={(e) => {
+                                            const newStatut = e.target.value;
+                                            setTenders((prev) => prev.map((t) => t.id === tender.id ? normalizeTenderRecord({ ...t, statut: newStatut }) : t));
+                                          }}
+                                          className="border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                                        >
+                                          <option value="a_repondre">À répondre</option>
+                                          <option value="depose">Déposé</option>
+                                          <option value="gagne">Gagné</option>
+                                          <option value="perdu">Perdu</option>
+                                          <option value="abandonne">Abandonné</option>
+                                        </select>
+                                        {tender.statut === "gagne" && !tender.linkedDevisId && (
+                                          <button
+                                            onClick={() => {
+                                              const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
+                                              const base = { id, title: tender.objet || tender.reference || "Devis", client: tender.client, status: "todo" };
+                                              const normalized = normalizeQuoteRecord(base);
+                                              setQuotes((prev) => [...prev, normalized]);
+                                              setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, linkedDevisId: id } : t));
+                                              openQuoteDetail(normalized);
+                                            }}
+                                            className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
+                                          >
+                                            Créer devis
+                                          </button>
+                                        )}
+                                        {tender.linkedDevisId && (
+                                          <button
+                                            onClick={() => {
+                                              const q = safeQuotes.find((x) => x.id === tender.linkedDevisId);
+                                              if (q) openQuoteDetail(q);
+                                            }}
+                                            className="px-2 py-0.5 rounded text-[11px] bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition whitespace-nowrap"
+                                          >
+                                            Devis lié →
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => {
+                                            if (confirm("Supprimer cet appel d'offres ?")) {
+                                              setTenders((prev) => prev.filter((t) => t.id !== tender.id));
+                                            }
+                                          }}
+                                          className="p-0.5 rounded text-neutral-400 hover:text-red-500 transition"
+                                          title="Supprimer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {isExpanded && (
+                                    <tr className="bg-indigo-50/40 border-b border-neutral-100">
+                                      <td colSpan={8} className="px-4 py-3">
+                                        <div className="flex items-start gap-3">
+                                          <span className="text-xs text-neutral-500 font-semibold shrink-0 mt-1">Notes :</span>
+                                          <textarea
+                                            value={tender.notes}
+                                            onChange={(e) => setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, notes: e.target.value } : t))}
+                                            placeholder="Notes internes sur cet AO..."
+                                            className="flex-1 text-sm rounded border border-neutral-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none min-h-[60px]"
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* ── Section Devis ── */}
+                  <Card>
+                    <CardContent className="space-y-4">
+                      {/* Header */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <div className="text-base font-semibold">Devis</div>
+                          <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{safeQuotes.length}</span>
+                        </div>
+                        <button
+                          onClick={() => setDevisFormOpen((v) => !v)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition"
+                        >
+                          <Plus className="w-4 h-4" /> Nouveau devis
+                        </button>
+                      </div>
+
+                      {/* Inline add devis form */}
+                      {devisFormOpen && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                          <div className="flex flex-wrap gap-2 items-end">
+                            <div className="flex flex-col gap-1 min-w-[180px]">
+                              <label className="text-[11px] text-neutral-600">Titre du devis</label>
+                              <input
+                                value={newQuote.title}
+                                onChange={(e) => setNewQuote((q) => ({ ...q, title: e.target.value }))}
+                                placeholder="Ex : Rénovation salle de bain"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1 min-w-[160px]">
+                              <label className="text-[11px] text-neutral-600">Client</label>
+                              <input
+                                value={newQuote.client}
+                                onChange={(e) => setNewQuote((q) => ({ ...q, client: e.target.value }))}
+                                placeholder="Nom du client (optionnel)"
+                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                              />
+                            </div>
+                            <button
+                              onClick={() => { addQuote(); setDevisFormOpen(false); }}
+                              className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition self-end"
+                            >
+                              Créer
+                            </button>
+                            <button
+                              onClick={() => setDevisFormOpen(false)}
+                              className="px-3 py-1.5 rounded-lg border border-neutral-300 text-sm text-neutral-600 hover:bg-neutral-100 transition self-end"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Filter pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {(["all", "active", "accepted", "refused", "expired"] as const).map((f) => {
+                          const labels: Record<string, string> = { all: "Tous", active: "En cours", accepted: "Acceptés", refused: "Refusés", expired: "Expirés" };
+                          return (
+                            <button
+                              key={f}
+                              onClick={() => setDevisFilter(f)}
+                              className={cx(
+                                "px-3 py-1 rounded-full text-xs font-medium transition border",
+                                devisFilter === f
+                                  ? "bg-emerald-600 text-white border-emerald-600"
+                                  : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
+                              )}
+                            >
+                              {labels[f]}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Devis Table */}
+                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-neutral-50 border-b border-neutral-200">
+                            <tr>
+                              <SortTh col="title" label="Titre" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <SortTh col="client" label="Client" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <SortTh col="amount" label="Montant" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Statut</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">AO lié</th>
+                              <SortTh col="sentAt" label="Date" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredDevis.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="px-3 py-6 text-center text-sm text-neutral-400">
+                                  Aucun devis pour ce filtre.
+                                </td>
+                              </tr>
+                            )}
+                            {filteredDevis.map((quote) => {
+                              const linkedTender = tenders.find((t) => t.linkedDevisId === quote.id);
+                              return (
+                                <tr key={quote.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition">
+                                  <td className="px-3 py-2 font-medium text-neutral-900 max-w-[160px] truncate">{quote.title || "Sans titre"}</td>
+                                  <td className="px-3 py-2 text-neutral-600 whitespace-nowrap">{quote.client || "—"}</td>
+                                  <td className="px-3 py-2 font-semibold text-neutral-800 whitespace-nowrap">
+                                    {quote.amount != null ? formatEUR(quote.amount) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2">{quoteStatutBadge(quote.status)}</td>
+                                  <td className="px-3 py-2">
+                                    {linkedTender ? (
+                                      <span className="px-2 py-0.5 rounded text-[11px] bg-neutral-100 text-neutral-600 font-mono">{linkedTender.reference || "AO"}</span>
+                                    ) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">
+                                    {quote.sentAt ? new Date(quote.sentAt).toLocaleDateString("fr-FR") : "—"}
+                                  </td>
+                                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <select
+                                        value={quote.status}
+                                        onChange={(e) => {
+                                          const newStatus = e.target.value;
+                                          setQuotes((prev) => prev.map((q) => q.id === quote.id ? normalizeQuoteRecord({ ...q, status: newStatus }) : q));
+                                        }}
+                                        className="border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                      >
+                                        {QUOTE_COLUMNS.map((col) => (
+                                          <option key={col.id} value={col.id}>{col.label}</option>
+                                        ))}
+                                      </select>
+                                      {quote.status === "won" && (
+                                        <button
+                                          onClick={() => createSiteFromQuote(quote)}
+                                          className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
+                                        >
+                                          Créer chantier
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => openQuoteDetail(quote)}
+                                        className="p-0.5 rounded text-neutral-400 hover:text-sky-600 transition"
+                                        title="Modifier"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          if (confirm("Supprimer ce devis ?")) {
+                                            setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
+                                          }
+                                        }}
+                                        className="p-0.5 rounded text-neutral-400 hover:text-red-500 transition"
+                                        title="Supprimer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              );
+            })()}
 
             {view === "sites" && (
               <div className="space-y-3">

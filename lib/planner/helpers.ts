@@ -299,6 +299,28 @@ export const formatEUR = (val?: number) => {
   }
 };
 
+export const normalizeTenderRecord = (tender: any) => {
+  const base = typeof tender === "object" && tender !== null ? tender : {};
+  const id = (base as any)?.id || ensureId(String((base as any)?.reference || (base as any)?.client || Date.now()), "tender");
+  const montantNum = Number((base as any)?.montantEstime);
+  return {
+    ...base,
+    id,
+    reference: (base as any)?.reference?.trim?.() || "",
+    client: (base as any)?.client?.trim?.() || "",
+    objet: (base as any)?.objet?.trim?.() || "",
+    type: (base as any)?.type === "public" || (base as any)?.type === "prive" ? (base as any).type : "prive",
+    dateLimite: (base as any)?.dateLimite || "",
+    montantEstime: Number.isFinite(montantNum) ? montantNum : null,
+    statut: (["a_repondre", "depose", "gagne", "perdu", "abandonne"] as const).includes((base as any)?.statut)
+      ? (base as any).statut
+      : "a_repondre",
+    notes: (base as any)?.notes?.trim?.() || "",
+    linkedDevisId: (base as any)?.linkedDevisId || null,
+    createdAt: (base as any)?.createdAt || new Date().toISOString(),
+  };
+};
+
 export const normalizeQuoteRecord = (quote: any) => {
   const base = typeof quote === "object" && quote !== null ? quote : {};
   const todayKeyLocal = toLocalKey(new Date());
