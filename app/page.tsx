@@ -4826,6 +4826,11 @@ useEffect(() => {
                                                 endDate: toLocalKey(new Date()),
                                                 color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
                                                 status: "pending",
+                                                quoteSnapshot: {
+                                                  title: tender.objet || tender.reference || "",
+                                                  client: tender.client || "",
+                                                  amount: tender.montantEstime || 0,
+                                                },
                                               });
                                               setSites((prev) => [...prev, newSite]);
                                               setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, linkedSiteId: id } : t));
