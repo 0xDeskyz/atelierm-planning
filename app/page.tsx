@@ -3154,7 +3154,10 @@ export default function Page() {
         return p;
       });
     });
-    setSites(toArray(state.sites, DEMO_SITES).map(normalizeSiteRecord));
+    const rawSites = toArray(state.sites, []);
+    const OLD_DEMO_IDS = new Set(["s1", "s2"]);
+    const hasOnlyOldDemo = rawSites.length > 0 && rawSites.every((s: any) => OLD_DEMO_IDS.has(s.id));
+    setSites((rawSites.length === 0 || hasOnlyOldDemo ? DEMO_SITES : rawSites).map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
