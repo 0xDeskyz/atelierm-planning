@@ -52,6 +52,7 @@ import {
   ABSENCE_COLORS,
   ABSENCE_LABELS,
   ABSENCE_BADGE,
+  COLOR_HEX,
 } from "../lib/planner/constants";
 import type { EventType, AbsenceType } from "../lib/planner/constants";
 import {
@@ -80,6 +81,7 @@ import {
   getFrenchHolidaysWithBridges,
   normalizePersonRecord,
   normalizeSiteRecord,
+  ORIGINE_OPTIONS,
   normalizeQuoteRecord,
   normalizeTenderRecord,
   normalizeClientRecord,
@@ -277,6 +279,31 @@ function QuoteColumn({ col, items, onOpenQuote, onCreateSite }: any) {
 // ==================================
 // Calendar drag & drop helpers
 // ==================================
+function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; weekKey: string; calHex: string; onEdit: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `calendar-event-${event.id}-${weekKey}`,
+    data: { type: "calendar-event", eventId: event.id, fromWeekKey: weekKey },
+  });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onClick={onEdit}
+      className={cx(
+        "w-full flex items-center gap-1.5 text-[10px] px-1.5 py-px rounded bg-white border border-neutral-100 leading-5 select-none cursor-grab active:cursor-grabbing transition hover:bg-neutral-50",
+        isDragging && "opacity-50"
+      )}
+      title={event.title}
+    >
+      <span className="w-2 h-2 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: calHex }} />
+      <span className="truncate text-neutral-700">{event.title}</span>
+    </div>
+  );
+}
+
 function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
@@ -633,6 +660,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [newSitLabel, setNewSitLabel] = useState("");
   const [newSitMontant, setNewSitMontant] = useState("");
   const [newSitDate, setNewSitDate] = useState("");
+  const [origine, setOrigine] = useState<string>("");
 
   useEffect(() => {
     setTab("infos");
@@ -659,6 +687,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewSitLabel("");
     setNewSitMontant("");
     setNewSitDate("");
+    setOrigine(site?.origine || "");
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -687,6 +716,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       tauxMateriel: parsedTauxMat,
       couts,
       situations,
+      origine: origine || null,
     });
   };
 
@@ -746,6 +776,19 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
               <label className="space-y-1">
                 <span className="text-[11px] text-neutral-600">Nom</span>
                 <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Nom du chantier" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Origine</span>
+                <select
+                  value={origine}
+                  onChange={(e) => setOrigine(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                >
+                  <option value="">— Non renseigné</option>
+                  {ORIGINE_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 md:col-span-2">
                 <span className="text-[11px] text-neutral-600">Couleur</span>
@@ -1034,6 +1077,7 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
   const [notes, setNotes] = useState("");
   const [color, setColor] = useState(COLORS[0]);
   const [tauxJournalier, setTauxJournalier] = useState<string>("");
+  const [personHoursPerDay, setPersonHoursPerDay] = useState<string>("");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -1042,6 +1086,7 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
     setRole(person?.role || "");
     setPhone(person?.phone || "");
     setTauxJournalier(person?.tauxJournalier != null ? String(person.tauxJournalier) : "");
+    setPersonHoursPerDay(person?.hoursPerDay != null ? String(person.hoursPerDay) : "");
     setEmail(person?.email || "");
     setSkills((person?.skills || []).join(", "));
     setNotes(person?.notes || "");
@@ -1056,7 +1101,8 @@ function PersonDetailDialog({ open, person, onClose, onSave, onDelete, usedColor
     if (!trimmed) return;
     const parsedSkills = skills.split(/[,;]+/).map((s: string) => s.trim()).filter(Boolean);
     const parsedTaux = tauxJournalier !== "" && Number.isFinite(Number(tauxJournalier)) ? Number(tauxJournalier) : null;
-    onSave({ ...person, name: trimmed, role: role.trim(), phone: phone.trim(), email: email.trim(), notes: notes.trim(), skills: parsedSkills, color, tauxJournalier: parsedTaux });
+    const parsedHPD = personHoursPerDay !== "" && Number.isFinite(Number(personHoursPerDay)) && Number(personHoursPerDay) > 0 ? Number(personHoursPerDay) : null;
+    onSave({ ...person, name: trimmed, role: role.trim(), phone: phone.trim(), email: email.trim(), notes: notes.trim(), skills: parsedSkills, color, tauxJournalier: parsedTaux, hoursPerDay: parsedHPD });
   };
 
   const isArchived = person?.status === "archived";
@@ -1460,7 +1506,13 @@ function AddPerson({ onAdd, usedColors = [] }: { onAdd: (name: string, color: st
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-7 h-7 rounded-full border border-neutral-300 bg-white text-neutral-500 hover:border-neutral-900 hover:text-neutral-900 hover:bg-neutral-50 flex items-center justify-center transition"
+        title="Ajouter un salarié"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
       <AddPersonDialog open={open} setOpen={setOpen} onAdd={onAdd} usedColors={usedColors} />
     </>
   );
@@ -1469,7 +1521,13 @@ function AddSite({ onAdd, usedColors = [] }: { onAdd: (name: string, planningWee
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus className="w-4 h-4 mr-1" /> Ajouter</Button>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-7 h-7 rounded-full border border-neutral-300 bg-white text-neutral-500 hover:border-neutral-900 hover:text-neutral-900 hover:bg-neutral-50 flex items-center justify-center transition shrink-0"
+        title="Ajouter un chantier"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
       <AddSiteDialog open={open} setOpen={setOpen} onAdd={onAdd} usedColors={usedColors} />
     </>
   );
@@ -1489,6 +1547,7 @@ export default function Page() {
   const [absenceExpandedId, setAbsenceExpandedId] = useState<string | null>(null);
   const [siteWeekVisibility, setSiteWeekVisibility] = useState<Record<string, string[]>>({});
   const [hoursPerDay, setHoursPerDay] = useState<number>(8);
+  const [validatedWeeks, setValidatedWeeks] = useState<Record<string, string>>({});
   const [quotes, setQuotes] = useState<any[]>(() => DEMO_QUOTES.map(normalizeQuoteRecord));
   const [tenders, setTenders] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -1497,6 +1556,10 @@ export default function Page() {
   const [clientsCollapsed, setClientsCollapsed] = useState(true);
   const [clientAddFormOpen, setClientAddFormOpen] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: "", phone: "", email: "" });
+  const [batappliImportOpen, setBatappliImportOpen] = useState(false);
+  const [sitesFilter, setSitesFilter] = useState<string>("all");
+  const [sitesSort, setSitesSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
+  const [sitesSearch, setSitesSearch] = useState("");
   const [aoFormOpen, setAoFormOpen] = useState(false);
   const [aoFilter, setAoFilter] = useState<"all" | "a_repondre" | "depose" | "gagne" | "perdu">("all");
   const [devisFormOpen, setDevisFormOpen] = useState(false);
@@ -1569,7 +1632,7 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "accueil" | "planning" | "hours" | "calendar" | "devis" | "sites" | "salaries" | "rentabilite"
+    "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
   >("accueil");
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
@@ -1585,9 +1648,9 @@ export default function Page() {
   const [calFilterPending, setCalFilterPending] = useState(true);
   const [calFilterAbsences, setCalFilterAbsences] = useState(true);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
-  const [eventCalendars, setEventCalendars] = useState(DEFAULT_EVENT_CALENDARS);
+  const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
-    { id: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
+    { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
   >([]);
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [calendarDialogOpen, setCalendarDialogOpen] = useState(false);
@@ -1600,6 +1663,7 @@ export default function Page() {
     calendarId: "cal-availability",
     color: "",
     notes: "",
+    groupId: "",
   });
   const [eventWeekYear, setEventWeekYear] = useState(() => getISOWeekYear(new Date()));
   const [calendarDraft, setCalendarDraft] = useState({ name: "", color: COLORS[3] });
@@ -1790,9 +1854,11 @@ export default function Page() {
   const getAssignmentHoursInfo = useCallback(
     (a: any, metaFromCell?: any) => {
       const meta = metaFromCell || getCellMeta(a.siteId, a.date);
-      const baseValue = Number.isFinite(Number(meta.hoursOverride ?? hoursPerDay))
-        ? Number(meta.hoursOverride ?? hoursPerDay)
-        : 0;
+      const person = people.find((p: any) => p.id === a.personId);
+      const effectiveBase = meta.hoursOverride != null && meta.hoursOverride !== ""
+        ? Number(meta.hoursOverride)
+        : (person?.hoursPerDay ?? hoursPerDay);
+      const baseValue = Number.isFinite(effectiveBase) ? effectiveBase : 0;
       const portion = getPortion(a.portion);
       const suggestedHours = baseValue * portion;
       const hasCustomHours = a.hours !== undefined && a.hours !== null && a.hours !== "";
@@ -1800,7 +1866,7 @@ export default function Page() {
       const hours = hasCustomHours && Number.isFinite(parsedCustom) ? parsedCustom : suggestedHours;
       return { meta, portion, hours, suggestedHours, hasCustomHours, baseValue };
     },
-    [getCellMeta, hoursPerDay]
+    [getCellMeta, hoursPerDay, people]
   );
 
   const weekDateKeys = useMemo(() => weekDays.map((d) => toLocalKey(d)), [weekDays]);
@@ -2279,7 +2345,7 @@ export default function Page() {
         )
       );
     } else {
-      setEventCalendars((prev) => [...prev, { id, name, color: calendarDraft.color || COLORS[0], visible: true }]);
+      setEventCalendars((prev) => [...prev, { id, name, color: calendarDraft.color || COLORS[0], visible: true, isDefault: false }]);
     }
     setCalendarDraft({ name: "", color: COLORS[3] });
     setCalendarEditTarget(null);
@@ -2295,6 +2361,7 @@ export default function Page() {
     const title = eventDraft.title.trim();
     if (!title || eventDraft.weekKeys.length === 0) return;
     const selectedCalendar = eventCalendarsById[eventDraft.calendarId] || eventCalendarsById["cal-availability"];
+    const groupId = eventDraft.groupId || `grp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const eventsFromWeeks = eventDraft.weekKeys.map((weekKey) => {
       const [yearRaw, weekRaw] = weekKey.split("-W");
       const year = Number(yearRaw);
@@ -2303,7 +2370,8 @@ export default function Page() {
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 4);
       return {
-        id: ensureId(`${title}-${weekKey}`, "evt"),
+        id: ensureId(`${groupId}-${weekKey}`, "evt"),
+        groupId,
         title,
         dateKey: toLocalKey(weekStart),
         endDateKey: toLocalKey(weekEnd),
@@ -2313,7 +2381,12 @@ export default function Page() {
       };
     });
     setCalendarEvents((prev) => {
-      const cleaned = eventEditId ? prev.filter((evt) => evt.id !== eventEditId) : prev;
+      // Remove all events in the same group (or just the edited one if no groupId)
+      const cleaned = eventDraft.groupId
+        ? prev.filter((evt) => evt.groupId !== eventDraft.groupId)
+        : eventEditId
+        ? prev.filter((evt) => evt.id !== eventEditId)
+        : prev;
       return [...cleaned, ...eventsFromWeeks];
     });
     setEventDraft((prev) => ({
@@ -2324,15 +2397,21 @@ export default function Page() {
       endDateKey: "",
       dateKey: prev.dateKey || todayKey,
       color: "",
+      groupId: "",
       calendarId: prev.calendarId || "cal-availability",
     }));
     setEventEditId(null);
     setEventDialogOpen(false);
-  }, [eventCalendarsById, eventDraft.calendarId, eventDraft.notes, eventDraft.title, eventDraft.weekKeys, eventEditId]);
+  }, [eventCalendarsById, eventDraft, eventEditId]);
 
   const openEventDialogForEvent = useCallback((event: any) => {
+    const gid = event.groupId;
+    // Collect all weekKeys from events in the same group, sorted by date
+    const groupEvents = gid
+      ? calendarEvents.filter((e) => e.groupId === gid).sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+      : [event];
+    const allWeekKeys = groupEvents.map((e) => weekKeyOf(fromLocalKey(e.dateKey)));
     const parsedDate = fromLocalKey(event.dateKey);
-    const eventWeekKey = weekKeyOf(parsedDate);
     setEventWeekYear(getISOWeekYear(parsedDate));
     setEventEditId(event.id);
     setEventDraft((prev) => ({
@@ -2340,17 +2419,23 @@ export default function Page() {
       title: event.title || "",
       dateKey: event.dateKey || todayKey,
       endDateKey: event.endDateKey || "",
-      weekKeys: eventWeekKey ? [eventWeekKey] : [],
+      weekKeys: allWeekKeys,
       notes: event.notes || "",
       color: "",
+      groupId: gid || "",
       calendarId: event.calendarId || "cal-availability",
     }));
     setEventDialogOpen(true);
-  }, []);
+  }, [calendarEvents]);
 
   const deleteCalendarEvent = useCallback(() => {
     if (!eventEditId) return;
-    setCalendarEvents((prev) => prev.filter((evt) => evt.id !== eventEditId));
+    setCalendarEvents((prev) => {
+      const evt = prev.find((e) => e.id === eventEditId);
+      return evt?.groupId
+        ? prev.filter((e) => e.groupId !== evt.groupId)
+        : prev.filter((e) => e.id !== eventEditId);
+    });
     setEventEditId(null);
     setEventDialogOpen(false);
   }, [eventEditId]);
@@ -2550,6 +2635,17 @@ export default function Page() {
   );
 
   useEffect(() => {
+    if (!weekAssignPickerPersonId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement)?.closest?.('[data-week-picker]')) {
+        setWeekAssignPickerPersonId(null);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [weekAssignPickerPersonId]);
+
+  useEffect(() => {
     if (!dragging) return;
     const onTouchMove = (event: TouchEvent) => {
       const target = event.target as HTMLElement | null;
@@ -2592,6 +2688,29 @@ export default function Page() {
       if (!newStatus || data.status === newStatus) return;
       setQuotes((prev) => prev.map((q) => (q.id === data.quoteId ? normalizeQuoteForSave({ ...q, status: newStatus }) : q)));
       setQuoteDetail((prev) => (prev && prev.id === data.quoteId ? normalizeQuoteForSave({ ...prev, status: newStatus }) : prev));
+      return;
+    }
+
+    if (data.type === "calendar-event" && over.data?.current?.type === "calendar-week") {
+      const fromWeekKey: string = data.fromWeekKey;
+      const toWeekKey: string = over.data.current.weekKey;
+      if (fromWeekKey === toWeekKey) return;
+      const eventId: string = data.eventId;
+      const fromParsed = parseWeekKey(fromWeekKey);
+      const toParsed = parseWeekKey(toWeekKey);
+      if (!fromParsed || !toParsed) return;
+      const deltaDays = ((toParsed.year * 53 + toParsed.week) - (fromParsed.year * 53 + fromParsed.week)) * 7;
+      const shiftDk = (dk: string | undefined): string => {
+        if (!dk) return dk ?? "";
+        try { const d = fromLocalKey(dk); d.setDate(d.getDate() + deltaDays); return toLocalKey(d); } catch { return dk; }
+      };
+      // Find the groupId of the dragged event and shift ALL events in the group
+      const draggedEvt = calendarEvents.find((e) => e.id === eventId);
+      const gid = draggedEvt?.groupId;
+      setCalendarEvents((prev) => prev.map((evt) => {
+        const shouldShift = gid ? evt.groupId === gid : evt.id === eventId;
+        return shouldShift ? { ...evt, dateKey: shiftDk(evt.dateKey), endDateKey: shiftDk(evt.endDateKey) } : evt;
+      }));
       return;
     }
 
@@ -3002,6 +3121,9 @@ export default function Page() {
     if (state.tauxJournalierDefault != null) setTauxJournalierDefault(state.tauxJournalierDefault);
     if (state.tauxMaterielDefault != null) setTauxMaterielDefault(state.tauxMaterielDefault);
     if (state.fraisFixesDefault != null) setFraisFixesDefault(state.fraisFixesDefault);
+    if (state.validatedWeeks && typeof state.validatedWeeks === "object") setValidatedWeeks(state.validatedWeeks);
+    if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
+    if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -3180,9 +3302,10 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     fraisFixesDefault,
     eventCalendars,
     calendarEvents,
+    validatedWeeks,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3426,7 +3549,7 @@ useEffect(() => {
   };
 
   const exportJSON = () => {
-    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents };
+    const payload = { people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3435,7 +3558,7 @@ useEffect(() => {
 
   const onImport = (e: any) => {
     const f = e.target.files?.[0]; if(!f) return; const reader = new FileReader();
-    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false }))); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setTenders(toArray(data.tenders).map(normalizeTenderRecord)); setClients(toArray(data.clients).map(normalizeClientRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars, DEFAULT_EVENT_CALENDARS)); setCalendarEvents(toArray(data.calendarEvents)); } catch { alert("Fichier invalide"); } };
+    reader.onload = () => { try { const data = JSON.parse(String(reader.result)); setPeople(toArray(data.people, DEMO_PEOPLE).map(normalizePersonRecord)); setSites(toArray(data.sites).map(normalizeSiteRecord)); setAssignments(toArray(data.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false }))); setNotes(data.notes||{}); setAbsencesByWeek(data.absencesByWeek||{}); setAbsencesByDay(data.absencesByDay||{}); setSiteWeekVisibility(data.siteWeekVisibility||{}); setHoursPerDay(data.hoursPerDay ?? 8); setQuotes(toArray(data.quotes, DEMO_QUOTES).map(normalizeQuoteRecord)); setTenders(toArray(data.tenders).map(normalizeTenderRecord)); setClients(toArray(data.clients).map(normalizeClientRecord)); if (data.tauxJournalierDefault != null) setTauxJournalierDefault(data.tauxJournalierDefault); if (data.tauxMaterielDefault != null) setTauxMaterielDefault(data.tauxMaterielDefault); if (data.fraisFixesDefault != null) setFraisFixesDefault(data.fraisFixesDefault); setEventCalendars(toArray(data.eventCalendars)); setCalendarEvents(toArray(data.calendarEvents)); if (data.validatedWeeks && typeof data.validatedWeeks === "object") setValidatedWeeks(data.validatedWeeks); } catch { alert("Fichier invalide"); } };
     reader.readAsText(f); e.target.value = '';
   };
 
@@ -3443,7 +3566,7 @@ useEffect(() => {
   // UI (Semaine / Mois / Heures)
   // ==========================
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4 min-h-screen bg-neutral-50">
       {/* Header */}
       <div className="space-y-2">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
@@ -3484,7 +3607,6 @@ useEffect(() => {
             {/* Gestion */}
             <div className="flex items-center gap-0.5">
               {[
-                { v: "devis", label: "Affaires" },
                 { v: "sites", label: "Chantiers" },
                 { v: "salaries", label: "Salariés" },
                 { v: "rentabilite", label: "Rentabilité" },
@@ -3916,7 +4038,7 @@ useEffect(() => {
                 type: "urgent",
                 icon: "🔴",
                 message: `AO '${t.reference || t.objet || "sans ref"}' à rendre le ${dateLabel}`,
-                action: () => setView("devis"),
+                action: () => setView("sites"),
               });
             }
           }
@@ -3932,7 +4054,7 @@ useEffect(() => {
                 type: "warning",
                 icon: "🟡",
                 message: `Devis '${q.title}' pour ${q.client || "client"} envoyé il y a ${diffDays} jours sans réponse`,
-                action: () => setView("devis"),
+                action: () => setView("sites"),
               });
             }
           }
@@ -4228,10 +4350,10 @@ useEffect(() => {
                     <CalendarRange className="w-4 h-4" /> Voir le planning
                   </button>
                   <button
-                    onClick={() => setView("devis")}
+                    onClick={() => setView("sites")}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-neutral-300 bg-white text-neutral-800 text-sm font-medium hover:bg-neutral-50 transition"
                   >
-                    <ListChecks className="w-4 h-4" /> Affaires en cours ({aoEnCours})
+                    <ListChecks className="w-4 h-4" /> Chantiers ({aoEnCours})
                   </button>
                   <button
                     onClick={() => setView("rentabilite")}
@@ -4268,49 +4390,54 @@ useEffect(() => {
                     isPlanningMonth && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
                   )}
                 >
-              <Card>
+              <Card className="bg-white border-neutral-200 shadow-sm">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="font-medium">Salariés</div>
+                    <div className="text-sm font-semibold text-neutral-800">Salariés</div>
                     <AddPerson onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
                   </div>
                   <div className="space-y-1.5">
                     {safePeople.filter((p: any) => p.status !== "archived").map((p: any) => {
-                      const DAY_LABELS = ["L","Ma","Me","J","V"];
+                      const DAY_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
                       const absenceDays = weekDays.map((d) => getDayAbsence(p.id, toLocalKey(d)));
                       const hasAnyAbsence = absenceDays.some(Boolean);
                       const absOpen = absenceExpandedId === p.id;
+
+                      const toggleAbsence = (type: "CP" | "MAL" | "OFF", dk: string) => {
+                        setAbsencesByDay((prev) => {
+                          const day = { ...(prev[dk] || {}) };
+                          if (day[p.id] === type) { delete day[p.id]; } else { day[p.id] = type; }
+                          return { ...prev, [dk]: day };
+                        });
+                      };
+
                       return (
-                        <div key={p.id} className={cx("rounded-lg border border-neutral-100 bg-neutral-50 p-2", p.status === "disabled" && "opacity-50")}>
-                          {/* Row 1: chip + actions */}
-                          <div className="flex items-center justify-between gap-1">
+                        <div
+                          key={p.id}
+                          className={cx("rounded-xl border border-neutral-200 bg-white border-l-4", p.status === "disabled" && "opacity-50")}
+                          style={{ borderLeftColor: COLOR_HEX[p.color] || "#94a3b8" }}
+                        >
+                          <div className="px-2.5 py-2 flex items-center justify-between gap-2">
                             <PersonChip person={p} />
-                            <div className="flex items-center gap-1 shrink-0">
-                              {/* Absence dots indicator + toggle */}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {/* Absence indicator — visible seulement si absences */}
                               <button
                                 onClick={() => setAbsenceExpandedId(absOpen ? null : p.id)}
-                                title="Gérer les absences"
+                                title="Gérer les absences de la semaine"
                                 className={cx(
-                                  "h-7 px-1.5 rounded-md flex items-center gap-0.5 transition border text-[9px] font-bold",
+                                  "h-6 px-2 rounded-md flex items-center gap-1 transition text-[10px] font-semibold",
                                   hasAnyAbsence
-                                    ? "border-amber-300 bg-amber-50 text-amber-700"
-                                    : "border-neutral-200 bg-white text-neutral-300 hover:border-neutral-400 hover:text-neutral-500"
+                                    ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    : "text-neutral-300 hover:text-neutral-500 hover:bg-neutral-50"
                                 )}
                               >
-                                {hasAnyAbsence ? (
-                                  absenceDays.map((abs, i) => (
-                                    <span key={i} className={cx("w-2 h-2 rounded-full", abs ? (ABSENCE_COLORS[abs] || "bg-neutral-300") : "bg-neutral-200")} />
-                                  ))
-                                ) : (
-                                  <span className="text-[9px] leading-none px-0.5">abs</span>
-                                )}
+                                {hasAnyAbsence ? `${absenceDays.filter(Boolean).length}j abs.` : "Abs."}
                               </button>
+                              <div className="w-px h-3.5 bg-neutral-200 mx-0.5" />
                               <div className="relative">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7"
-                                  title={`Affecter ${p.name} toute la S${getISOWeek(weekDays[0])}`}
+                                <button
+                                  className="h-6 w-6 rounded-md flex items-center justify-center text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100 transition"
+                                  title={`Affecter ${p.name} toute la semaine`}
                                   onClick={() => {
                                     if (sitesForCurrentWeek.length === 0) return;
                                     if (sitesForCurrentWeek.length === 1) {
@@ -4327,9 +4454,9 @@ useEffect(() => {
                                       setWeekAssignPickerPersonId((prev) => prev === p.id ? null : p.id);
                                     }
                                   }}
-                                ><CalendarRange className="w-3.5 h-3.5" /></Button>
+                                ><CalendarRange className="w-3.5 h-3.5" /></button>
                                 {weekAssignPickerPersonId === p.id && (
-                                  <div className="absolute right-0 top-8 z-50 bg-white border border-neutral-200 rounded-lg shadow-lg p-2 min-w-[140px] space-y-1">
+                                  <div data-week-picker className="absolute right-0 top-8 z-50 bg-white border border-neutral-200 rounded-lg shadow-lg p-2 min-w-[140px] space-y-1">
                                     <div className="text-[10px] text-neutral-400 font-semibold px-1 pb-1">Choisir le chantier</div>
                                     {sitesForCurrentWeek.map((site: any) => (
                                       <button
@@ -4355,59 +4482,74 @@ useEffect(() => {
                                   </div>
                                 )}
                               </div>
-                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openPersonDetail(p.id)}><Edit3 className="w-3.5 h-3.5" /></Button>
+                              <button
+                                className="h-6 w-6 rounded-md flex items-center justify-center text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100 transition"
+                                onClick={() => openPersonDetail(p.id)}
+                                title="Modifier"
+                              ><Edit3 className="w-3.5 h-3.5" /></button>
                             </div>
                           </div>
-                          {/* Row 2: absence panel (collapsible) */}
+
+                          {/* Absence grid */}
                           {absOpen && (
-                            <div className="mt-1.5 pt-1.5 border-t border-neutral-200">
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {weekDays.map((d, i) => {
-                                  const dk = toLocalKey(d);
-                                  const abs = getDayAbsence(p.id, dk);
-                                  return (
-                                    <button
-                                      key={dk}
-                                      onClick={() => cycleDayAbsence(p.id, dk)}
-                                      title={abs ? ABSENCE_LABELS[abs] : `Marquer absence ${DAY_LABELS[i]}`}
-                                      className={cx(
-                                        "h-6 px-2 rounded text-[9px] font-bold transition border flex items-center gap-1",
-                                        abs
-                                          ? cx(ABSENCE_COLORS[abs], "text-white border-transparent")
-                                          : "bg-white text-neutral-400 border-neutral-200 hover:border-neutral-400"
-                                      )}
-                                    >
-                                      {DAY_LABELS[i]}{abs && <span className="opacity-80">{abs}</span>}
-                                    </button>
-                                  );
-                                })}
-                                {/* Toute la semaine */}
-                                {(["CP","MAL","OFF"] as const).map((type) => (
-                                  <button
-                                    key={type}
-                                    onClick={() => {
-                                      weekDays.forEach((d) => {
+                            <div className="mx-2.5 mb-2.5 pt-2 border-t border-neutral-100">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr>
+                                    <th className="text-left text-[10px] text-neutral-400 font-semibold pb-1.5 pr-2 w-24">Type</th>
+                                    {DAY_LABELS.map((label, i) => (
+                                      <th key={i} className="text-center text-[10px] text-neutral-400 font-semibold pb-1.5 w-10">{label}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody className="space-y-1">
+                                  {([
+                                    ["CP",  "Congé payé",    "bg-amber-400 text-white border-amber-400",  "border-amber-200 text-amber-500 hover:bg-amber-50"],
+                                    ["MAL", "Maladie",       "bg-red-400 text-white border-red-400",      "border-red-200 text-red-400 hover:bg-red-50"],
+                                    ["OFF", "RTT / Jour off","bg-slate-400 text-white border-slate-400",  "border-slate-200 text-slate-400 hover:bg-slate-50"],
+                                  ] as const).map(([type, label, activeClass, inactiveClass]) => (
+                                    <tr key={type}>
+                                      <td className="pr-2 py-0.5 text-[10px] font-medium text-neutral-600 whitespace-nowrap">{label}</td>
+                                      {weekDays.map((d, i) => {
                                         const dk = toLocalKey(d);
-                                        setAbsencesByDay((prev) => {
-                                          const day = { ...(prev[dk] || {}) };
-                                          const cur = day[p.id];
-                                          if (cur === type) { delete day[p.id]; } else { day[p.id] = type; }
-                                          return { ...prev, [dk]: day };
-                                        });
+                                        const abs = getDayAbsence(p.id, dk);
+                                        const isActive = abs === type;
+                                        return (
+                                          <td key={dk} className="text-center py-0.5 px-0.5">
+                                            <button
+                                              onClick={() => toggleAbsence(type, dk)}
+                                              className={cx(
+                                                "w-8 h-6 rounded border text-[10px] font-bold transition",
+                                                isActive ? activeClass : cx("bg-white", inactiveClass)
+                                              )}
+                                              title={isActive ? `Retirer ${label}` : `${label} — ${DAY_LABELS[i]}`}
+                                            >
+                                              {isActive ? "✓" : "·"}
+                                            </button>
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {hasAnyAbsence && (
+                                <button
+                                  onClick={() => {
+                                    weekDays.forEach((d) => {
+                                      const dk = toLocalKey(d);
+                                      setAbsencesByDay((prev) => {
+                                        const day = { ...(prev[dk] || {}) };
+                                        delete day[p.id];
+                                        return { ...prev, [dk]: day };
                                       });
-                                    }}
-                                    title={`${type} toute la semaine`}
-                                    className={cx(
-                                      "h-6 px-2 rounded text-[9px] font-bold border transition",
-                                      absenceDays.every((a) => a === type)
-                                        ? cx(ABSENCE_COLORS[type], "text-white border-transparent")
-                                        : "bg-white text-neutral-400 border-neutral-200 hover:border-neutral-400"
-                                    )}
-                                  >
-                                    {type} sem.
-                                  </button>
-                                ))}
-                              </div>
+                                    });
+                                  }}
+                                  className="mt-1.5 text-[10px] text-neutral-400 hover:text-red-500 transition underline"
+                                >
+                                  Effacer toutes les absences
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -4417,11 +4559,11 @@ useEffect(() => {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-white border-neutral-200 shadow-sm">
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between w-full">
                     <div
-                      className="font-medium flex items-center gap-2 cursor-pointer flex-1"
+                      className="text-sm font-semibold text-neutral-800 flex items-center gap-2 cursor-pointer flex-1"
                       onClick={() => setSidebarChantierOpen((v) => !v)}
                     >
                       {sidebarChantierOpen ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
@@ -4451,17 +4593,18 @@ useEffect(() => {
                         <p className="text-xs text-neutral-400 italic">{sidebarSearch ? "Aucun résultat." : "Aucun chantier sur cette période."}</p>
                       )}
                       {sidebarVisiblePlannedSites.filter((s) => s.name.toLowerCase().includes(sidebarSearch.toLowerCase())).map((s) => (
-                        <div key={s.id} className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-2">
-                            <span className={cx("w-2.5 h-2.5 rounded-full border", s.color || "bg-neutral-300", s.color ? "border-black/10" : "border-neutral-200")} />
-                            {s.name}
-                          </span>
-                          <Button
-                            size="icon"
-                            variant="ghost"
+                        <div
+                          key={s.id}
+                          className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white overflow-hidden border-l-4 px-2.5 py-2"
+                          style={{ borderLeftColor: COLOR_HEX[s.color] || "#94a3b8" }}
+                        >
+                          <span className="text-sm font-medium text-neutral-800 truncate">{s.name}</span>
+                          <button
                             onClick={() => openSiteDetail(s.id)}
+                            className="h-6 w-6 rounded-md flex items-center justify-center text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100 transition shrink-0"
                             aria-label={`Modifier ${s.name}`}
-                          ><Edit3 className="w-4 h-4" /></Button>
+                            title="Modifier"
+                          ><Edit3 className="w-3.5 h-3.5" /></button>
                         </div>
                       ))}
                     </div>
@@ -4489,9 +4632,6 @@ useEffect(() => {
                     <span>Sem. {getISOWeek(weekDays[0])}</span>
                     {isViewingCurrentWeek && (
                       <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
-                    )}
-                    {weekConfirmedStats.total > 0 && weekConfirmedStats.confirmed > 0 && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-700">{weekConfirmedStats.confirmed} confirmé{weekConfirmedStats.confirmed > 1 ? "s" : ""}{weekConfirmedStats.planned > 0 ? ` / ${weekConfirmedStats.planned} planifié${weekConfirmedStats.planned > 1 ? "s" : ""}` : ""}</span>
                     )}
                   </div>
                   {weekDays.map((d, i) => {
@@ -4540,7 +4680,6 @@ useEffect(() => {
                             hoursPerDay={hoursPerDay}
                             conflictMap={conflictMap}
                             onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                            onToggleConfirmed={(id:string)=>setAssignments((prev:any[])=>prev.map(a=>a.id===id?{...a,confirmed:!a.confirmed}:a))}
                             publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                             absencesByDay={absencesByDay}
                           />
@@ -4555,16 +4694,62 @@ useEffect(() => {
             {/* HOURS VIEW */}
             {view === "hours" && (
               <div className="space-y-2">
+                {/* Hours week header with validation */}
+                {(() => {
+                  const isValidated = Boolean(validatedWeeks[currentWeekKey]);
+                  const validatedAt = validatedWeeks[currentWeekKey];
+                  const validatedDate = validatedAt ? new Date(validatedAt) : null;
+                  const pastUnvalidated = (() => {
+                    const weeksWithAssignments = new Set(
+                      assignments
+                        .filter((a: any) => a.date && a.date < weekDays[0].toISOString().slice(0, 10))
+                        .map((a: any) => weekKeyOf(new Date(a.date)))
+                    );
+                    return [...weeksWithAssignments].filter((wk) => !validatedWeeks[wk]).length;
+                  })();
+                  return (
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-neutral-600">Sem. {getISOWeek(weekDays[0])}</span>
+                        {isViewingCurrentWeek && (
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">En cours</span>
+                        )}
+                        {weekConflictCount > 0 && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{weekConflictCount} conflits</span>
+                        )}
+                        {isValidated && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                            ✓ Validée{validatedDate ? ` le ${validatedDate.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}` : ""}
+                          </span>
+                        )}
+                        {pastUnvalidated > 0 && (
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                            {pastUnvalidated} sem. passée{pastUnvalidated > 1 ? "s" : ""} non validée{pastUnvalidated > 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (isValidated) {
+                            setValidatedWeeks((prev) => { const next = { ...prev }; delete next[currentWeekKey]; return next; });
+                          } else {
+                            setValidatedWeeks((prev) => ({ ...prev, [currentWeekKey]: new Date().toISOString() }));
+                          }
+                        }}
+                        className={cx(
+                          "text-xs font-semibold px-3 py-1.5 rounded-lg border transition",
+                          isValidated
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-white hover:border-neutral-300 hover:text-neutral-600"
+                            : "bg-white border-neutral-300 text-neutral-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700"
+                        )}
+                      >
+                        {isValidated ? "↩ Dévalider" : "✓ Valider la semaine"}
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-6 text-xs text-neutral-500">
-                  <div className="px-1 flex items-center gap-2">
-                    <span>Sem. {getISOWeek(weekDays[0])}</span>
-                    {isViewingCurrentWeek && (
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>
-                    )}
-                    {weekConflictCount > 0 && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">{weekConflictCount} conflits potentiels</span>
-                    )}
-                  </div>
+                  <div className="px-1" />
                   {weekDays.map((d, i) => {
                     const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
                     const holiday = publicHolidays.get(toLocalKey(d));
@@ -4579,9 +4764,12 @@ useEffect(() => {
                 <div className="space-y-2">
                   {sitesForCurrentWeek.map((site) => (
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
-                      <div className="text-sm flex items-center font-semibold justify-between">
-                        <span>{site.name}</span>
-                        <span className="text-[11px] text-neutral-500">Heures & portions</span>
+                      <div className="flex flex-col gap-1 justify-center">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", site.color || "bg-neutral-300")} />
+                          <span className="text-sm font-semibold text-neutral-900 truncate">{site.name}</span>
+                        </div>
+                        <span className="text-[10px] text-neutral-400">Heures & portions</span>
                       </div>
                       {weekDays.map((d) => (
                         <HoursCell
@@ -4678,8 +4866,7 @@ useEffect(() => {
                                   hoursPerDay={hoursPerDay}
                                   conflictMap={conflictMap}
                                   onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                                  onToggleConfirmed={(id:string)=>setAssignments((prev:any[])=>prev.map(a=>a.id===id?{...a,confirmed:!a.confirmed}:a))}
-                                  publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                        publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                                   absencesByDay={absencesByDay}
                                 />
                               ))}
@@ -4701,34 +4888,34 @@ useEffect(() => {
                 <div className="rounded-xl border bg-white shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {[
-                      { key: "planned", label: "Planifiés", active: calFilterPlanned, toggle: () => setCalFilterPlanned(v => !v), dot: "bg-sky-500" },
-                      { key: "pending", label: "En attente", active: calFilterPending, toggle: () => setCalFilterPending(v => !v), dot: "bg-amber-400" },
-                      { key: "absences", label: "Absences", active: calFilterAbsences, toggle: () => setCalFilterAbsences(v => !v), dot: "bg-rose-400" },
-                      { key: "events", label: "Événements", active: calFilterEvents, toggle: () => setCalFilterEvents(v => !v), dot: "bg-violet-400" },
-                    ].map(({ key, label, active, toggle, dot }) => (
+                      { key: "planned", label: "Planifiés", active: calFilterPlanned, toggle: () => setCalFilterPlanned(v => !v), activeCls: "bg-sky-500 text-white border-sky-500", dot: "bg-white/70" },
+                      { key: "pending", label: "En attente", active: calFilterPending, toggle: () => setCalFilterPending(v => !v), activeCls: "bg-amber-400 text-white border-amber-400", dot: "bg-white/70" },
+                      { key: "absences", label: "Absences", active: calFilterAbsences, toggle: () => setCalFilterAbsences(v => !v), activeCls: "bg-rose-400 text-white border-rose-400", dot: "bg-white/70" },
+                      { key: "events", label: "Événements", active: calFilterEvents, toggle: () => setCalFilterEvents(v => !v), activeCls: "bg-violet-400 text-white border-violet-400", dot: "bg-white/70" },
+                    ].map(({ key, label, active, toggle, activeCls, dot }) => (
                       <button
                         key={key}
                         onClick={toggle}
                         className={cx(
                           "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition",
-                          active ? "bg-white border-neutral-300 text-neutral-700" : "bg-neutral-100 border-transparent text-neutral-400"
+                          active ? activeCls : "bg-white border-neutral-200 text-neutral-400 hover:border-neutral-300 hover:text-neutral-500"
                         )}
                       >
-                        <span className={cx("w-2 h-2 rounded-full", active ? dot : "bg-neutral-300")} />
+                        <span className={cx("w-1.5 h-1.5 rounded-full", active ? dot : "bg-neutral-300")} />
                         {label}
                       </button>
                     ))}
                   </div>
                   <div className="flex-1" />
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
-                    >+ Calendrier</button>
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
+                    ><Plus className="w-3 h-3" />Calendrier</button>
                     <button
                       onClick={() => setEventDialogOpen(true)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-900 text-white hover:bg-neutral-700 transition"
-                    >+ Événement</button>
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-neutral-900 text-white hover:bg-neutral-700 transition"
+                    ><Plus className="w-3 h-3" />Événement</button>
                   </div>
                 </div>
 
@@ -4743,24 +4930,31 @@ useEffect(() => {
                           <CalendarWeekDropZone key={week.weekKey} weekKey={week.weekKey} isCurrentWeek={isCurrentWeek}>
                             {/* Header semaine */}
                             <div className={cx(
-                              "px-2 py-2 border-b sticky top-0 z-10",
-                              isCurrentWeek ? "bg-sky-100" : "bg-neutral-50"
+                              "px-2 pt-1.5 pb-1 border-b sticky top-0 z-10",
+                              isCurrentWeek ? "bg-sky-50 border-b-sky-200" : "bg-white"
                             )}>
-                              {monthStart && (
-                                <div className="text-[9px] font-bold uppercase tracking-wider text-neutral-400 mb-0.5">
-                                  {week.start.toLocaleString("fr-FR", { month: "long" })}
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <span className={cx("text-sm font-bold", isCurrentWeek ? "text-sky-700" : "text-neutral-800")}>
+                              <div className="mb-1 h-[18px] flex items-center">
+                                {monthStart && (
+                                  <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-neutral-800 text-white leading-none">
+                                    {week.start.toLocaleString("fr-FR", { month: "long", year: "numeric" })}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={cx(
+                                    "text-xs font-bold px-1.5 py-0.5 rounded",
+                                    isCurrentWeek ? "bg-sky-500 text-white" : "text-neutral-600"
+                                  )}>
                                     S{pad2(week.weekNum)}
                                   </span>
-                                  <span className="text-[10px] text-neutral-400 ml-1.5">{formatFR(week.start, true)}</span>
+                                  <span className="text-[10px] text-neutral-400">
+                                    {week.start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                                  </span>
                                 </div>
                                 <button
                                   onClick={() => openEventDialogForDate(toLocalKey(week.start))}
-                                  className="w-5 h-5 rounded flex items-center justify-center text-neutral-300 hover:text-neutral-600 hover:bg-white transition"
+                                  className="w-5 h-5 rounded-full flex items-center justify-center text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100 transition"
                                   title="Ajouter un événement"
                                 ><Plus className="w-3 h-3" /></button>
                               </div>
@@ -4774,7 +4968,7 @@ useEffect(() => {
                                   key={`p-${site.id}`}
                                   site={site}
                                   weekKey={week.weekKey}
-                                  className={cx("text-[11px] px-2 py-0.5 rounded-md truncate font-medium text-white shadow-sm", site.color || "bg-sky-500")}
+                                  className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
                                 />
                               ))}
                               {/* Chantiers en attente */}
@@ -4783,30 +4977,29 @@ useEffect(() => {
                                   key={`w-${site.id}`}
                                   site={site}
                                   weekKey={week.weekKey}
-                                  className="text-[11px] px-2 py-0.5 rounded-md truncate font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                                  className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-amber-100 text-amber-800 border border-amber-200"
                                 />
                               ))}
                               {/* Absences */}
                               {calFilterAbsences && week.absences.map((name: string) => (
                                 <div
                                   key={`a-${name}`}
-                                  className="text-[11px] px-2 py-0.5 rounded-md truncate font-medium bg-rose-100 text-rose-700"
+                                  className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
                                   title={name}
                                 >🏖 {name}</div>
                               ))}
                               {/* Événements */}
                               {calFilterEvents && week.events.map((event: any) => {
                                 const cal = eventCalendarsById[event.calendarId];
+                                const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
                                 return (
-                                  <button
+                                  <CalendarEventChip
                                     key={event.id}
-                                    onClick={() => openEventDialogForEvent(event)}
-                                    className={cx(
-                                      "w-full text-left text-[11px] px-2 py-0.5 rounded-md truncate font-medium transition hover:opacity-80",
-                                      cal?.color ? cx(cal.color, "text-white") : "bg-violet-100 text-violet-800"
-                                    )}
-                                    title={event.title}
-                                  >📌 {event.title}</button>
+                                    event={event}
+                                    weekKey={week.weekKey}
+                                    calHex={calHex}
+                                    onEdit={() => openEventDialogForEvent(event)}
+                                  />
                                 );
                               })}
                               {/* Semaine vide */}
@@ -4821,25 +5014,36 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* Légende calendriers custom */}
-                {eventCalendars.filter(c => !c.isDefault).length > 0 && (
-                  <div className="flex items-center gap-3 flex-wrap px-1">
-                    {eventCalendars.map((cal) => (
+                {/* Légende calendriers */}
+                <div className="flex items-center gap-2 flex-wrap px-1">
+                  {eventCalendars.map((cal) => (
+                    <div key={cal.id} className={cx("flex items-center gap-0.5 transition", !cal.visible && "opacity-40")}>
                       <button
-                        key={cal.id}
                         onClick={() => setEventCalendars(prev => prev.map(c => c.id === cal.id ? { ...c, visible: !c.visible } : c))}
-                        className={cx("flex items-center gap-1.5 text-xs transition", !cal.visible && "opacity-40")}
+                        className="flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 transition px-1 py-0.5 rounded hover:bg-neutral-100"
                       >
-                        <span className={cx("w-2.5 h-2.5 rounded-full", cal.color || "bg-neutral-400")} />
+                        <span className={cx("w-2 h-2 rounded-full shrink-0", cal.color || "bg-neutral-400")} />
                         {cal.name}
                       </button>
-                    ))}
-                    <button
-                      onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
-                      className="text-xs text-neutral-400 hover:text-neutral-600"
-                    >+ ajouter</button>
-                  </div>
-                )}
+                      <button
+                        onClick={() => { setCalendarDraft({ name: cal.name, color: cal.color || COLORS[3] }); setCalendarEditTarget({ id: cal.id, isDefault: cal.isDefault }); setCalendarDialogOpen(true); }}
+                        className="w-5 h-5 flex items-center justify-center text-neutral-300 hover:text-neutral-600 transition rounded hover:bg-neutral-100"
+                        title="Modifier"
+                      ><Edit3 className="w-2.5 h-2.5" /></button>
+                      {!["cal-planned","cal-pending","cal-leave","cal-availability"].includes(cal.id) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (window.confirm(`Supprimer le calendrier "${cal.name}" ? Les événements associés seront aussi supprimés.`)) deleteCalendar(cal.id); }}
+                          className="w-5 h-5 flex items-center justify-center text-neutral-300 hover:text-red-400 transition rounded hover:bg-red-50"
+                          title="Supprimer ce calendrier"
+                        ><Trash2 className="w-2.5 h-2.5" /></button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
+                    className="text-xs text-neutral-400 hover:text-neutral-600 transition"
+                  >+ ajouter</button>
+                </div>
               </div>
             )}
 
@@ -5077,533 +5281,289 @@ useEffect(() => {
               </div>
             )}
 
-            {view === "devis" && (() => {
-              // ── KPI computations ──
-              const aoEnCours = tenders.filter((t) => t.statut === "a_repondre" || t.statut === "depose").length;
-              const gained = tenders.filter((t) => t.statut === "gagne").length;
-              const lost = tenders.filter((t) => t.statut === "perdu").length;
-              const tauxConc = gained + lost > 0 ? Math.round((gained / (gained + lost)) * 100) : null;
-              const caPotTenders = tenders
-                .filter((t) => t.statut === "a_repondre" || t.statut === "depose")
-                .reduce((s, t) => s + (t.montantEstime || 0), 0);
-              const caPotQuotes = safeQuotes
-                .filter((q) => q.status === "pending" || q.status === "todo")
-                .reduce((s, q) => s + (q.amount || 0), 0);
-              const caConfirme = safeQuotes
-                .filter((q) => q.status === "won")
-                .reduce((s, q) => s + (q.amount || 0), 0);
+            {view === "sites" && (() => {
+              const totalCA = [...plannedSites, ...pendingSites].reduce((s: number, site: any) => s + Number(site.quoteSnapshot?.amount ?? 0), 0);
 
-              // ── AO filtering & sorting ──
-              const today = new Date("2026-05-08");
-              const in7Days = new Date("2026-05-08");
-              in7Days.setDate(in7Days.getDate() + 7);
+              const parseBatappliCSV = (text: string) => {
+                const rows = text.trim().split(/\r?\n/);
+                if (rows.length < 2) return [];
+                const sep = rows[0].includes(';') ? ';' : ',';
+                const headers = rows[0].split(sep).map((h: string) => h.replace(/"/g, '').trim().toLowerCase());
+                const col = (...names: string[]) => {
+                  for (const n of names) {
+                    const idx = headers.findIndex((h: string) => h.includes(n));
+                    if (idx !== -1) return idx;
+                  }
+                  return -1;
+                };
+                const cTitle = col('intitulé', 'objet', 'désignation', 'libellé', 'titre', 'nom');
+                const cClient = col('client', 'maître');
+                const cAmount = col('montant ht', 'montant', 'budget', ' ht');
+                const cRef = col('référence', 'ref', 'numéro', 'numero', 'n°');
+                return rows.slice(1).map((line: string) => {
+                  const cols = line.split(sep).map((c: string) => c.replace(/"/g, '').trim());
+                  return {
+                    name: cTitle !== -1 ? cols[cTitle] : cols[1] || '',
+                    clientName: cClient !== -1 ? cols[cClient] : '',
+                    amount: cAmount !== -1 ? parseFloat((cols[cAmount] || '0').replace(',', '.').replace(/\s/g, '')) || 0 : 0,
+                    ref: cRef !== -1 ? cols[cRef] : '',
+                  };
+                }).filter((r: any) => r.name && r.name.length > 1);
+              };
 
-              const filteredAo = tenders
-                .filter((t) => aoFilter === "all" || t.statut === aoFilter)
-                .sort((a, b) => {
-                  const dir = aoSort.dir === "asc" ? 1 : -1;
-                  if (aoSort.col === "dateLimite") return (a.dateLimite || "").localeCompare(b.dateLimite || "") * dir;
-                  if (aoSort.col === "montantEstime") return ((a.montantEstime || 0) - (b.montantEstime || 0)) * dir;
-                  if (aoSort.col === "client") return (a.client || "").localeCompare(b.client || "") * dir;
-                  if (aoSort.col === "reference") return (a.reference || "").localeCompare(b.reference || "") * dir;
+              const handleBatappliImport = (file: File) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const rows = parseBatappliCSV(String(reader.result));
+                  if (!rows.length) { alert("Aucun chantier trouvé dans ce fichier. Vérifiez le format CSV Batappli."); return; }
+                  let created = 0;
+                  setSites((prev: any[]) => {
+                    const updated = [...prev];
+                    for (const row of rows) {
+                      const exists = updated.some((s: any) => (s.name || '').trim().toLowerCase() === row.name.trim().toLowerCase());
+                      if (!exists) {
+                        updated.push(normalizeSiteRecord({
+                          id: (crypto as any).randomUUID?.() || `s${Date.now()}-${Math.random()}`,
+                          name: row.name,
+                          clientName: row.clientName,
+                          status: 'pending',
+                          quoteSnapshot: { amount: row.amount, client: row.clientName },
+                          batappliRef: row.ref,
+                        }));
+                        created++;
+                      }
+                    }
+                    return updated;
+                  });
+                  setTimeout(() => {
+                    setBatappliImportOpen(false);
+                    showToast(`${created} chantier${created > 1 ? 's' : ''} importé${created > 1 ? 's' : ''} depuis Batappli${rows.length - created > 0 ? ` (${rows.length - created} déjà existant${rows.length - created > 1 ? 's' : ''})` : ''}`);
+                  }, 100);
+                };
+                reader.readAsText(file, 'utf-8');
+              };
+
+              const filteredSites = safeSites
+                .filter((s: any) => {
+                  const st = s.status || "planned";
+                  if (sitesFilter === "pending") return st === "pending";
+                  if (sitesFilter === "planned") return st === "planned";
+                  if (sitesFilter === "archived") return st === "archived";
+                  const origineMatch = ORIGINE_OPTIONS.find(o => o.value === sitesFilter);
+                  if (origineMatch) return s.origine === sitesFilter;
+                  return true;
+                })
+                .filter((s: any) => {
+                  if (!sitesSearch.trim()) return true;
+                  const q = sitesSearch.toLowerCase();
+                  return (s.name || '').toLowerCase().includes(q) || (s.clientName || '').toLowerCase().includes(q);
+                })
+                .sort((a: any, b: any) => {
+                  const dir = sitesSort.dir === "asc" ? 1 : -1;
+                  if (sitesSort.col === "name") return (a.name || '').localeCompare(b.name || '', 'fr') * dir;
+                  if (sitesSort.col === "client") return (a.clientName || '').localeCompare(b.clientName || '', 'fr') * dir;
+                  if (sitesSort.col === "budget") return (Number(a.quoteSnapshot?.amount ?? 0) - Number(b.quoteSnapshot?.amount ?? 0)) * dir;
+                  if (sitesSort.col === "status") return (a.status || 'planned').localeCompare(b.status || 'planned') * dir;
+                  if (sitesSort.col === "origine") return (a.origine || '').localeCompare(b.origine || '', 'fr') * dir;
                   return 0;
                 });
 
-              // ── Devis filtering & sorting ──
-              const filteredDevis = safeQuotes
-                .filter((q) => {
-                  if (devisFilter === "all") return true;
-                  if (devisFilter === "active") return q.status === "pending" || q.status === "todo" || q.status === "draft";
-                  if (devisFilter === "accepted") return q.status === "won";
-                  if (devisFilter === "refused") return q.status === "lost";
-                  if (devisFilter === "expired") return q.status === "expired";
-                  return true;
-                })
-                .sort((a, b) => {
-                  const dir = devisSort.dir === "asc" ? 1 : -1;
-                  if (devisSort.col === "amount") return ((a.amount || 0) - (b.amount || 0)) * dir;
-                  if (devisSort.col === "title") return (a.title || "").localeCompare(b.title || "") * dir;
-                  if (devisSort.col === "client") return (a.client || "").localeCompare(b.client || "") * dir;
-                  return ((a.sentAt || a.createdAt || "").localeCompare(b.sentAt || b.createdAt || "")) * dir;
-                });
-
-              const SortTh = ({ col, label, currentSort, onSort }: { col: string; label: string; currentSort: { col: string; dir: "asc" | "desc" }; onSort: (c: string) => void }) => (
+              const SortTh = ({ col, label }: { col: string; label: string }) => (
                 <th
                   className="px-3 py-2 text-left text-xs font-semibold text-neutral-500 cursor-pointer select-none hover:text-neutral-800 whitespace-nowrap"
-                  onClick={() => onSort(col)}
+                  onClick={() => setSitesSort(prev => ({ col, dir: prev.col === col && prev.dir === "asc" ? "desc" : "asc" }))}
                 >
-                  {label}
-                  {currentSort.col === col && (
-                    <span className="ml-1">{currentSort.dir === "asc" ? "↑" : "↓"}</span>
-                  )}
+                  {label}{sitesSort.col === col && <span className="ml-1">{sitesSort.dir === "asc" ? "↑" : "↓"}</span>}
                 </th>
               );
 
-              const tenderStatutBadge = (statut: string) => {
+              const statusBadge = (status: string) => {
                 const map: Record<string, { bg: string; label: string }> = {
-                  a_repondre: { bg: "bg-amber-100 text-amber-800", label: "À répondre" },
-                  depose: { bg: "bg-blue-100 text-blue-800", label: "Déposé" },
-                  gagne: { bg: "bg-emerald-100 text-emerald-800", label: "Gagné ✓" },
-                  perdu: { bg: "bg-rose-100 text-rose-400", label: "Perdu" },
-                  abandonne: { bg: "bg-neutral-100 text-neutral-500", label: "Abandonné" },
+                  pending:  { bg: "bg-amber-100 text-amber-800",    label: "À planifier" },
+                  planned:  { bg: "bg-emerald-100 text-emerald-800", label: "En cours" },
+                  archived: { bg: "bg-neutral-100 text-neutral-500", label: "Archivé" },
                 };
-                const s = map[statut] || map.a_repondre;
+                const s = map[status] || map.planned;
                 return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", s.bg)}>{s.label}</span>;
               };
 
-              const quoteStatutBadge = (status: string) => {
-                const map: Record<string, { bg: string; label: string }> = {
-                  draft: { bg: "bg-neutral-200 text-neutral-600", label: "Brouillon" },
-                  todo: { bg: "bg-neutral-200 text-neutral-600", label: "À faire" },
-                  pending: { bg: "bg-amber-100 text-amber-800", label: "En attente" },
-                  sent: { bg: "bg-sky-100 text-sky-800", label: "Envoyé" },
-                  won: { bg: "bg-emerald-100 text-emerald-800", label: "Accepté ✓" },
-                  lost: { bg: "bg-rose-100 text-rose-700", label: "Refusé" },
-                  expired: { bg: "bg-neutral-100 text-neutral-500", label: "Expiré" },
-                };
-                const s = map[status] || map.draft;
-                return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold", s.bg)}>{s.label}</span>;
+              const origineBadge = (origine: string | null) => {
+                const opt = ORIGINE_OPTIONS.find(o => o.value === origine);
+                if (!opt) return <span className="text-neutral-300 text-[11px]">—</span>;
+                return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span>;
               };
 
               return (
-                <div className="space-y-6">
-                  {/* ── KPI bar ── */}
+                <div className="space-y-4">
+                  {/* KPI bar */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
-                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">AO en cours</div>
-                      <div className="text-2xl font-bold text-neutral-900">{aoEnCours}</div>
-                      <div className="text-[11px] text-neutral-400">À répondre ou déposés</div>
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">À planifier</div>
+                      <div className={cx("text-2xl font-bold", pendingSites.length > 0 ? "text-amber-600" : "text-neutral-300")}>{pendingSites.length}</div>
+                      <div className="text-[11px] text-neutral-400">En attente</div>
                     </div>
                     <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
-                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Taux de concrétisation</div>
-                      <div className={cx("text-2xl font-bold", tauxConc == null ? "text-neutral-300" : tauxConc >= 50 ? "text-emerald-600" : "text-amber-500")}>
-                        {tauxConc == null ? "—" : `${tauxConc}%`}
-                      </div>
-                      <div className="text-[11px] text-neutral-400">{gained} gagné{gained !== 1 ? "s" : ""}, {lost} perdu{lost !== 1 ? "s" : ""}</div>
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">En cours</div>
+                      <div className={cx("text-2xl font-bold", plannedSites.length > 0 ? "text-emerald-600" : "text-neutral-300")}>{plannedSites.length}</div>
+                      <div className="text-[11px] text-neutral-400">Planifiés</div>
                     </div>
                     <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
-                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CA potentiel</div>
-                      <div className="text-2xl font-bold text-sky-700">{formatEUR(caPotTenders + caPotQuotes)}</div>
-                      <div className="text-[11px] text-neutral-400">AO + devis en cours</div>
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CA actifs</div>
+                      <div className="text-2xl font-bold text-sky-700">{formatEUR(totalCA)}</div>
+                      <div className="text-[11px] text-neutral-400">Budget total</div>
                     </div>
                     <div className="rounded-xl border bg-white p-4 shadow-sm space-y-1">
-                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CA confirmé</div>
-                      <div className="text-2xl font-bold text-emerald-600">{formatEUR(caConfirme)}</div>
-                      <div className="text-[11px] text-neutral-400">Devis acceptés</div>
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Archivés</div>
+                      <div className="text-2xl font-bold text-neutral-400">{archivedSites.length}</div>
+                      <div className="text-[11px] text-neutral-400">Terminés</div>
                     </div>
                   </div>
 
-                  {/* ── Section Appels d'offres ── */}
+                  {/* Table card */}
                   <Card>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-3">
                       {/* Header */}
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2">
-                          <div className="text-base font-semibold">Appels d'offres</div>
-                          <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{tenders.length}</span>
+                          <span className="text-base font-semibold">Chantiers</span>
+                          <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{safeSites.length}</span>
                         </div>
-                        <button
-                          onClick={() => setAoFormOpen((v) => !v)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
-                        >
-                          <Plus className="w-4 h-4" /> Nouvel AO
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setBatappliImportOpen((v) => !v)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 bg-white text-sm font-medium text-neutral-700 hover:border-neutral-400 hover:bg-neutral-50 transition"
+                          >
+                            <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            Importer Batappli
+                          </button>
+                          <AddSite onAdd={addSite} usedColors={safeSites.map((s: any) => s.color)} />
+                        </div>
                       </div>
 
-                      {/* Inline add form */}
-                      {aoFormOpen && (
-                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-                          <div className="flex flex-wrap gap-2 items-end">
-                            <div className="flex flex-col gap-1 min-w-[120px]">
-                              <label className="text-[11px] text-neutral-600">Référence</label>
-                              <input
-                                value={newAo.reference}
-                                onChange={(e) => setNewAo((a) => ({ ...a, reference: e.target.value }))}
-                                placeholder="AO-2026-001"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1 min-w-[140px]">
-                              <label className="text-[11px] text-neutral-600">Client</label>
-                              <input
-                                value={newAo.client}
-                                onChange={(e) => setNewAo((a) => ({ ...a, client: e.target.value }))}
-                                placeholder="Nom du client"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-                              <label className="text-[11px] text-neutral-600">Objet</label>
-                              <input
-                                value={newAo.objet}
-                                onChange={(e) => setNewAo((a) => ({ ...a, objet: e.target.value }))}
-                                placeholder="Description courte"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <label className="text-[11px] text-neutral-600">Type</label>
-                              <select
-                                value={newAo.type}
-                                onChange={(e) => setNewAo((a) => ({ ...a, type: e.target.value as "prive" | "public" }))}
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              >
-                                <option value="prive">Privé</option>
-                                <option value="public">Public</option>
-                              </select>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <label className="text-[11px] text-neutral-600">Date limite</label>
-                              <input
-                                type="date"
-                                value={newAo.dateLimite}
-                                onChange={(e) => setNewAo((a) => ({ ...a, dateLimite: e.target.value }))}
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1 w-28">
-                              <label className="text-[11px] text-neutral-600">Montant estimé (€)</label>
-                              <input
-                                type="number"
-                                value={newAo.montantEstime}
-                                onChange={(e) => setNewAo((a) => ({ ...a, montantEstime: e.target.value }))}
-                                placeholder="0"
-                                className="rounded border border-neutral-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                              />
-                            </div>
-                            <button
-                              onClick={() => {
-                                const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `ao-${Date.now()}`;
-                                const montantNum = Number(newAo.montantEstime);
-                                const tender = normalizeTenderRecord({
-                                  id,
-                                  reference: newAo.reference || `AO-${Date.now()}`,
-                                  client: newAo.client,
-                                  objet: newAo.objet,
-                                  type: newAo.type,
-                                  dateLimite: newAo.dateLimite,
-                                  montantEstime: Number.isFinite(montantNum) && montantNum > 0 ? montantNum : null,
-                                  statut: "a_repondre",
-                                  createdAt: new Date().toISOString(),
-                                });
-                                setTenders((prev) => [...prev, tender]);
-                                setNewAo({ reference: "", client: "", objet: "", type: "prive", dateLimite: "", montantEstime: "" });
-                                setAoFormOpen(false);
-                              }}
-                              className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition self-end"
-                            >
-                              Ajouter
-                            </button>
-                            <button
-                              onClick={() => setAoFormOpen(false)}
-                              className="px-3 py-1.5 rounded-lg border border-neutral-300 text-sm text-neutral-600 hover:bg-neutral-100 transition self-end"
-                            >
-                              Annuler
-                            </button>
+                      {/* Import Batappli panel */}
+                      {batappliImportOpen && (
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold text-sky-900">Importer depuis Batappli</div>
+                            <button onClick={() => setBatappliImportOpen(false)} className="text-neutral-400 hover:text-neutral-700 text-lg leading-none">✕</button>
                           </div>
+                          <p className="text-xs text-neutral-600">
+                            Dans Batappli, exportez vos chantiers en CSV (Fichier → Exporter → CSV), puis déposez le fichier ici.
+                            Les chantiers déjà existants ne seront pas dupliqués.
+                          </p>
+                          <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-sky-300 rounded-lg cursor-pointer hover:bg-sky-100 transition">
+                            <span className="text-sm text-sky-700 font-medium">Cliquer pour choisir un fichier CSV</span>
+                            <span className="text-xs text-neutral-500 mt-1">Format Batappli (.csv)</span>
+                            <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleBatappliImport(file); }} />
+                          </label>
                         </div>
                       )}
 
-                      {/* Filter pills */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {(["all", "a_repondre", "depose", "gagne", "perdu"] as const).map((f) => {
-                          const labels: Record<string, string> = { all: "Tous", a_repondre: "À répondre", depose: "Déposé", gagne: "Gagné", perdu: "Perdu" };
-                          return (
-                            <button
-                              key={f}
-                              onClick={() => setAoFilter(f)}
-                              className={cx(
-                                "px-3 py-1 rounded-full text-xs font-medium transition border",
-                                aoFilter === f
-                                  ? "bg-indigo-600 text-white border-indigo-600"
-                                  : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
-                              )}
-                            >
-                              {labels[f]}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* AO Table */}
-                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                        <table className="w-full text-sm">
-                          <thead className="bg-neutral-50 border-b border-neutral-200">
-                            <tr>
-                              <SortTh col="reference" label="Réf" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <SortTh col="client" label="Client" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Objet</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Type</th>
-                              <SortTh col="dateLimite" label="Deadline" currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <SortTh col="montantEstime" label="Montant est." currentSort={aoSort} onSort={(c) => setAoSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Statut</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredAo.length === 0 && (
-                              <tr>
-                                <td colSpan={8} className="px-3 py-6 text-center text-sm text-neutral-400">
-                                  Aucun appel d'offres pour ce filtre.
-                                </td>
-                              </tr>
-                            )}
-                            {filteredAo.map((tender) => {
-                              const isExpanded = expandedTenderRows.has(tender.id);
-                              const deadlineDate = tender.dateLimite ? new Date(tender.dateLimite) : null;
-                              const isUrgent = deadlineDate &&
-                                (tender.statut === "a_repondre" || tender.statut === "depose") &&
-                                deadlineDate >= today &&
-                                deadlineDate <= in7Days;
-                              return (
-                                <React.Fragment key={tender.id}>
-                                  <tr
-                                    className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer transition"
-                                    onClick={() => setExpandedTenderRows((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(tender.id)) next.delete(tender.id); else next.add(tender.id);
-                                      return next;
-                                    })}
-                                  >
-                                    <td className="px-3 py-2 font-mono text-xs text-neutral-700 whitespace-nowrap">{tender.reference || "—"}</td>
-                                    <td className="px-3 py-2 font-medium text-neutral-900 whitespace-nowrap">{tender.client ? <button onClick={(e) => { e.stopPropagation(); openClientHistory(tender.client); }} className="hover:underline hover:text-sky-700 text-left">{tender.client}</button> : "—"}</td>
-                                    <td className="px-3 py-2 text-neutral-600 max-w-[180px] truncate">{tender.objet || "—"}</td>
-                                    <td className="px-3 py-2">
-                                      <span className={cx("px-1.5 py-0.5 rounded text-[11px] font-semibold", tender.type === "public" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700")}>
-                                        {tender.type === "public" ? "Public" : "Privé"}
-                                      </span>
-                                    </td>
-                                    <td className={cx("px-3 py-2 text-xs whitespace-nowrap", isUrgent ? "text-red-600 font-semibold" : "text-neutral-600")}>
-                                      {isUrgent && "⚠ "}
-                                      {tender.dateLimite ? new Date(tender.dateLimite).toLocaleDateString("fr-FR") : "—"}
-                                    </td>
-                                    <td className="px-3 py-2 text-xs text-neutral-700 whitespace-nowrap">
-                                      {tender.montantEstime != null ? formatEUR(tender.montantEstime) : "—"}
-                                    </td>
-                                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                      {tenderStatutBadge(tender.statut)}
-                                    </td>
-                                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <select
-                                          value={tender.statut}
-                                          onChange={(e) => {
-                                            const newStatut = e.target.value;
-                                            setTenders((prev) => prev.map((t) => t.id === tender.id ? normalizeTenderRecord({ ...t, statut: newStatut }) : t));
-                                          }}
-                                          className="border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                                        >
-                                          <option value="a_repondre">À répondre</option>
-                                          <option value="depose">Déposé</option>
-                                          <option value="gagne">Gagné</option>
-                                          <option value="perdu">Perdu</option>
-                                          <option value="abandonne">Abandonné</option>
-                                        </select>
-                                        {tender.statut === "gagne" && !tender.linkedSiteId && (
-                                          <button
-                                            onClick={() => {
-                                              const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `site-${Date.now()}`;
-                                              const colorIndex = hashString(String(tender.id || tender.objet || Date.now())) % SITE_COLORS.length;
-                                              const newSite = normalizeSiteRecord({
-                                                id,
-                                                name: tender.objet || tender.reference || "Chantier",
-                                                clientName: tender.client || "",
-                                                startDate: toLocalKey(new Date()),
-                                                endDate: toLocalKey(new Date()),
-                                                color: SITE_COLORS[colorIndex] || SITE_COLORS[0],
-                                                status: "pending",
-                                                quoteSnapshot: {
-                                                  title: tender.objet || tender.reference || "",
-                                                  client: tender.client || "",
-                                                  amount: tender.montantEstime || 0,
-                                                },
-                                              });
-                                              setSites((prev) => [...prev, newSite]);
-                                              setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, linkedSiteId: id } : t));
-                                              showToast(`Chantier "${newSite.name}" créé`);
-                                              setView("sites");
-                                            }}
-                                            className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
-                                          >
-                                            Créer chantier
-                                          </button>
-                                        )}
-                                        {tender.linkedSiteId && (
-                                          <button
-                                            onClick={() => openSiteDetail(tender.linkedSiteId)}
-                                            className="px-2 py-0.5 rounded text-[11px] bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition whitespace-nowrap"
-                                          >
-                                            Chantier →
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => {
-                                            if (confirm("Supprimer cet appel d'offres ?")) {
-                                              setTenders((prev) => prev.filter((t) => t.id !== tender.id));
-                                            }
-                                          }}
-                                          className="p-0.5 rounded text-neutral-400 hover:text-red-500 transition"
-                                          title="Supprimer"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                  {isExpanded && (
-                                    <tr className="bg-indigo-50/40 border-b border-neutral-100">
-                                      <td colSpan={8} className="px-4 py-3">
-                                        <div className="flex items-start gap-3">
-                                          <span className="text-xs text-neutral-500 font-semibold shrink-0 mt-1">Notes :</span>
-                                          <textarea
-                                            value={tender.notes}
-                                            onChange={(e) => setTenders((prev) => prev.map((t) => t.id === tender.id ? { ...t, notes: e.target.value } : t))}
-                                            placeholder="Notes internes sur cet AO..."
-                                            className="flex-1 text-sm rounded border border-neutral-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none min-h-[60px]"
-                                            onClick={(e) => e.stopPropagation()}
-                                          />
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* ── Section Devis ── */}
-                  <Card>
-                    <CardContent className="space-y-4">
-                      {/* Header */}
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <div className="text-base font-semibold">Devis</div>
-                          <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{safeQuotes.length}</span>
+                      {/* Filters + Search */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-0.5 flex-wrap">
+                          {([["all", "Tous"], ["pending", "À planifier"], ["planned", "En cours"], ["archived", "Archivés"]] as [string, string][]).map(([val, label]) => (
+                            <button key={val} onClick={() => setSitesFilter(val)}
+                              className={cx("px-3 py-1 rounded-md text-xs font-medium transition", sitesFilter === val ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}
+                            >{label}</button>
+                          ))}
+                          <div className="w-px h-4 bg-neutral-300 mx-0.5" />
+                          {ORIGINE_OPTIONS.map(o => (
+                            <button key={o.value} onClick={() => setSitesFilter(sitesFilter === o.value ? "all" : o.value)}
+                              className={cx("px-2.5 py-1 rounded-md text-xs font-semibold border transition",
+                                sitesFilter === o.value ? o.badge : "bg-white text-neutral-500 border-neutral-200 hover:text-neutral-800")}
+                            >{o.label}</button>
+                          ))}
                         </div>
-                        <button
-                          onClick={() => {
-                            const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `q-${Date.now()}`;
-                            const base = { id, title: "", client: "", status: "todo" };
-                            const normalized = normalizeQuoteForSave(base);
-                            setQuotes((prev) => [...prev, normalized]);
-                            openQuoteDetail(normalized);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition"
-                        >
-                          <Plus className="w-4 h-4" /> Nouveau devis
-                        </button>
+                        <input
+                          value={sitesSearch}
+                          onChange={(e) => setSitesSearch(e.target.value)}
+                          placeholder="Rechercher…"
+                          className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 w-44"
+                        />
                       </div>
 
-                      {/* Filter pills */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {(["all", "active", "accepted", "refused", "expired"] as const).map((f) => {
-                          const labels: Record<string, string> = { all: "Tous", active: "En cours", accepted: "Acceptés", refused: "Refusés", expired: "Expirés" };
-                          return (
-                            <button
-                              key={f}
-                              onClick={() => setDevisFilter(f)}
-                              className={cx(
-                                "px-3 py-1 rounded-full text-xs font-medium transition border",
-                                devisFilter === f
-                                  ? "bg-emerald-600 text-white border-emerald-600"
-                                  : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
-                              )}
-                            >
-                              {labels[f]}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Devis Table */}
-                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                      {/* Table */}
+                      <div className="overflow-x-auto rounded-lg border border-neutral-100">
                         <table className="w-full text-sm">
-                          <thead className="bg-neutral-50 border-b border-neutral-200">
+                          <thead className="bg-neutral-50 border-b border-neutral-100">
                             <tr>
-                              <SortTh col="title" label="Titre" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <SortTh col="client" label="Client" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <SortTh col="amount" label="Montant" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Statut</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">AO lié</th>
-                              <SortTh col="sentAt" label="Date" currentSort={devisSort} onSort={(c) => setDevisSort((s) => ({ col: c, dir: s.col === c && s.dir === "asc" ? "desc" : "asc" }))} />
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500">Actions</th>
+                              <th className="w-6 px-3 py-2" />
+                              <SortTh col="name" label="Chantier" />
+                              <SortTh col="client" label="Client" />
+                              <SortTh col="budget" label="Budget" />
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500 whitespace-nowrap">Planification</th>
+                              <SortTh col="origine" label="Origine" />
+                              <SortTh col="status" label="Statut" />
+                              <th className="px-3 py-2" />
                             </tr>
                           </thead>
-                          <tbody>
-                            {filteredDevis.length === 0 && (
-                              <tr>
-                                <td colSpan={7} className="px-3 py-6 text-center text-sm text-neutral-400">
-                                  Aucun devis pour ce filtre.
+                          <tbody className="divide-y divide-neutral-50">
+                            {filteredSites.length === 0 && (
+                              <tr><td colSpan={8} className="px-3 py-6 text-center text-sm text-neutral-400">Aucun chantier trouvé.</td></tr>
+                            )}
+                            {filteredSites.map((site: any) => (
+                              <tr
+                                key={site.id}
+                                className="hover:bg-neutral-50 transition cursor-pointer"
+                                onClick={() => openSiteDetail(site.id)}
+                              >
+                                <td className="px-3 py-2.5">
+                                  <span className={cx("w-3 h-3 rounded-full inline-block border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} />
+                                </td>
+                                <td className="px-3 py-2.5 font-medium text-neutral-900 max-w-[200px] truncate">{site.name}</td>
+                                <td className="px-3 py-2.5 text-neutral-600 max-w-[150px] truncate">
+                                  {site.clientName ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName); }}
+                                      className="hover:underline hover:text-sky-700 text-left"
+                                    >
+                                      {site.clientName}
+                                    </button>
+                                  ) : <span className="text-neutral-300">—</span>}
+                                </td>
+                                <td className="px-3 py-2.5 text-neutral-700 whitespace-nowrap">
+                                  {site.quoteSnapshot?.amount ? formatEUR(site.quoteSnapshot.amount) : <span className="text-neutral-300">—</span>}
+                                </td>
+                                <td className="px-3 py-2.5 text-neutral-500 text-xs whitespace-nowrap">
+                                  {site.planningWeeks?.length ? (
+                                    <span>{formatWeeksSummary(site.planningWeeks)}</span>
+                                  ) : <span className="text-neutral-300">Non planifié</span>}
+                                </td>
+                                <td className="px-3 py-2.5">{origineBadge(site.origine)}</td>
+                                <td className="px-3 py-2.5">{statusBadge(site.status || "planned")}</td>
+                                <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center gap-1">
+                                    {(site.status || "planned") === "pending" && (
+                                      <button
+                                        onClick={() => openSiteDetail(site.id, "planned")}
+                                        className="px-2 py-0.5 rounded text-[11px] bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition whitespace-nowrap"
+                                      >
+                                        Planifier
+                                      </button>
+                                    )}
+                                    {(site.status || "planned") === "archived" ? (
+                                      <button
+                                        onClick={() => setSites((prev: any[]) => prev.map((x: any) => x.id === site.id ? { ...x, status: "planned" } : x))}
+                                        title="Restaurer"
+                                        className="p-1 rounded text-neutral-400 hover:text-emerald-600 transition"
+                                      ><RotateCcw className="w-3.5 h-3.5" /></button>
+                                    ) : (
+                                      <button
+                                        onClick={() => setSites((prev: any[]) => prev.map((x: any) => x.id === site.id ? { ...x, status: "archived" } : x))}
+                                        title="Archiver"
+                                        className="p-1 rounded text-neutral-400 hover:text-neutral-700 transition"
+                                      ><Archive className="w-3.5 h-3.5" /></button>
+                                    )}
+                                    <button
+                                      onClick={() => removeSite(site.id)}
+                                      title="Supprimer"
+                                      className="p-1 rounded text-neutral-400 hover:text-red-500 transition"
+                                    ><Trash2 className="w-3.5 h-3.5" /></button>
+                                  </div>
                                 </td>
                               </tr>
-                            )}
-                            {filteredDevis.map((quote) => {
-                              const linkedTender = tenders.find((t) => t.linkedDevisId === quote.id);
-                              return (
-                                <tr key={quote.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition">
-                                  <td className="px-3 py-2 font-medium text-neutral-900 max-w-[160px] truncate">{quote.title || "Sans titre"}</td>
-                                  <td className="px-3 py-2 text-neutral-600 whitespace-nowrap">{quote.client ? <button onClick={() => openClientHistory(quote.client)} className="hover:underline hover:text-sky-700 text-left">{quote.client}</button> : "—"}</td>
-                                  <td className="px-3 py-2 font-semibold text-neutral-800 whitespace-nowrap">
-                                    {quote.amount != null ? formatEUR(quote.amount) : "—"}
-                                  </td>
-                                  <td className="px-3 py-2">{quoteStatutBadge(quote.status)}</td>
-                                  <td className="px-3 py-2">
-                                    {linkedTender ? (
-                                      <span className="px-2 py-0.5 rounded text-[11px] bg-neutral-100 text-neutral-600 font-mono">{linkedTender.reference || "AO"}</span>
-                                    ) : "—"}
-                                  </td>
-                                  <td className="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">
-                                    {quote.sentAt ? new Date(quote.sentAt).toLocaleDateString("fr-FR") : "—"}
-                                  </td>
-                                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <select
-                                        value={quote.status}
-                                        onChange={(e) => {
-                                          const newStatus = e.target.value;
-                                          setQuotes((prev) => prev.map((q) => q.id === quote.id ? normalizeQuoteRecord({ ...q, status: newStatus }) : q));
-                                        }}
-                                        className="border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
-                                      >
-                                        {QUOTE_COLUMNS.map((col) => (
-                                          <option key={col.id} value={col.id}>{col.label}</option>
-                                        ))}
-                                      </select>
-                                      {quote.status === "won" && (
-                                        <button
-                                          onClick={() => createSiteFromQuote(quote)}
-                                          className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
-                                        >
-                                          Créer chantier
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => openQuoteDetail(quote)}
-                                        className="p-0.5 rounded text-neutral-400 hover:text-sky-600 transition"
-                                        title="Modifier"
-                                      >
-                                        <Edit3 className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          if (confirm("Supprimer ce devis ?")) {
-                                            setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
-                                          }
-                                        }}
-                                        className="p-0.5 rounded text-neutral-400 hover:text-red-500 transition"
-                                        title="Supprimer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            ))}
                           </tbody>
                         </table>
                       </div>
@@ -5613,275 +5573,6 @@ useEffect(() => {
               );
             })()}
 
-            {view === "sites" && (
-              <div className="space-y-3">
-                <Card>
-                  <CardContent className="space-y-3">
-                    <div className="text-base font-semibold flex items-center gap-2">
-                      <span>Mes chantiers</span>
-                      <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">
-                        {plannedSites.length + pendingSites.length + archivedSites.length} chantier{(plannedSites.length + pendingSites.length + archivedSites.length) > 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-sm font-semibold">
-                            À planifier
-                            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
-                              {pendingSites.length}
-                            </span>
-                          </div>
-                          <div className="text-xs text-neutral-500">Issus des devis validés</div>
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-2">
-                          {pendingSites.map((site) => (
-                            <div
-                              key={site.id}
-                              className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 hover:border-amber-300 transition cursor-pointer"
-                              onClick={() => openSiteDetail(site.id)}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-start gap-2">
-                                  <span
-                                    className={cx(
-                                      "w-3 h-3 rounded-full mt-1 border",
-                                      site.color || "bg-neutral-300",
-                                      site.color ? "border-black/10" : "border-neutral-200"
-                                    )}
-                                  />
-                                  <div className="space-y-0.5">
-                                    <div className="font-semibold text-neutral-900 leading-tight">{site.name}</div>
-                                    <div className="text-[11px] text-neutral-600">
-                                      {(site.clientName || site.quoteSnapshot?.client) ? (
-                                        <button onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName || site.quoteSnapshot?.client); }} className="hover:underline hover:text-sky-700 text-left">{site.clientName || site.quoteSnapshot?.client}</button>
-                                      ) : "Client inconnu"}
-                                    </div>
-                                    <div className="text-[11px] text-neutral-600">
-                                      {formatWeeksSummary(site.planningWeeks || [])}
-                                    </div>
-                                  </div>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={(e: any) => {
-                                    e.stopPropagation();
-                                    openSiteDetail(site.id, "planned");
-                                  }}
-                                >
-                                  Planifier
-                                </Button>
-                              </div>
-                              {site.quoteSnapshot?.amount && (
-                                <div className="text-xs text-neutral-600 mt-1">Devis : {formatEUR(site.quoteSnapshot.amount)}</div>
-                              )}
-                              <button
-                                className="mt-2 text-[11px] text-amber-700 underline"
-                                onClick={() => openSiteDetail(site.id)}
-                              >
-                                Ouvrir le détail
-                              </button>
-                            </div>
-                          ))}
-                          {pendingSites.length === 0 && (
-                            <div className="text-sm text-neutral-500">Aucun devis validé en attente de planification.</div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-sm font-semibold">
-                            Planifié
-                            <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
-                              {plannedSites.length}
-                            </span>
-                          </div>
-                          <div className="text-xs text-neutral-500">Affichés dans le planning et le calendrier</div>
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-2">
-                          {plannedSites.map((site) => (
-                            <button
-                              key={site.id}
-                              className="rounded-lg border border-neutral-200 p-3 flex items-start gap-3 bg-white shadow-sm text-left hover:border-neutral-300"
-                              onClick={() => openSiteDetail(site.id)}
-                            >
-                              <span
-                                className={cx(
-                                  "w-3 h-3 rounded-full mt-1 border",
-                                  site.color || "bg-neutral-300",
-                                  site.color ? "border-black/10" : "border-neutral-200"
-                                )}
-                                aria-hidden
-                              />
-                              <div className="flex-1 space-y-1">
-                                <div className="font-semibold text-neutral-900">{site.name}</div>
-                                {site.planningWeeks?.length ? (
-                                  <div className="text-[11px] text-neutral-600">
-                                    Semaines actives : {site.planningWeeks.slice(0, 3).join(", ")}
-                                    {site.planningWeeks.length > 3 && " …"}
-                                  </div>
-                                ) : (
-                                  <div className="text-[11px] text-neutral-500">Visible toutes les semaines</div>
-                                )}
-                                {(site.address || site.clientName || site.contactPhone) && (
-                                  <div className="text-[11px] text-neutral-600 space-y-0.5">
-                                    {site.address && <div>{site.address}</div>}
-                                    {site.clientName && <div>Client : <button onClick={(e) => { e.stopPropagation(); openClientHistory(site.clientName); }} className="hover:underline hover:text-sky-700 text-left">{site.clientName}</button></div>}
-                                    {(site.contactName || site.contactPhone) && (
-                                      <div>
-                                        Contact : {site.contactName}
-                                        {site.contactPhone ? ` • ${site.contactPhone}` : ""}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {site.globalNotes && (
-                                  <div className="text-[11px] text-neutral-500 italic truncate" title={site.globalNotes}>{site.globalNotes}</div>
-                                )}
-                                <div className="text-[11px] text-sky-700">Cliquer pour modifier</div>
-                              </div>
-                            </button>
-                          ))}
-                          {plannedSites.length === 0 && (
-                            <div className="text-sm text-neutral-500">Aucun chantier planifié pour l'instant.</div>
-                          )}
-                        </div>
-                      </div>
-
-                      {archivedSites.length > 0 && (
-                        <div className="space-y-2">
-                          <button
-                            className="flex items-center gap-2 text-sm font-semibold text-neutral-500 hover:text-neutral-700 w-full"
-                            onClick={() => setSidebarArchivedOpen((v) => !v)}
-                          >
-                            {sidebarArchivedOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                            Chantiers archivés
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-400 font-semibold">{archivedSites.length}</span>
-                          </button>
-                          {sidebarArchivedOpen && (
-                            <div className="grid md:grid-cols-2 gap-2">
-                              {archivedSites.map((site) => (
-                                <div
-                                  key={site.id}
-                                  className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 flex items-start gap-3 opacity-60"
-                                >
-                                  <span className={cx("w-3 h-3 rounded-full mt-1 border flex-shrink-0", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} aria-hidden />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-semibold text-neutral-700 line-through truncate">{site.name}</div>
-                                    {site.clientName && <div className="text-[11px] text-neutral-500"><button onClick={() => openClientHistory(site.clientName)} className="hover:underline hover:text-sky-600 text-left">{site.clientName}</button></div>}
-                                  </div>
-                                  <div className="flex gap-1 flex-shrink-0">
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      onClick={() => setSites((prev) => prev.map((x) => x.id === site.id ? { ...x, status: "planned" } : x))}
-                                      title="Restaurer"
-                                      className="h-7 w-7"
-                                    ><RotateCcw className="w-3.5 h-3.5" /></Button>
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      onClick={() => removeSite(site.id)}
-                                      title="Supprimer définitivement"
-                                      className="h-7 w-7 text-red-400 hover:text-red-600"
-                                    ><Trash2 className="w-3.5 h-3.5" /></Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* === Clients enregistrés === */}
-                {(() => {
-                  const matchClient = (a: string, b: string) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
-                  // Build unique client names from all data sources
-                  const allClientNames = Array.from(new Set([
-                    ...safeSites.map((s: any) => s.clientName || s.quoteSnapshot?.client || "").filter(Boolean),
-                    ...safeQuotes.map((q: any) => q.client || "").filter(Boolean),
-                    ...tenders.map((t: any) => t.client || "").filter(Boolean),
-                  ]));
-                  // Merge with registered clients (case-insensitive dedup)
-                  const registeredNames = clients.map((c: any) => c.name);
-                  const allNamesSet: string[] = [];
-                  const seen = new Set<string>();
-                  [...registeredNames, ...allClientNames].forEach((name) => {
-                    const key = name.trim().toLowerCase();
-                    if (!seen.has(key) && name.trim()) { seen.add(key); allNamesSet.push(name.trim()); }
-                  });
-                  allNamesSet.sort((a, b) => a.localeCompare(b, "fr"));
-                  const countProjects = (name: string) =>
-                    safeSites.filter((s: any) => matchClient(s.clientName || s.quoteSnapshot?.client || "", name)).length +
-                    safeQuotes.filter((q: any) => matchClient(q.client || "", name)).length +
-                    tenders.filter((t: any) => matchClient(t.client || "", name)).length;
-                  return (
-                    <Card>
-                      <CardContent className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <button
-                            className="flex items-center gap-2 text-base font-semibold hover:text-neutral-700 transition w-full text-left"
-                            onClick={() => setClientsCollapsed((v) => !v)}
-                          >
-                            {clientsCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                            <span>Clients enregistrés</span>
-                            <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 px-2 py-1 rounded-full">{allNamesSet.length}</span>
-                          </button>
-                          <button
-                            onClick={() => setClientAddFormOpen((v) => !v)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-neutral-700 transition shrink-0"
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Ajouter client
-                          </button>
-                        </div>
-                        {clientAddFormOpen && (
-                          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-2">
-                            <div className="text-sm font-semibold">Nouveau client</div>
-                            <div className="grid md:grid-cols-3 gap-2">
-                              <Input value={newClientForm.name} onChange={(e: any) => setNewClientForm((p) => ({ ...p, name: e.target.value }))} placeholder="Nom *" />
-                              <Input value={newClientForm.phone} onChange={(e: any) => setNewClientForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Téléphone" />
-                              <Input value={newClientForm.email} onChange={(e: any) => setNewClientForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" />
-                            </div>
-                            <div className="flex gap-2">
-                              <Button size="sm" onClick={() => { if (newClientForm.name.trim()) { saveClient(newClientForm); setNewClientForm({ name: "", phone: "", email: "" }); setClientAddFormOpen(false); } }}>Enregistrer</Button>
-                              <Button size="sm" variant="ghost" onClick={() => { setClientAddFormOpen(false); setNewClientForm({ name: "", phone: "", email: "" }); }}>Annuler</Button>
-                            </div>
-                          </div>
-                        )}
-                        {!clientsCollapsed && (
-                          <div className="space-y-1">
-                            {allNamesSet.length === 0 && (
-                              <div className="text-sm text-neutral-400 py-2">Aucun client trouvé. Les noms de clients saisis dans les chantiers, devis et AO apparaissent ici.</div>
-                            )}
-                            {allNamesSet.map((name) => {
-                              const nb = countProjects(name);
-                              const isRegistered = clients.some((c: any) => matchClient(c.name, name));
-                              return (
-                                <div key={name} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-100 px-3 py-2 hover:border-neutral-200 hover:bg-neutral-50 transition">
-                                  <button onClick={() => openClientHistory(name)} className="font-medium text-sm text-neutral-800 hover:text-sky-700 hover:underline text-left flex-1">
-                                    {name}
-                                  </button>
-                                  <div className="flex items-center gap-2 text-[11px] shrink-0">
-                                    {isRegistered && <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Enregistré</span>}
-                                    <span className="text-neutral-400">{nb} projet{nb > 1 ? "s" : ""}</span>
-                                    <button onClick={() => openClientHistory(name)} className="text-neutral-400 hover:text-sky-600 transition text-xs underline">Voir</button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })()}
-              </div>
-            )}
 
             {view === "salaries" && (
               <div className="space-y-3">
@@ -6221,6 +5912,7 @@ useEffect(() => {
                             <th className="px-2 py-2 w-6" />
                             <SortTh col="name" label="Chantier" />
                             <SortTh col="client" label="Client" />
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Origine</th>
                             <SortTh col="budget" label="Budget" />
                             <SortTh col="mo" label="MO" />
                             <th className="px-3 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Mat. %</th>
@@ -6261,6 +5953,7 @@ useEffect(() => {
                                     </button>
                                   </td>
                                   <td className="px-3 py-2.5 text-neutral-600">{s.clientName ? <button onClick={() => openClientHistory(s.clientName)} className="hover:underline hover:text-sky-700 text-left">{s.clientName}</button> : <span className="text-neutral-300">—</span>}</td>
+                                  <td className="px-3 py-2.5">{(() => { const opt = ORIGINE_OPTIONS.find(o => o.value === s.origine); return opt ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
                                   <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
                                   <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
                                   <td className="px-3 py-2 w-24">
@@ -6607,106 +6300,122 @@ useEffect(() => {
         </DialogContent>
       </Dialog>
       <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{eventEditId ? "Modifier l'événement" : "Créer un événement"}</DialogTitle>
-            <DialogDescription>Ajoutez un événement de disponibilité ou de congé et sélectionnez les semaines concernées.</DialogDescription>
+            <DialogTitle>{eventEditId ? "Modifier l'événement" : "Nouvel événement"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4 text-sm">
+            {/* Titre */}
             <Input
               value={eventDraft.title}
               onChange={(e: any) => setEventDraft((prev) => ({ ...prev, title: e.target.value }))}
               placeholder="Titre de l'événement"
+              autoFocus
             />
-            <div className="grid md:grid-cols-2 gap-2 items-center">
-              <select
-                value={eventDraft.calendarId}
-                onChange={(e) => setEventDraft((prev) => ({ ...prev, calendarId: e.target.value }))}
-                className="border rounded-md px-2 py-1 text-sm w-full"
-              >
-                <option value="cal-availability">Disponibilités (noir)</option>
-                <option value="cal-leave">Congés payés (rose)</option>
-              </select>
+            {/* Calendrier */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Calendrier</label>
+              <div className="flex flex-wrap gap-2">
+                {eventCalendars.map((cal) => (
+                  <button
+                    key={cal.id}
+                    onClick={() => setEventDraft((prev) => ({ ...prev, calendarId: cal.id }))}
+                    className={cx(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition",
+                      eventDraft.calendarId === cal.id
+                        ? "border-neutral-900 bg-neutral-900 text-white"
+                        : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400"
+                    )}
+                  >
+                    <span className={cx("w-2 h-2 rounded-full shrink-0", cal.color || "bg-neutral-400")} />
+                    {cal.name}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-semibold text-neutral-600">Semaines ciblées</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={eventWeekYear}
-                    onChange={(e) => setEventWeekYear(Number(e.target.value))}
-                    className="border rounded-md px-2 py-1 text-xs"
-                  >
-                    {[eventWeekYear - 1, eventWeekYear, eventWeekYear + 1].map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEventDraft((prev) => ({ ...prev, weekKeys: [] }))}
-                  >
-                    Effacer
-                  </Button>
+            {/* Semaines — plage début→fin */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-600">Période (semaines)</label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="flex-1 border border-neutral-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                  value={eventDraft.weekKeys[0] || ""}
+                  onChange={(e) => {
+                    const start = e.target.value;
+                    const end = eventDraft.weekKeys[eventDraft.weekKeys.length - 1];
+                    if (!start) { setEventDraft((prev) => ({ ...prev, weekKeys: [] })); return; }
+                    if (!end || end < start) { setEventDraft((prev) => ({ ...prev, weekKeys: [start] })); return; }
+                    const keys = eventWeekOptions.filter((wk) => wk >= start && wk <= end);
+                    setEventDraft((prev) => ({ ...prev, weekKeys: keys }));
+                  }}
+                >
+                  <option value="">Début</option>
+                  {eventWeekOptions.map((wk) => <option key={wk} value={wk}>{wk.replace(`${eventWeekYear}-W`, "S")}</option>)}
+                </select>
+                <span className="text-neutral-400 shrink-0">→</span>
+                <select
+                  className="flex-1 border border-neutral-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                  value={eventDraft.weekKeys[eventDraft.weekKeys.length - 1] || ""}
+                  onChange={(e) => {
+                    const end = e.target.value;
+                    const start = eventDraft.weekKeys[0];
+                    if (!end || !start || end < start) { setEventDraft((prev) => ({ ...prev, weekKeys: end ? [end] : [] })); return; }
+                    const keys = eventWeekOptions.filter((wk) => wk >= start && wk <= end);
+                    setEventDraft((prev) => ({ ...prev, weekKeys: keys }));
+                  }}
+                >
+                  <option value="">Fin</option>
+                  {eventWeekOptions.map((wk) => <option key={wk} value={wk}>{wk.replace(`${eventWeekYear}-W`, "S")}</option>)}
+                </select>
+                <select
+                  value={eventWeekYear}
+                  onChange={(e) => setEventWeekYear(Number(e.target.value))}
+                  className="border border-neutral-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                >
+                  {[eventWeekYear - 1, eventWeekYear, eventWeekYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              {eventDraft.weekKeys.length > 0 && (
+                <div className="text-[11px] text-neutral-500">
+                  {eventDraft.weekKeys.length} semaine{eventDraft.weekKeys.length > 1 ? "s" : ""} sélectionnée{eventDraft.weekKeys.length > 1 ? "s" : ""}
+                  {eventDraft.weekKeys.length > 1 && ` (S${eventDraft.weekKeys[0].split("W")[1]} → S${eventDraft.weekKeys[eventDraft.weekKeys.length - 1].split("W")[1]})`}
                 </div>
-              </div>
-              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-32 overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-2">
-                {eventWeekOptions.map((weekKey) => {
-                  const checked = eventDraft.weekKeys.includes(weekKey);
-                  return (
-                    <label key={weekKey} className="flex items-center gap-1 text-[11px] text-neutral-600">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setEventDraft((prev) => ({
-                            ...prev,
-                            weekKeys: checked
-                              ? prev.weekKeys.filter((wk) => wk !== weekKey)
-                              : [...prev.weekKeys, weekKey],
-                          }))
-                        }
-                      />
-                      {weekKey.replace(`${eventWeekYear}-W`, "S")}
-                    </label>
-                  );
-                })}
-              </div>
+              )}
             </div>
+            {/* Notes */}
             <Textarea
               value={eventDraft.notes}
               onChange={(e: any) => setEventDraft((prev) => ({ ...prev, notes: e.target.value }))}
-              placeholder="Notes"
-              className="text-sm"
+              placeholder="Notes (optionnel)"
+              className="text-sm resize-none"
+              rows={2}
             />
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setEventDialogOpen(false)}>
-              Annuler
-            </Button>
+          <DialogFooter className="gap-2">
             {eventEditId && (
-              <Button variant="outline" onClick={deleteCalendarEvent}>
+              <Button variant="outline" className="text-red-500 border-red-200 hover:bg-red-50 mr-auto" onClick={deleteCalendarEvent}>
                 Supprimer
               </Button>
             )}
-            <Button onClick={createCalendarEvent}>{eventEditId ? "Enregistrer" : "Créer"}</Button>
+            <Button variant="ghost" onClick={() => setEventDialogOpen(false)}>Annuler</Button>
+            <Button onClick={createCalendarEvent} disabled={!eventDraft.title.trim() || eventDraft.weekKeys.length === 0}>
+              {eventEditId ? "Enregistrer" : "Créer"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={calendarDialogOpen} onOpenChange={setCalendarDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{calendarEditTarget ? "Modifier le calendrier" : "Créer un calendrier"}</DialogTitle>
-            <DialogDescription>Définissez un nom et une couleur pour le nouveau calendrier.</DialogDescription>
+            <DialogTitle>{calendarEditTarget ? "Modifier le calendrier" : "Nouveau calendrier"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 text-sm">
             <Input
               value={calendarDraft.name}
               onChange={(e: any) => setCalendarDraft((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="Nom du calendrier"
+              autoFocus
             />
             <div className="space-y-1">
               <label className="text-xs font-semibold text-neutral-600">Couleur</label>
@@ -6717,11 +6426,20 @@ useEffect(() => {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCalendarDialogOpen(false)}>
-              Annuler
+          <DialogFooter className="gap-2">
+            {calendarEditTarget && !["cal-planned","cal-pending","cal-leave","cal-availability"].includes(calendarEditTarget.id) && (
+              <Button
+                variant="outline"
+                className="text-red-500 border-red-200 hover:bg-red-50 mr-auto"
+                onClick={() => { if (window.confirm(`Supprimer "${calendarDraft.name}" ? Les événements associés seront aussi supprimés.`)) { deleteCalendar(calendarEditTarget.id); setCalendarDialogOpen(false); } }}
+              >
+                Supprimer
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setCalendarDialogOpen(false)}>Annuler</Button>
+            <Button onClick={createCalendar} disabled={!calendarDraft.name.trim()}>
+              {calendarEditTarget ? "Enregistrer" : "Créer"}
             </Button>
-            <Button onClick={createCalendar}>{calendarEditTarget ? "Enregistrer" : "Créer"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

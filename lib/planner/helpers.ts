@@ -209,6 +209,7 @@ export const normalizePersonRecord = (p: any) => ({
   skills: Array.isArray(p?.skills) ? p.skills.map(String) : [],
   status: ["active","disabled","archived"].includes(p?.status) ? p.status : "active" as "active" | "disabled" | "archived",
   tauxJournalier: Number.isFinite(Number(p?.tauxJournalier)) ? Number(p.tauxJournalier) : null,
+  hoursPerDay: Number.isFinite(Number(p?.hoursPerDay)) && Number(p?.hoursPerDay) > 0 ? Number(p.hoursPerDay) : null,
 });
 
 export const normalizeClientRecord = (c: any) => ({
@@ -236,6 +237,14 @@ export const ensureId = (seed: string, prefix: string) => {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+export const ORIGINE_OPTIONS = [
+  { value: "ao_public",     label: "AO Public",     badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  { value: "ao_prive",      label: "AO Privé",      badge: "bg-violet-100 text-violet-700 border-violet-200" },
+  { value: "devis_direct",  label: "Devis direct",  badge: "bg-sky-100 text-sky-700 border-sky-200" },
+  { value: "gre_a_gre",     label: "Gré à gré",     badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+] as const;
+export type OrigineType = typeof ORIGINE_OPTIONS[number]["value"];
+
 export const normalizeSiteRecord = (site: any) => {
   const base = typeof site === "object" && site !== null ? site : {};
   const start = (base as any)?.startDate || toLocalKey(new Date());
@@ -244,6 +253,8 @@ export const normalizeSiteRecord = (site: any) => {
   const color = (base as any)?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
   const status = (base as any)?.status === "archived" ? "archived" : (base as any)?.status === "pending" ? "pending" : "planned";
   const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
+  const validOrigines = ORIGINE_OPTIONS.map(o => o.value) as string[];
+  const origine = validOrigines.includes((base as any)?.origine) ? (base as any).origine : null;
   return {
     ...base,
     id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),
@@ -264,6 +275,7 @@ export const normalizeSiteRecord = (site: any) => {
       label: typeof c?.label === "string" ? c.label : "",
       montant: Number.isFinite(Number(c?.montant)) ? Number(c.montant) : 0,
     })) : [],
+    origine,
     situations: Array.isArray((base as any)?.situations) ? (base as any).situations.map((s: any) => ({
       id: s?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `sit-${Date.now()}-${Math.random()}`),
       label: typeof s?.label === "string" ? s.label : "",

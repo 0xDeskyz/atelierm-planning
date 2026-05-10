@@ -9,7 +9,7 @@ import { AssignmentChip } from "./chips";
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, onToggleConfirmed, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
@@ -74,14 +74,16 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
           const conflictKey = `${a.personId}|${a.date}`;
           const conflict = (conflictMap?.[conflictKey] || 0) > 1;
           const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
+          const personBase = meta.hoursOverride != null && meta.hoursOverride !== ""
+            ? Number(meta.hoursOverride)
+            : (p?.hoursPerDay ?? baseHours);
           return p ? (
             <div key={a.id} className="flex items-center gap-1">
               <AssignmentChip
                 a={a}
                 person={p}
                 onRemove={() => onRemoveAssignment(a.id)}
-                onToggleConfirmed={() => onToggleConfirmed?.(a.id)}
-                baseHours={baseHours}
+                baseHours={Number.isFinite(personBase) ? personBase : baseHours}
                 conflict={conflict}
               />
               {absence && (
@@ -149,20 +151,22 @@ export function HoursCell({ date, site, assignments, people, notes, hoursPerDay,
           const isFullDay = info.portion === 1;
           const isHalfDay = info.portion === 0.5;
           return (
-            <div key={a.id} className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className={cx("w-2 h-2 rounded-full shrink-0", p.color || "bg-neutral-400")} />
-                <span className="text-xs font-medium truncate">{p.name.split(" ")[0]}</span>
-                {conflict && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 shrink-0">!</span>}
+            <div key={a.id} className="space-y-1">
+              {/* Ligne 1 : nom + couleur personne */}
+              <div className="flex items-center gap-1.5">
+                <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", p.color || "bg-neutral-400")} />
+                <span className="text-xs font-semibold text-neutral-800">{p.name.split(" ")[0]}</span>
+                {conflict && <span className="text-[9px] px-1 py-0.5 rounded-full bg-amber-100 text-amber-900 shrink-0">!</span>}
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              {/* Ligne 2 : contrôles */}
+              <div className="flex items-center gap-1">
                 <button
                   disabled={unavailable}
                   onClick={() => onUpdateAssignment(a.id, { portion: 1, hours: "" })}
                   className={cx(
-                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
+                    "h-6 px-2 rounded-md text-[11px] font-semibold border transition",
                     isFullDay && !info.hasCustomHours
-                      ? "bg-black text-white border-black"
+                      ? "bg-neutral-900 text-white border-neutral-900"
                       : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
                   )}
                 >J</button>
@@ -170,16 +174,35 @@ export function HoursCell({ date, site, assignments, people, notes, hoursPerDay,
                   disabled={unavailable}
                   onClick={() => onUpdateAssignment(a.id, { portion: 0.5, hours: "" })}
                   className={cx(
-                    "h-7 px-2.5 rounded-lg text-xs font-semibold border transition",
+                    "h-6 px-2 rounded-md text-[11px] font-semibold border transition",
                     isHalfDay && !info.hasCustomHours
-                      ? "bg-black text-white border-black"
+                      ? "bg-neutral-900 text-white border-neutral-900"
                       : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"
                   )}
                 >½</button>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  disabled={unavailable}
+                  value={info.hasCustomHours ? String(a.hours) : ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onUpdateAssignment(a.id, { hours: v === "" ? "" : v });
+                  }}
+                  placeholder={`${info.suggestedHours}h`}
+                  title="Heures réelles ce jour"
+                  className={cx(
+                    "h-6 w-12 rounded-md border text-[11px] text-center font-semibold transition px-1 outline-none",
+                    info.hasCustomHours
+                      ? "border-sky-400 bg-sky-50 text-sky-700"
+                      : "border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300"
+                  )}
+                />
                 <button
                   onClick={() => onRemoveAssignment(a.id)}
-                  className="h-7 w-7 rounded-lg border border-neutral-200 bg-white text-neutral-300 hover:border-red-300 hover:text-red-400 transition flex items-center justify-center text-sm"
-                  title="Retirer l'affectation"
+                  className="h-6 w-6 rounded-md border border-neutral-200 bg-white text-neutral-300 hover:border-red-300 hover:text-red-400 transition flex items-center justify-center text-xs ml-auto"
+                  title="Retirer"
                 >×</button>
               </div>
             </div>
