@@ -129,22 +129,47 @@ const nextMonthKey = (() => {
   return toLocalKey(d);
 })();
 
-const DEMO_PEOPLE = [
-  normalizePersonRecord({ id: "p1", name: "Ali", color: "bg-rose-500", role: "Chef de chantier" }),
-  normalizePersonRecord({ id: "p2", name: "Mina", color: "bg-amber-500", role: "Maçonne" }),
-  normalizePersonRecord({ id: "p3", name: "Rachid", color: "bg-emerald-500", role: "Plombier" }),
-];
+const DEMO_PEOPLE: ReturnType<typeof normalizePersonRecord>[] = [];
 const DEMO_SITES = [
-  { id: "s1", name: "Chantier A", startDate: todayKey, endDate: nextMonthKey, color: SITE_COLORS[3] },
-  { id: "s2", name: "Chantier B", startDate: todayKey, endDate: todayKey, color: SITE_COLORS[4] },
+  { id: "s-pezenas",    name: "PÉZENAS — St Jean",               startDate: "2026-04-27", endDate: "2026-07-17", planningWeeks: ["2026-W18","2026-W19","2026-W28","2026-W29"], status: "planned" },
+  { id: "s-belmonte",   name: "BELMONTE — Fenêtres",             startDate: "2026-04-27", endDate: "2026-05-01", planningWeeks: ["2026-W18"], status: "planned" },
+  { id: "s-merlin",     name: "MERLIN — Boirargues cuisine",     startDate: "2026-05-04", endDate: "2026-05-08", planningWeeks: ["2026-W19"], status: "planned" },
+  { id: "s-ortin",      name: "ORTIN — Mauguio",                 startDate: "2026-05-04", endDate: "2026-05-08", planningWeeks: ["2026-W19"], status: "planned" },
+  { id: "s-colonna",    name: "COLONNA — Ballaruc",              startDate: "2026-05-04", endDate: "2026-05-08", planningWeeks: ["2026-W19"], status: "planned" },
+  { id: "s-anata",      name: "ANATA — Porte Fac St Pierre",     startDate: "2026-05-04", endDate: "2026-05-08", planningWeeks: ["2026-W19"], status: "planned" },
+  { id: "s-mireval",    name: "MIREVAL — Mauguio",               startDate: "2026-05-04", endDate: "2026-05-08", planningWeeks: ["2026-W19"], status: "planned" },
+  { id: "s-chateau",    name: "CHÂTEAU — Montferrier",           startDate: "2026-05-11", endDate: "2026-05-22", planningWeeks: ["2026-W20","2026-W21"], status: "planned" },
+  { id: "s-perez",      name: "PEREZ — Carna",                   startDate: "2026-05-11", endDate: "2026-06-19", planningWeeks: ["2026-W20","2026-W21","2026-W24","2026-W25"], status: "planned" },
+  { id: "s-beauvallet", name: "BEAUVALLET — Esc. Mauguio",       startDate: "2026-05-11", endDate: "2026-05-15", planningWeeks: ["2026-W20"], status: "planned" },
+  { id: "s-optimwatt",  name: "OPTIMWATT — Guilhem",             startDate: "2026-05-11", endDate: "2026-05-15", planningWeeks: ["2026-W20"], status: "planned" },
+  { id: "s-portail",    name: "PORTAIL — Grau du Roi",           startDate: "2026-05-11", endDate: "2026-05-15", planningWeeks: ["2026-W20"], status: "planned" },
+  { id: "s-vauvert",    name: "VAUVERT",                         startDate: "2026-05-11", endDate: "2026-06-05", planningWeeks: ["2026-W20","2026-W21","2026-W23"], status: "planned" },
+  { id: "s-picard",     name: "PICARD — Bureau",                 startDate: "2026-05-18", endDate: "2026-05-22", planningWeeks: ["2026-W21"], status: "planned" },
+  { id: "s-thevenot",   name: "THEVENOT — Sinistre Mauguio",     startDate: "2026-05-18", endDate: "2026-05-22", planningWeeks: ["2026-W21"], status: "planned" },
+  { id: "s-ducrot",     name: "DUCROT — Atelier persiennes",     startDate: "2026-05-18", endDate: "2026-05-22", planningWeeks: ["2026-W21"], status: "planned" },
+  { id: "s-insee",      name: "INSEE",                           startDate: "2026-05-25", endDate: "2026-07-24", planningWeeks: ["2026-W22","2026-W23","2026-W27","2026-W29","2026-W30"], status: "planned" },
+  { id: "s-pontrouge",  name: "PONT ROUGE — Store & TV",         startDate: "2026-06-01", endDate: "2026-06-05", planningWeeks: ["2026-W23"], status: "planned" },
+  { id: "s-suau",       name: "SUAU RODENAS — Pergolas",         startDate: "2026-06-01", endDate: "2026-06-05", planningWeeks: ["2026-W23"], status: "planned" },
+  { id: "s-gpa",        name: "GPA — Castelnaudary",             startDate: "2026-06-08", endDate: "2026-06-12", planningWeeks: ["2026-W24"], status: "planned" },
+  { id: "s-thievet-mau",name: "THIEVET — Mauguio",               startDate: "2026-06-08", endDate: "2026-06-12", planningWeeks: ["2026-W24"], status: "planned" },
+  { id: "s-cnrs-cefe",  name: "CNRS CEFE — Salle convivialité",  startDate: "2026-06-08", endDate: "2026-06-12", planningWeeks: ["2026-W24"], status: "planned" },
+  { id: "s-cnrs-bureau",name: "CNRS — Bureau Resto",             startDate: "2026-06-08", endDate: "2026-06-12", planningWeeks: ["2026-W24"], status: "planned" },
+  { id: "s-laverune",   name: "LAVERUNE — Métiers du fer",       startDate: "2026-06-08", endDate: "2026-06-12", planningWeeks: ["2026-W24"], status: "planned" },
+  { id: "s-eglise",     name: "ÉGLISE DON BOSCO",                startDate: "2026-06-15", endDate: "2026-06-19", planningWeeks: ["2026-W25"], status: "planned" },
+  { id: "s-stdrezery",  name: "ST DRÉZÉRY — Extension",          startDate: "2026-06-15", endDate: "2026-08-14", planningWeeks: ["2026-W25","2026-W26","2026-W27","2026-W32","2026-W33"], status: "planned" },
+  { id: "s-thievet-stb",name: "THIEVET — St Briès",              startDate: "2026-06-22", endDate: "2026-06-26", planningWeeks: ["2026-W26"], status: "planned" },
+  { id: "s-faculte",    name: "FACULTÉ — B2 R+4",                startDate: "2026-07-06", endDate: "2026-07-10", planningWeeks: ["2026-W28"], status: "planned" },
+  { id: "s-fda",        name: "FD/\\ — Bâtiments",               startDate: "2026-07-20", endDate: "2026-08-21", planningWeeks: ["2026-W30","2026-W32","2026-W34"], status: "planned" },
+  { id: "s-quinson",    name: "QUINSON — Mauguio",               startDate: "2026-09-07", endDate: "2026-09-11", planningWeeks: ["2026-W37"], status: "planned" },
+  { id: "s-cnrs-labo",  name: "CNRS — Labo Expanim",             startDate: "2026-09-14", endDate: "2026-09-18", planningWeeks: ["2026-W38"], status: "planned" },
+  { id: "s-arterio",    name: "ARTERIO — Pierres Blanches",      startDate: "2026-09-14", endDate: "2026-09-18", planningWeeks: ["2026-W38"], status: "planned" },
+  { id: "s-jacou",      name: "JACOU — École PAUTES",            startDate: "2026-11-02", endDate: "2026-11-06", planningWeeks: ["2026-W45"], status: "planned" },
+  { id: "s-surho",      name: "SURHO — Deschodt",                startDate: "2026-11-16", endDate: "2026-11-20", planningWeeks: ["2026-W47"], status: "planned" },
+  { id: "s-buzignargues",name: "BUZIGNARGUES",                   startDate: "2026-11-23", endDate: "2026-11-27", planningWeeks: ["2026-W48"], status: "planned" },
+  { id: "s-aof",        name: "AOF — Haute Plage",               startDate: "2026-12-21", endDate: "2026-12-25", planningWeeks: ["2026-W52"], status: "planned" },
 ];
 // (DEFAULT_EVENT_CALENDARS, QUOTE_COLUMNS, QUOTE_TONES imported from lib/planner/constants)
-const DEMO_QUOTES = [
-  { id: "q1", title: "Extension maison", client: "Mme Diallo", amount: 12000, status: "todo", planningWeeks: [weekKeyOf(new Date())] },
-  { id: "q2", title: "Rénovation bureau", client: "Société Nova", amount: 18500, status: "draft", note: "Attente métrés" },
-  { id: "q3", title: "Création terrasse", client: "M. Karim", amount: 7600, status: "pending", sentAt: todayKey },
-  { id: "q4", title: "Salle de réunion", client: "Startup Hexa", amount: 9200, status: "won", sentAt: todayKey },
-];
+const DEMO_QUOTES: any[] = [];
 // ==================================
 // Devis Kanban – Carte draggable
 // ==================================
@@ -653,6 +678,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
   const [color, setColor] = useState<string>(SITE_COLORS[0]);
   const [tauxMateriel, setTauxMateriel] = useState<string>("");
+  const [montantDevis, setMontantDevis] = useState<string>("");
   const [couts, setCouts] = useState<any[]>([]);
   const [newCoutLabel, setNewCoutLabel] = useState("");
   const [newCoutMontant, setNewCoutMontant] = useState("");
@@ -680,6 +706,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setColor(site?.color || SITE_COLORS[0]);
     setGlobalNotes(site?.globalNotes || "");
     setTauxMateriel(site?.tauxMateriel != null ? String(site.tauxMateriel) : "");
+    setMontantDevis(site?.montantDevis != null ? String(site.montantDevis) : "");
     setCouts(Array.isArray(site?.couts) ? site.couts : []);
     setNewCoutLabel("");
     setNewCoutMontant("");
@@ -714,6 +741,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       color,
       globalNotes,
       tauxMateriel: parsedTauxMat,
+      montantDevis: montantDevis !== "" && Number.isFinite(Number(montantDevis)) && Number(montantDevis) > 0 ? Number(montantDevis) : null,
       couts,
       situations,
       origine: origine || null,
@@ -734,7 +762,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
   const totalFacture = situations.reduce((s: number, sit: any) => s + (Number(sit.montant) || 0), 0);
   const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
-  const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? 0);
+  const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? site?.montantDevis ?? 0);
   const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
   const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
   const coutTotal = moKnown + coutMateriel + totalCouts;
@@ -865,14 +893,32 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
           <div className="space-y-4 text-sm">
 
             {/* Budget */}
-            <div className="rounded-lg border border-neutral-200 p-3 space-y-1">
-              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Budget devis</div>
-              {budget > 0 ? (
-                <div className="text-xl font-bold text-neutral-900">{formatEUR(budget)}</div>
+            <div className="rounded-lg border border-neutral-200 p-3 space-y-2">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Montant du marché</div>
+              {linkedQuote ? (
+                <>
+                  <div className="text-xl font-bold text-neutral-900">{formatEUR(budget)}</div>
+                  <div className="text-[11px] text-neutral-400">Devis lié : {linkedQuote.title}</div>
+                </>
               ) : (
-                <div className="text-neutral-400 text-xs">Pas de devis lié — associez un devis à ce chantier pour calculer la marge.</div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={montantDevis}
+                      onChange={(e: any) => setMontantDevis(e.target.value)}
+                      placeholder="Saisir le montant HT (€)"
+                      className="h-8 text-sm"
+                    />
+                    {montantDevis && Number(montantDevis) > 0 && (
+                      <span className="text-sm font-semibold text-neutral-700 shrink-0">{formatEUR(Number(montantDevis))}</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-neutral-400">Pas de devis lié — entrez le montant manuellement ou associez un devis depuis l'onglet Devis.</div>
+                </div>
               )}
-              {linkedQuote && <div className="text-[11px] text-neutral-400">{linkedQuote.title}</div>}
             </div>
 
             {/* Main d'œuvre */}
@@ -3849,8 +3895,8 @@ useEffect(() => {
                       <div className="flex-1 space-y-0.5">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold text-neutral-900">{site.name}</span>
-                          {site.quoteSnapshot?.amount && (
-                            <span className="text-[11px] text-neutral-500">{formatEUR(site.quoteSnapshot.amount)}</span>
+                          {(site.quoteSnapshot?.amount || site.montantDevis) && (
+                            <span className="text-[11px] text-neutral-500">{formatEUR(site.quoteSnapshot?.amount ?? site.montantDevis)}</span>
                           )}
                         </div>
                         <div className="text-[11px] text-neutral-600 flex items-center gap-2">
