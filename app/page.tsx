@@ -1672,9 +1672,12 @@ export default function Page() {
 
   const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
-    if (!selection || selection.length === 0) return true;
-    return selection.includes(wk);
-  }, [siteWeekVisibility]);
+    if (selection && selection.length > 0) return selection.includes(wk);
+    const site = Array.isArray(sites) ? sites.find((s: any) => s.id === siteId) : null;
+    const planningWeeks: string[] = Array.isArray((site as any)?.planningWeeks) ? (site as any).planningWeeks : [];
+    if (planningWeeks.length > 0) return planningWeeks.includes(wk);
+    return true;
+  }, [siteWeekVisibility, sites]);
 
   // View / navigation
   const [view, setView] = useState<
