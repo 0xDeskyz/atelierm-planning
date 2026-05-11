@@ -5747,7 +5747,11 @@ useEffect(() => {
                                       ><Archive className="w-3.5 h-3.5" /></button>
                                     )}
                                     <button
-                                      onClick={() => removeSite(site.id)}
+                                      onClick={() => {
+                                        if (window.confirm(`Supprimer le chantier "${site.name}" ?\n\nLes affectations et notes liées seront aussi supprimées. Cette action peut être annulée avec Ctrl+Z.`)) {
+                                          removeSite(site.id);
+                                        }
+                                      }}
                                       title="Supprimer"
                                       className="p-1 rounded text-neutral-400 hover:text-red-500 transition"
                                     ><Trash2 className="w-3.5 h-3.5" /></button>
