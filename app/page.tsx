@@ -170,6 +170,122 @@ const DEMO_SITES = [
 ];
 // (DEFAULT_EVENT_CALENDARS, QUOTE_COLUMNS, QUOTE_TONES imported from lib/planner/constants)
 const DEMO_QUOTES: any[] = [];
+
+// ==================================
+// Seed équipe + planning S21/S22 (one-shot par semaine via flag)
+// ==================================
+const ROSTER_SEED_FLAG = "rosterPlanningSeed_v1";
+
+const SEED_PEOPLE_V1 = [
+  { id: "p-guillaume", name: "GUILLAUME", color: "bg-slate-700",  role: "" },
+  { id: "p-tao",       name: "TAO",       color: "bg-orange-500", role: "" },
+  { id: "p-joan",      name: "JOAN",      color: "bg-sky-500",    role: "" },
+  { id: "p-yann",      name: "YANN",      color: "bg-pink-500",   role: "" },
+  { id: "p-michel",    name: "MICHEL",    color: "bg-green-500",  role: "" },
+  { id: "p-chachou",   name: "CHACHOU",   color: "bg-teal-500",   role: "" },
+  { id: "p-charlie",   name: "CHARLIE",   color: "bg-blue-700",   role: "" },
+  { id: "p-jlou",      name: "JLOU",      color: "bg-violet-500", role: "" },
+];
+
+const SEED_SITE_ADDITIONS_V1 = [
+  { id: "s-emaus",   name: "EMAÜS",              startDate: "2026-05-25", endDate: "2026-05-29", planningWeeks: ["2026-W22"],            status: "planned" },
+  { id: "s-carnon",  name: "CARNON",             startDate: "2026-05-18", endDate: "2026-05-29", planningWeeks: ["2026-W21","2026-W22"], status: "planned" },
+  { id: "s-crech",   name: "C RECH",             startDate: "2026-05-25", endDate: "2026-05-29", planningWeeks: ["2026-W22"],            status: "planned" },
+  { id: "s-atelier", name: "Atelier",            startDate: "2026-05-18", endDate: "2026-05-29", planningWeeks: ["2026-W21","2026-W22"], status: "planned" },
+  { id: "s-ghien",   name: "GHIEN — St Clément", startDate: "2026-05-18", endDate: "2026-05-22", planningWeeks: ["2026-W21"],            status: "planned" },
+];
+
+const SEED_SITE_WEEK_PATCHES_V1: Record<string, string[]> = {
+  "s-merlin":     ["2026-W22"],
+  "s-ortin":      ["2026-W22"],
+  "s-mireval":    ["2026-W21","2026-W22"],
+  "s-colonna":    ["2026-W22"],
+  "s-belmonte":   ["2026-W22"],
+  "s-beauvallet": ["2026-W21"],
+  "s-chateau":    ["2026-W22"],
+  "s-vauvert":    ["2026-W22"],
+};
+
+const SEED_ASSIGNMENTS_BY_WEEK_V1: Record<string, Array<{ personId: string; siteId: string; date: string }>> = {
+  "2026-W21": [
+    { personId: "p-tao",     siteId: "s-thevenot",   date: "2026-05-19" },
+    { personId: "p-tao",     siteId: "s-thevenot",   date: "2026-05-20" },
+    { personId: "p-charlie", siteId: "s-chateau",    date: "2026-05-18" },
+    { personId: "p-charlie", siteId: "s-chateau",    date: "2026-05-19" },
+    { personId: "p-charlie", siteId: "s-chateau",    date: "2026-05-20" },
+    { personId: "p-tao",     siteId: "s-picard",     date: "2026-05-18" },
+    { personId: "p-tao",     siteId: "s-picard",     date: "2026-05-19" },
+    { personId: "p-tao",     siteId: "s-picard",     date: "2026-05-20" },
+    { personId: "p-joan",    siteId: "s-beauvallet", date: "2026-05-18" },
+    { personId: "p-joan",    siteId: "s-beauvallet", date: "2026-05-19" },
+    { personId: "p-joan",    siteId: "s-beauvallet", date: "2026-05-20" },
+    { personId: "p-jlou",    siteId: "s-ghien",      date: "2026-05-18" },
+    { personId: "p-jlou",    siteId: "s-ghien",      date: "2026-05-19" },
+    { personId: "p-jlou",    siteId: "s-ghien",      date: "2026-05-20" },
+    { personId: "p-jlou",    siteId: "s-ghien",      date: "2026-05-21" },
+    { personId: "p-jlou",    siteId: "s-ghien",      date: "2026-05-22" },
+    { personId: "p-tao",     siteId: "s-carnon",     date: "2026-05-18" },
+    { personId: "p-joan",    siteId: "s-atelier",    date: "2026-05-20" },
+    { personId: "p-joan",    siteId: "s-atelier",    date: "2026-05-21" },
+    { personId: "p-joan",    siteId: "s-atelier",    date: "2026-05-22" },
+  ],
+  "2026-W22": [
+    { personId: "p-tao",     siteId: "s-vauvert",  date: "2026-05-26" },
+    { personId: "p-tao",     siteId: "s-vauvert",  date: "2026-05-27" },
+    { personId: "p-joan",    siteId: "s-merlin",   date: "2026-05-25" },
+    { personId: "p-tao",     siteId: "s-merlin",   date: "2026-05-25" },
+    { personId: "p-joan",    siteId: "s-merlin",   date: "2026-05-26" },
+    { personId: "p-joan",    siteId: "s-ortin",    date: "2026-05-25" },
+    { personId: "p-tao",     siteId: "s-ortin",    date: "2026-05-25" },
+    { personId: "p-jlou",    siteId: "s-ortin",    date: "2026-05-26" },
+    { personId: "p-joan",    siteId: "s-ortin",    date: "2026-05-27" },
+    { personId: "p-jlou",    siteId: "s-ortin",    date: "2026-05-27" },
+    { personId: "p-jlou",    siteId: "s-colonna",  date: "2026-05-25" },
+    { personId: "p-jlou",    siteId: "s-colonna",  date: "2026-05-26" },
+    { personId: "p-tao",     siteId: "s-emaus",    date: "2026-05-25" },
+    { personId: "p-joan",    siteId: "s-emaus",    date: "2026-05-25" },
+    { personId: "p-joan",    siteId: "s-belmonte", date: "2026-05-26" },
+    { personId: "p-tao",     siteId: "s-crech",    date: "2026-05-26" },
+    { personId: "p-charlie", siteId: "s-atelier",  date: "2026-05-25" },
+    { personId: "p-charlie", siteId: "s-atelier",  date: "2026-05-26" },
+    { personId: "p-charlie", siteId: "s-atelier",  date: "2026-05-27" },
+  ],
+};
+
+function augmentStateWithRosterSeed(state: any, weekKey: string): any {
+  if (state && state[ROSTER_SEED_FLAG] === true) return state;
+  const out: any = { ...(state || {}) };
+
+  const currentPeople = Array.isArray(out.people) ? out.people : [];
+  const existingPeopleIds = new Set(currentPeople.map((p: any) => p?.id));
+  const missingPeople = SEED_PEOPLE_V1.filter((p) => !existingPeopleIds.has(p.id));
+  out.people = [...currentPeople, ...missingPeople];
+
+  const currentSites = Array.isArray(out.sites) ? out.sites : [];
+  const existingSiteIds = new Set(currentSites.map((s: any) => s?.id));
+  const patchedSites = currentSites.map((s: any) => {
+    const extra = SEED_SITE_WEEK_PATCHES_V1[s?.id];
+    if (!extra) return s;
+    const current: string[] = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+    return { ...s, planningWeeks: Array.from(new Set([...current, ...extra])) };
+  });
+  const newSites = SEED_SITE_ADDITIONS_V1.filter((s) => !existingSiteIds.has(s.id));
+  out.sites = [...patchedSites, ...newSites];
+
+  const weekAssignments = SEED_ASSIGNMENTS_BY_WEEK_V1[weekKey] || [];
+  if (weekAssignments.length > 0) {
+    const currentAssignments = Array.isArray(out.assignments) ? out.assignments : [];
+    const existing = new Set(currentAssignments.map((a: any) => `${a?.personId}|${a?.siteId}|${a?.date}`));
+    const toAdd = weekAssignments
+      .filter((a) => !existing.has(`${a.personId}|${a.siteId}|${a.date}`))
+      .map((a) => ({ ...a, id: `seed-${a.personId}-${a.siteId}-${a.date}` }));
+    out.assignments = [...currentAssignments, ...toAdd];
+  }
+
+  out[ROSTER_SEED_FLAG] = true;
+  return out;
+}
+
 // ==================================
 // Devis Kanban – Carte draggable
 // ==================================
@@ -3230,14 +3346,18 @@ export default function Page() {
 
         // Priorité serveur, mais on protège le cas "serveur stale" (ex: PUT échoué localement).
         // Si le cache local est plus récent, on garde le local pour éviter de perdre les dernières modifs.
+        let chosen: any = null;
         if (remoteState && localState) {
           const remoteTs = Number(remoteState.updatedAt || 0);
           const localTs = Number(localState.updatedAt || 0);
-          applyState(localTs > remoteTs ? localState : remoteState);
+          chosen = localTs > remoteTs ? localState : remoteState;
         } else if (remoteState) {
-          applyState(remoteState);
+          chosen = remoteState;
         } else if (localState) {
-          applyState(localState);
+          chosen = localState;
+        }
+        if (chosen || SEED_ASSIGNMENTS_BY_WEEK_V1[wk]) {
+          applyState(augmentStateWithRosterSeed(chosen || {}, wk));
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
@@ -3367,6 +3487,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     calendarEvents,
     validatedWeeks,
     chantiersSeeded2026: true,
+    [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
   }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
