@@ -2627,6 +2627,7 @@ export default function Page() {
     (quote: any) => {
       const normalizedQuote = normalizeQuoteForSave(quote);
       if (!normalizedQuote || normalizedQuote.status !== "won") return;
+      if (normalizedQuote.chantierDeleted === true) return;
       const snapshot = {
         title: normalizedQuote.title,
         client: normalizedQuote.client,
@@ -3178,10 +3179,15 @@ export default function Page() {
   };
   const removeSite = (id: string) => {
     pushUndo(snapshotNow());
+    const removed = sites.find((x: any) => x.id === id);
     setSites((s) => s.filter((x) => x.id !== id));
     setAssignments((as) => as.filter((a) => a.siteId !== id));
     setNotes((prev) => { const next = { ...prev } as Record<string, any>; Object.keys(next).forEach((k) => { if (k.startsWith(`${id}|`)) delete (next as any)[k]; }); return next; });
     setSiteWeekVisibility((prev) => { const { [id]: _omit, ...rest } = prev; return rest; });
+    const linkedQuoteId = (removed as any)?.quoteId;
+    if (linkedQuoteId) {
+      setQuotes((prev) => prev.map((q: any) => (q.id === linkedQuoteId ? { ...q, chantierDeleted: true, siteId: null } : q)));
+    }
   };
   const updateSiteMeta = (id: string, patch: any) =>
     setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, ...patch }) : x)));
