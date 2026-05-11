@@ -3157,7 +3157,18 @@ export default function Page() {
     const rawSites = toArray(state.sites, []);
     const OLD_DEMO_IDS = new Set(["s1", "s2"]);
     const hasOnlyOldDemo = rawSites.length > 0 && rawSites.every((s: any) => OLD_DEMO_IDS.has(s.id));
-    setSites((rawSites.length === 0 || hasOnlyOldDemo ? DEMO_SITES : rawSites).map(normalizeSiteRecord));
+    const alreadySeeded2026 = state.chantiersSeeded2026 === true;
+    let mergedSites: any[];
+    if (rawSites.length === 0 || hasOnlyOldDemo) {
+      mergedSites = DEMO_SITES;
+    } else if (!alreadySeeded2026) {
+      const existingIds = new Set(rawSites.map((s: any) => s.id));
+      const additions = DEMO_SITES.filter((s) => !existingIds.has(s.id));
+      mergedSites = [...rawSites, ...additions];
+    } else {
+      mergedSites = rawSites;
+    }
+    setSites(mergedSites.map(normalizeSiteRecord));
     setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
@@ -3352,6 +3363,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     eventCalendars,
     calendarEvents,
     validatedWeeks,
+    chantiersSeeded2026: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
   }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
