@@ -1,17 +1,37 @@
 "use client";
 
+import { useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Edit3 } from "lucide-react";
 import { cx, toLocalKey, cellKey, getPortion } from "../../lib/planner/helpers";
 import { PASTELS, EVENT_TYPES, EVENT_CELL_STYLE, ABSENCE_BADGE } from "../../lib/planner/constants";
 import { AssignmentChip } from "./chips";
 
+function useLongPress(callback: () => void, ms = 500) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startedAt = useRef<{ x: number; y: number } | null>(null);
+  const start = (e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    startedAt.current = { x: e.clientX, y: e.clientY };
+    timer.current = setTimeout(() => { callback(); timer.current = null; }, ms);
+  };
+  const cancel = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } startedAt.current = null; };
+  const move = (e: React.PointerEvent) => {
+    if (!startedAt.current || !timer.current) return;
+    const dx = Math.abs(e.clientX - startedAt.current.x);
+    const dy = Math.abs(e.clientY - startedAt.current.y);
+    if (dx > 12 || dy > 12) cancel();
+  };
+  return { onPointerDown: start, onPointerUp: cancel, onPointerCancel: cancel, onPointerLeave: cancel, onPointerMove: move };
+}
+
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, locked }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
-  const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site } });
+  const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site }, disabled: locked });
+  const longPress = useLongPress(() => { if (onCellAction && !locked) onCellAction(date, site); }, 500);
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
   const raw = notes[key];
@@ -25,7 +45,8 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
   return (
     <div
       className={cx(
-        "border min-h-20 p-2 rounded-xl bg-white magic-cell",
+        "relative border min-h-20 p-2 rounded-xl bg-white magic-cell",
+        locked && "opacity-90 pointer-events-auto",
         isOver ? "ring-2 ring-sky-400 is-over" : "",
         status === "holiday"
           ? "bg-red-50 ring-2 ring-red-300 border-red-200"
@@ -38,7 +59,12 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
       )}
       ref={setNodeRef}
       title={meta.text || ""}
+      onContextMenu={(e) => { if (!onCellAction || locked) return; e.preventDefault(); onCellAction(date, site); }}
+      {...longPress}
     >
+      {locked && (
+        <div className="absolute top-1 right-1 text-[10px] text-neutral-400" title="Semaine validée — déverrouille pour modifier">🔒</div>
+      )}
       {/* Top bar */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -97,11 +123,13 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
       </div>
 
       {/* Edit button */}
-      <div className="mt-1.5 flex justify-end">
-        <button onClick={() => onEditNote(date, site)} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
-          <Edit3 className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {!locked && (
+        <div className="mt-1.5 flex justify-end">
+          <button onClick={() => onEditNote(date, site)} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

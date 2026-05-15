@@ -1825,6 +1825,21 @@ export default function Page() {
     "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
   >("accueil");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const isEditable = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement | null)?.isContentEditable;
+      if (isEditable) return;
+      if (!(view === "planning" || view === "hours" || view === "calendar" || view === "timeline")) return;
+      if (e.key === "ArrowLeft") { e.preventDefault(); setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() - 7); return nd; }); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + 7); return nd; }); }
+      else if (e.key === "t" || e.key === "T") { e.preventDefault(); setAnchor(new Date()); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view]);
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
@@ -3059,6 +3074,60 @@ export default function Page() {
   const openNote = (date: Date, site: any) => { setNoteKeyState(cellKey(site.id, toLocalKey(date))); setNoteOpen(true); };
   const saveNote = (val: any) => { if (!noteKeyState) return; setNotes((prev) => ({ ...prev, [noteKeyState]: val })); };
 
+  const [cellClipboard, setCellClipboard] = useState<{ assignments: Array<{ personId: string; portion?: any; hours?: any }>; meta: any } | null>(null);
+  const applyCellAction = (action: string, date: Date, site: any) => {
+    const dateKey = toLocalKey(date);
+    const key = cellKey(site.id, dateKey);
+    if (action === "holiday") {
+      setNotes((prev) => {
+        const cur = typeof prev[key] === "string" ? { text: prev[key] } : (prev[key] || {});
+        return { ...prev, [key]: { ...cur, holiday: !cur.holiday, blocked: false } };
+      });
+    } else if (action === "blocked") {
+      setNotes((prev) => {
+        const cur = typeof prev[key] === "string" ? { text: prev[key] } : (prev[key] || {});
+        return { ...prev, [key]: { ...cur, blocked: !cur.blocked, holiday: false } };
+      });
+    } else if (action === "duplicateYesterday") {
+      const y = new Date(date);
+      y.setDate(y.getDate() - 1);
+      const yKey = toLocalKey(y);
+      const yAss = assignments.filter((a: any) => a.siteId === site.id && a.date === yKey);
+      if (yAss.length === 0) { showToast("Aucune affectation hier"); setCellActionTarget(null); return; }
+      const dup = yAss.map((a: any) => ({
+        id: `dup-${a.personId}-${site.id}-${dateKey}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        personId: a.personId,
+        siteId: site.id,
+        date: dateKey,
+        portion: a.portion,
+        hours: a.hours,
+      }));
+      setAssignments((prev) => [...prev, ...dup]);
+      showToast(`${dup.length} affectation${dup.length > 1 ? "s" : ""} dupliquée${dup.length > 1 ? "s" : ""} depuis hier`);
+    } else if (action === "clear") {
+      setAssignments((prev) => prev.filter((a: any) => !(a.siteId === site.id && a.date === dateKey)));
+      setNotes((prev) => { const next = { ...prev }; delete next[key]; return next; });
+      showToast("Cellule vidée");
+    } else if (action === "copy") {
+      const cellAss = assignments.filter((a: any) => a.siteId === site.id && a.date === dateKey);
+      setCellClipboard({ assignments: cellAss.map((a: any) => ({ personId: a.personId, portion: a.portion, hours: a.hours })), meta: notes[key] || null });
+      showToast(`Cellule copiée (${cellAss.length} affectation${cellAss.length > 1 ? "s" : ""})`);
+    } else if (action === "paste" && cellClipboard) {
+      const pasted = cellClipboard.assignments.map((a) => ({
+        id: `paste-${a.personId}-${site.id}-${dateKey}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        personId: a.personId,
+        siteId: site.id,
+        date: dateKey,
+        portion: a.portion,
+        hours: a.hours,
+      }));
+      setAssignments((prev) => [...prev, ...pasted]);
+      if (cellClipboard.meta) setNotes((prev) => ({ ...prev, [key]: cellClipboard.meta }));
+      showToast("Cellule collée");
+    }
+    setCellActionTarget(null);
+  };
+
   const clearCurrentWeek = () => {
     const confirmClear = window.confirm(
       "Supprimer toutes les affectations, notes et absences de la semaine courante ?"
@@ -3928,6 +3997,41 @@ useEffect(() => {
                   <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Suivant">
                     <ChevronRight className="w-4 h-4" />
                   </Button>
+                  <button
+                    onClick={() => setAnchor(new Date())}
+                    className={cx(
+                      "h-9 px-3 rounded-lg text-sm font-semibold border transition",
+                      isViewingCurrentWeek
+                        ? "bg-sky-50 border-sky-200 text-sky-700"
+                        : "bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-700"
+                    )}
+                    title="Revenir à la semaine en cours (raccourci : T)"
+                  >
+                    Aujourd'hui
+                  </button>
+                  {(view === "planning" || view === "hours") && (
+                    <button
+                      onClick={() => {
+                        if (validatedWeeks[currentWeekKey]) {
+                          if (window.confirm("Déverrouiller cette semaine ? Les modifications redeviendront possibles.")) {
+                            setValidatedWeeks((prev) => { const next = { ...prev }; delete next[currentWeekKey]; return next; });
+                          }
+                        } else {
+                          setValidatedWeeks((prev) => ({ ...prev, [currentWeekKey]: new Date().toISOString() }));
+                          showToast("Semaine verrouillée");
+                        }
+                      }}
+                      className={cx(
+                        "h-9 w-9 rounded-lg text-base border transition flex items-center justify-center",
+                        validatedWeeks[currentWeekKey]
+                          ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                          : "bg-white border-neutral-300 text-neutral-500 hover:bg-neutral-50"
+                      )}
+                      title={validatedWeeks[currentWeekKey] ? "Semaine verrouillée — cliquer pour déverrouiller" : "Verrouiller la semaine (empêche les modifications accidentelles)"}
+                    >
+                      {validatedWeeks[currentWeekKey] ? "🔒" : "🔓"}
+                    </button>
+                  )}
                 </div>
                 <div className="font-semibold text-base flex items-center gap-2">
                   <CalendarRange className="w-5 h-5" />
@@ -4844,7 +4948,28 @@ useEffect(() => {
           )}
 
           {/* Right column: Calendars */}
-          <div className={cx("col-span-12", view === "calendar" ? "lg:col-span-12" : "lg:col-span-9")}>
+          <div
+            className={cx("col-span-12", view === "calendar" ? "lg:col-span-12" : "lg:col-span-9")}
+            onTouchStart={(e) => {
+              if (!(isPlanningWeek || view === "hours")) return;
+              const t = e.touches[0]; if (!t) return;
+              (e.currentTarget as any).__swipe = { x: t.clientX, y: t.clientY, at: Date.now() };
+            }}
+            onTouchEnd={(e) => {
+              if (!(isPlanningWeek || view === "hours")) return;
+              const st = (e.currentTarget as any).__swipe;
+              if (!st) return;
+              (e.currentTarget as any).__swipe = null;
+              const t = e.changedTouches[0]; if (!t) return;
+              const dx = t.clientX - st.x;
+              const dy = t.clientY - st.y;
+              const dt = Date.now() - st.at;
+              if (dt > 600) return;
+              if (Math.abs(dx) < 80) return;
+              if (Math.abs(dy) > Math.abs(dx) * 0.6) return;
+              shift(dx < 0 ? 1 : -1);
+            }}
+          >
             {/* WEEK VIEW */}
             {isPlanningWeek && (
               <div className="space-y-2">
@@ -4910,6 +5035,8 @@ useEffect(() => {
                             onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
                             publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                             absencesByDay={absencesByDay}
+                            onCellAction={(dt: Date, st: any) => setCellActionTarget({ date: dt, site: st })}
+                            locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                           />
                         ))}
                       </div>
@@ -5096,6 +5223,8 @@ useEffect(() => {
                                   onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
                                         publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                                   absencesByDay={absencesByDay}
+                                  onCellAction={(dt: Date, st: any) => setCellActionTarget({ date: dt, site: st })}
+                                  locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                                 />
                               ))}
                             </div>
@@ -7023,6 +7152,83 @@ useEffect(() => {
             </div>
           </div>
         </>
+      )}
+
+      {/* Bottom sheet actions cellule (long-press / clic droit) */}
+      {cellActionTarget && (() => {
+        const { date, site } = cellActionTarget;
+        const dateKey = toLocalKey(date);
+        const key = cellKey(site.id, dateKey);
+        const meta = typeof notes[key] === "string" ? { text: notes[key] } : (notes[key] || {});
+        const cellAss = assignments.filter((a: any) => a.siteId === site.id && a.date === dateKey);
+        const actions: Array<{ id: string; label: string; icon: string; danger?: boolean; disabled?: boolean }> = [
+          { id: "holiday", label: meta.holiday ? "Retirer férié" : "Marquer férié", icon: meta.holiday ? "✓ 🏖" : "🏖" },
+          { id: "blocked", label: meta.blocked ? "Retirer indispo" : "Marquer indispo", icon: meta.blocked ? "✓ 🚧" : "🚧" },
+          { id: "duplicateYesterday", label: "Dupliquer la veille", icon: "↩" },
+          { id: "copy", label: `Copier la cellule${cellAss.length > 0 ? ` (${cellAss.length})` : ""}`, icon: "⧉" },
+          { id: "paste", label: "Coller", icon: "⇲", disabled: !cellClipboard },
+          { id: "clear", label: "Vider la cellule", icon: "✕", danger: true, disabled: cellAss.length === 0 && !meta.text && !meta.holiday && !meta.blocked },
+        ];
+        return (
+          <>
+            <div onClick={() => setCellActionTarget(null)} className="fixed inset-0 bg-black/30 z-40 animate-fadeIn" />
+            <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl border-t border-neutral-200 p-4 max-w-2xl mx-auto">
+              <div className="w-10 h-1 rounded-full bg-neutral-200 mx-auto mb-3" />
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-semibold text-neutral-800">{site.name}</div>
+                  <div className="text-xs text-neutral-500">{date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</div>
+                </div>
+                <button onClick={() => setCellActionTarget(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 flex items-center justify-center">×</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {actions.map((a) => (
+                  <button
+                    key={a.id}
+                    disabled={a.disabled}
+                    onClick={() => applyCellAction(a.id, date, site)}
+                    className={cx(
+                      "flex items-center gap-2 px-3 py-3 rounded-lg border text-sm font-medium text-left transition",
+                      a.disabled
+                        ? "bg-neutral-50 border-neutral-100 text-neutral-300 cursor-not-allowed"
+                        : a.danger
+                          ? "bg-white border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
+                          : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                    )}
+                  >
+                    <span className="text-base shrink-0">{a.icon}</span>
+                    <span>{a.label}</span>
+                  </button>
+                ))}
+                <button
+                  onClick={() => { setCellActionTarget(null); openNote(date, site); }}
+                  className="col-span-2 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-300 bg-neutral-50 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 transition"
+                >
+                  ✎ Édition complète…
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* FAB ⊕ — Ajouter rapide */}
+      {(view === "planning" || view === "hours" || view === "calendar") && (
+        <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2">
+          {fabOpen && (
+            <div className="flex flex-col gap-2 mb-1 animate-fadeIn">
+              <button onClick={() => { setFabOpen(false); setEventDialogOpen(true); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">📅 Événement</button>
+              <button onClick={() => { setFabOpen(false); setView("sites"); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">🏗 Chantier</button>
+              <button onClick={() => { setFabOpen(false); setView("salaries"); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">👤 Salarié</button>
+            </div>
+          )}
+          <button
+            onClick={() => setFabOpen((v) => !v)}
+            className="w-14 h-14 rounded-full bg-neutral-900 text-white text-3xl font-light shadow-2xl hover:bg-neutral-700 transition flex items-center justify-center"
+            style={{ transform: fabOpen ? "rotate(45deg)" : "none", transition: "transform 200ms ease" }}
+            aria-label="Ajouter"
+          >+</button>
+        </div>
       )}
     </div>
   );
