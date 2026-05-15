@@ -445,7 +445,7 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
-function CalendarSiteChip({ site, weekKey, className, isNew }: { site: any; weekKey: string; className?: string; isNew?: boolean }) {
+function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
@@ -457,16 +457,9 @@ function CalendarSiteChip({ site, weekKey, className, isNew }: { site: any; week
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(
-        className,
-        "cursor-grab active:cursor-grabbing select-none relative overflow-hidden",
-        isDragging && "opacity-50"
-      )}
-      title={isNew ? `${site.name} (chantier récent)` : site.name}
+      className={cx(className, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
+      title={site.name}
     >
-      {isNew && (
-        <span aria-hidden className="absolute top-0 inset-x-0 h-[3px] bg-amber-300" />
-      )}
       {site.name}
     </div>
   );
@@ -2724,7 +2717,6 @@ export default function Page() {
         const colorIndex = hashString(String(normalizedQuote.id || normalizedQuote.title || baseStart)) % SITE_COLORS.length;
         const newSite = normalizeSiteRecord({
           id,
-          createdAt: new Date().toISOString(),
           name: normalizedQuote.title || "Chantier issu d'un devis",
           startDate: baseStart,
           endDate: baseEnd,
@@ -2820,7 +2812,6 @@ export default function Page() {
     const colorIndex = hashString(String(quote.id || quote.title || Date.now())) % SITE_COLORS.length;
     const newSite = normalizeSiteRecord({
       id,
-      createdAt: new Date().toISOString(),
       name: quote.title || "Chantier",
       clientName: quote.client || "",
       clientId: quote.clientId || undefined,
@@ -3267,7 +3258,6 @@ export default function Page() {
       ...s,
       normalizeSiteRecord({
         id,
-        createdAt: new Date().toISOString(),
         name,
         startDate,
         endDate,
@@ -3284,7 +3274,7 @@ export default function Page() {
     const original = safeSites.find((s) => s.id === id);
     if (!original) return;
     const newId = ensureId(original.name + "-copy", "site");
-    const copy = normalizeSiteRecord({ ...original, id: newId, createdAt: new Date().toISOString(), name: `${original.name} (copie)`, status: "planned" });
+    const copy = normalizeSiteRecord({ ...original, id: newId, name: `${original.name} (copie)`, status: "planned" });
     setSites((prev) => [...prev, copy]);
     setSiteWeekVisibility((prev) => original.planningWeeks?.length ? { ...prev, [newId]: original.planningWeeks } : prev);
     showToast(`"${original.name}" dupliqué`);
@@ -5345,19 +5335,14 @@ useEffect(() => {
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés */}
-                              {calFilterPlanned && week.planned.map((site: any) => {
-                                const createdMs = site.createdAt ? Date.parse(String(site.createdAt)) : NaN;
-                                const isRecentlyCreated = Number.isFinite(createdMs) && (Date.now() - createdMs) < 14 * 24 * 60 * 60 * 1000;
-                                return (
-                                  <CalendarSiteChip
-                                    key={`p-${site.id}`}
-                                    site={site}
-                                    weekKey={week.weekKey}
-                                    isNew={isRecentlyCreated}
-                                    className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                  />
-                                );
-                              })}
+                              {calFilterPlanned && week.planned.map((site: any) => (
+                                <CalendarSiteChip
+                                  key={`p-${site.id}`}
+                                  site={site}
+                                  weekKey={week.weekKey}
+                                  className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                />
+                              ))}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
