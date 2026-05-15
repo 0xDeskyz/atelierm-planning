@@ -1825,6 +1825,19 @@ export default function Page() {
     "accueil" | "planning" | "hours" | "calendar" | "minimap" | "sites" | "salaries" | "rentabilite"
   >("accueil");
   const [minimapYear, setMinimapYear] = useState<number>(() => getISOWeekYear(new Date()));
+  const [minimapMode, setMinimapMode] = useState<"list" | "density">("list");
+  const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (view !== "calendar") return;
+    const el = calendarScrollRef.current;
+    if (!el) return;
+    const todayKeyWk = weekKeyOf(new Date());
+    const idx = projectionWeekSummaries.findIndex((w: any) => w.weekKey === todayKeyWk);
+    if (idx < 0) return;
+    const colW = 152;
+    const target = Math.max(0, idx * colW - el.clientWidth / 2 + colW / 2);
+    requestAnimationFrame(() => { el.scrollLeft = target; });
+  }, [view, projectionWeekSummaries]);
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
@@ -5139,7 +5152,7 @@ useEffect(() => {
 
                 {/* Table horizontale */}
                 <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto" ref={calendarScrollRef}>
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
                       {projectionWeekSummaries.map((week) => {
                         const isCurrentWeek = week.weekKey === weekKeyOf(new Date());
@@ -5899,6 +5912,19 @@ useEffect(() => {
                       <button onClick={() => setMinimapYear((y) => y + 1)} className="h-8 w-8 rounded-md border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center">›</button>
                       <button onClick={() => setMinimapYear(getISOWeekYear(new Date()))} className="ml-1 h-8 px-3 rounded-md border border-neutral-200 hover:bg-neutral-50 text-xs">Aujourd'hui</button>
                     </div>
+                    <div className="ml-3 flex items-center gap-1 border-l border-neutral-200 pl-3">
+                      {(["list", "density"] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setMinimapMode(m)}
+                          className={cx(
+                            "h-8 px-3 rounded-md text-xs font-medium transition border",
+                            minimapMode === m ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-500 border-neutral-200 hover:bg-neutral-50"
+                          )}
+                          title={m === "list" ? "Une ligne par chantier (vue Gantt)" : "Charge agrégée par semaine"}
+                        >{m === "list" ? "Gantt" : "Densité"}</button>
+                      ))}
+                    </div>
                     <div className="ml-auto text-xs text-neutral-500">{rows.length} chantier{rows.length > 1 ? "s" : ""} · {weeksInYear} semaines</div>
                   </div>
                   <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
@@ -5940,7 +5966,7 @@ useEffect(() => {
                       {rows.length === 0 && (
                         <div className="px-4 py-8 text-center text-sm text-neutral-400">Aucun chantier à afficher.</div>
                       )}
-                      {rows.map((s: any) => {
+                      {minimapMode === "list" && rows.map((s: any) => {
                         const planning = new Set<string>(Array.isArray(s.planningWeeks) ? s.planningWeeks : []);
                         return (
                           <div key={s.id} className="flex items-stretch border-b border-neutral-100 hover:bg-neutral-50/60">
@@ -5968,6 +5994,50 @@ useEffect(() => {
                           </div>
                         );
                       })}
+                      {minimapMode === "density" && (() => {
+                        const sitesPerWeek: Record<string, any[]> = {};
+                        weekKeys.forEach((wk) => { sitesPerWeek[wk] = []; });
+                        rows.forEach((s: any) => {
+                          (Array.isArray(s.planningWeeks) ? s.planningWeeks : []).forEach((wk: string) => {
+                            if (sitesPerWeek[wk]) sitesPerWeek[wk].push(s);
+                          });
+                        });
+                        const maxCount = Math.max(1, ...Object.values(sitesPerWeek).map((arr) => arr.length));
+                        const SEG_H = 6;
+                        const TRACK_H = Math.max(60, (maxCount + 1) * SEG_H);
+                        return (
+                          <div className="flex items-stretch border-b border-neutral-100">
+                            <div className="shrink-0 px-3 py-2 text-xs font-medium text-neutral-700 border-r border-neutral-200 flex flex-col justify-between" style={{ width: nameColW }}>
+                              <span>Charge / semaine</span>
+                              <span className="text-[10px] text-neutral-400">max : {maxCount} chantier{maxCount > 1 ? "s" : ""}</span>
+                            </div>
+                            {weekKeys.map((wk, i) => {
+                              const list = sitesPerWeek[wk];
+                              const isCurrent = wk === todayWk;
+                              const tooltip = list.length > 0
+                                ? `S${i + 1} · ${list.length} chantier${list.length > 1 ? "s" : ""}\n${list.map((x) => "• " + x.name).join("\n")}`
+                                : `S${i + 1} · aucun chantier`;
+                              return (
+                                <button
+                                  key={`d-${wk}`}
+                                  onClick={() => { setAnchor(weekStarts[i]); setView("planning"); }}
+                                  title={tooltip}
+                                  className={cx(
+                                    "shrink-0 border-l border-neutral-100 flex flex-col-reverse items-stretch p-0.5 gap-px transition",
+                                    isCurrent && "bg-sky-50/70",
+                                    "hover:bg-sky-50"
+                                  )}
+                                  style={{ width: COL_W, height: TRACK_H }}
+                                >
+                                  {list.map((s: any, segIdx: number) => (
+                                    <span key={segIdx} className={cx("block rounded-sm", s.color || "bg-neutral-400")} style={{ height: SEG_H }} />
+                                  ))}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   <p className="text-xs text-neutral-400">Clic sur une case ou un numéro de semaine pour ouvrir le planning de cette semaine.</p>
