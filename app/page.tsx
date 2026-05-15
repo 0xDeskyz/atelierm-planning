@@ -1757,13 +1757,33 @@ export default function Page() {
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
-  const [branding, setBranding] = useState({
+  const [branding, setBranding] = useState<{
+    logoText: string;
+    logoImage: string | null;
+    title: string;
+    subtitle: string;
+    accentColor: string;
+    density: "normal" | "compact";
+  }>({
     logoText: "BT",
+    logoImage: null,
     title: "BTP Planner",
     subtitle: "Tableau de bord & suivi collaboratif",
     accentColor: "#000000",
-    density: "normal" as "normal" | "compact",
+    density: "normal",
   });
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("btp-planner-branding:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setBranding((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("btp-planner-branding:v1", JSON.stringify(branding)); } catch {}
+  }, [branding]);
   // Undo stack — 20 snapshots max
   const undoStack = useRef<any[]>([]);
   const pushUndo = useCallback((snapshot: any) => {
@@ -3765,9 +3785,13 @@ useEffect(() => {
           <div className="rounded-xl border bg-white shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
             {/* Logo */}
             <div className="flex items-center gap-2.5 pr-4 border-r border-neutral-100 shrink-0">
-              <div className="h-8 w-8 rounded-lg text-white flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: branding.accentColor }}>
-                {branding.logoText}
-              </div>
+              {branding.logoImage ? (
+                <img src={branding.logoImage} alt="logo" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+              ) : (
+                <div className="h-8 w-8 rounded-lg text-white flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: branding.accentColor }}>
+                  {branding.logoText}
+                </div>
+              )}
               <span className="text-sm font-semibold text-neutral-800 hidden sm:block">{branding.title}</span>
             </div>
 
@@ -6817,6 +6841,50 @@ useEffect(() => {
               {settingsTab === "perso" && (
                 <div className="space-y-4">
                   <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-neutral-600">Logo (image)</label>
+                    <div className="flex items-center gap-3">
+                      {branding.logoImage ? (
+                        <img src={branding.logoImage} alt="logo" className="h-12 w-12 rounded-lg object-cover border border-neutral-200" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-lg text-white flex items-center justify-center font-bold text-base border border-neutral-200" style={{ backgroundColor: branding.accentColor }}>
+                          {branding.logoText}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <label className="px-3 py-1.5 rounded-md border border-neutral-300 text-xs font-medium cursor-pointer hover:bg-neutral-50">
+                          {branding.logoImage ? "Changer" : "Importer"}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 500_000) {
+                                alert("Image trop lourde (max 500 Ko). Compresse-la d'abord.");
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                const dataUrl = String(reader.result || "");
+                                setBranding((prev) => ({ ...prev, logoImage: dataUrl }));
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {branding.logoImage && (
+                          <button
+                            onClick={() => setBranding((prev) => ({ ...prev, logoImage: null }))}
+                            className="px-3 py-1.5 rounded-md border border-neutral-300 text-xs font-medium hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                          >Retirer</button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-neutral-400">PNG, JPG, SVG ou WebP. Max 500 Ko. Si aucune image, les initiales ci-dessous sont utilisées.</p>
+                  </div>
+                  <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-neutral-600">Initiales / logo texte</label>
                     <Input
                       value={branding.logoText}
@@ -6874,7 +6942,7 @@ useEffect(() => {
                       ))}
                     </div>
                   </div>
-                  <p className="text-xs text-neutral-400">La personnalisation est locale à votre navigateur pour l'instant.</p>
+                  <p className="text-xs text-neutral-400">La personnalisation est mémorisée dans votre navigateur (local). Pour la retrouver sur un autre poste, exportez/importez les données.</p>
                 </div>
               )}
 
