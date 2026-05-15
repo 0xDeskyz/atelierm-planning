@@ -445,22 +445,35 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
-function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
+function CalendarSiteChip({ site, weekKey, className, position }: { site: any; weekKey: string; className?: string; position?: "first" | "middle" | "last" | "single" | "none" }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
   });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
+  const style: any = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : {};
+  const isMiddle = position === "middle";
+  const hex = site.color ? (COLOR_HEX[site.color] || null) : null;
+  if (isMiddle && hex) {
+    style.borderLeftColor = hex;
+    style.color = hex;
+  }
+  const marker = position === "first" ? "▸ " : position === "last" ? "✓ " : "";
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
-      title={site.name}
+      className={cx(
+        "cursor-grab active:cursor-grabbing select-none",
+        isMiddle
+          ? "text-[10px] pl-1.5 pr-2 py-px rounded-r font-medium leading-5 bg-white border-l-[3px] truncate"
+          : className,
+        isDragging && "opacity-50"
+      )}
+      title={`${site.name}${position === "first" ? " · début" : position === "last" ? " · fin" : position === "middle" ? " · en cours" : ""}`}
     >
-      {site.name}
+      {isMiddle ? site.name : <>{marker}{site.name}</>}
     </div>
   );
 }
@@ -5308,6 +5321,21 @@ useEffect(() => {
                                   <span className="text-[10px] text-neutral-400">
                                     {week.start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
                                   </span>
+                                  {(() => {
+                                    const total = (calFilterPlanned ? week.planned.length : 0) + (calFilterPending ? week.pending.length : 0);
+                                    if (total === 0) return null;
+                                    return (
+                                      <span
+                                        className={cx(
+                                          "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+                                          total >= 10 ? "bg-red-100 text-red-700"
+                                          : total >= 6 ? "bg-amber-100 text-amber-700"
+                                          : "bg-neutral-100 text-neutral-600"
+                                        )}
+                                        title={`${total} chantier${total > 1 ? "s" : ""} cette semaine`}
+                                      >{total}</span>
+                                    );
+                                  })()}
                                 </div>
                                 <button
                                   onClick={() => openEventDialogForDate(toLocalKey(week.start))}
@@ -5320,14 +5348,24 @@ useEffect(() => {
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés */}
-                              {calFilterPlanned && week.planned.map((site: any) => (
-                                <CalendarSiteChip
-                                  key={`p-${site.id}`}
-                                  site={site}
-                                  weekKey={week.weekKey}
-                                  className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                />
-                              ))}
+                              {calFilterPlanned && week.planned.map((site: any) => {
+                                const planning: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                                const setWk = new Set(planning);
+                                const prevWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() - 7); return weekKeyOf(d); })();
+                                const nextWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() + 7); return weekKeyOf(d); })();
+                                const hasPrev = prevWk ? setWk.has(prevWk) : false;
+                                const hasNext = nextWk ? setWk.has(nextWk) : false;
+                                const position: "first" | "middle" | "last" | "single" = !hasPrev && !hasNext ? "single" : !hasPrev ? "first" : !hasNext ? "last" : "middle";
+                                return (
+                                  <CalendarSiteChip
+                                    key={`p-${site.id}`}
+                                    site={site}
+                                    weekKey={week.weekKey}
+                                    position={position}
+                                    className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                  />
+                                );
+                              })}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
