@@ -459,18 +459,15 @@ function CalendarSiteChip({ site, weekKey, className, isNew }: { site: any; week
       {...attributes}
       className={cx(
         className,
-        "cursor-grab active:cursor-grabbing select-none relative",
-        isNew && "ring-[3px] ring-amber-300 ring-offset-1 shadow-lg new-chantier-glow",
+        "cursor-grab active:cursor-grabbing select-none relative overflow-hidden",
         isDragging && "opacity-50"
       )}
-      title={isNew ? `🆕 ${site.name} (démarre cette semaine)` : site.name}
+      title={isNew ? `${site.name} (chantier récent)` : site.name}
     >
       {isNew && (
-        <span className="absolute -top-2 -left-1 bg-amber-400 text-neutral-900 text-[9px] font-extrabold uppercase px-1.5 py-px rounded-full leading-none shadow-md border border-amber-500 tracking-wide">
-          Nouveau
-        </span>
+        <span aria-hidden className="absolute top-0 inset-x-0 h-[3px] bg-amber-300" />
       )}
-      {isNew ? `🆕 ${site.name}` : site.name}
+      {site.name}
     </div>
   );
 }
@@ -2727,6 +2724,7 @@ export default function Page() {
         const colorIndex = hashString(String(normalizedQuote.id || normalizedQuote.title || baseStart)) % SITE_COLORS.length;
         const newSite = normalizeSiteRecord({
           id,
+          createdAt: new Date().toISOString(),
           name: normalizedQuote.title || "Chantier issu d'un devis",
           startDate: baseStart,
           endDate: baseEnd,
@@ -2822,6 +2820,7 @@ export default function Page() {
     const colorIndex = hashString(String(quote.id || quote.title || Date.now())) % SITE_COLORS.length;
     const newSite = normalizeSiteRecord({
       id,
+      createdAt: new Date().toISOString(),
       name: quote.title || "Chantier",
       clientName: quote.client || "",
       clientId: quote.clientId || undefined,
@@ -3268,6 +3267,7 @@ export default function Page() {
       ...s,
       normalizeSiteRecord({
         id,
+        createdAt: new Date().toISOString(),
         name,
         startDate,
         endDate,
@@ -3284,7 +3284,7 @@ export default function Page() {
     const original = safeSites.find((s) => s.id === id);
     if (!original) return;
     const newId = ensureId(original.name + "-copy", "site");
-    const copy = normalizeSiteRecord({ ...original, id: newId, name: `${original.name} (copie)`, status: "planned" });
+    const copy = normalizeSiteRecord({ ...original, id: newId, createdAt: new Date().toISOString(), name: `${original.name} (copie)`, status: "planned" });
     setSites((prev) => [...prev, copy]);
     setSiteWeekVisibility((prev) => original.planningWeeks?.length ? { ...prev, [newId]: original.planningWeeks } : prev);
     showToast(`"${original.name}" dupliqué`);
@@ -5346,21 +5346,15 @@ useEffect(() => {
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés */}
                               {calFilterPlanned && week.planned.map((site: any) => {
-                                const planning: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                const setWk = new Set(planning);
-                                const prevWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() - 7); return weekKeyOf(d); })();
-                                const isNew = prevWk ? !setWk.has(prevWk) : true;
+                                const createdMs = site.createdAt ? Date.parse(String(site.createdAt)) : NaN;
+                                const isRecentlyCreated = Number.isFinite(createdMs) && (Date.now() - createdMs) < 14 * 24 * 60 * 60 * 1000;
                                 return (
                                   <CalendarSiteChip
                                     key={`p-${site.id}`}
                                     site={site}
                                     weekKey={week.weekKey}
-                                    isNew={isNew}
-                                    className={cx(
-                                      "rounded font-semibold text-white shadow-sm leading-5",
-                                      isNew ? "text-[11px] px-2.5 py-1 mt-2" : "text-[10px] px-2 py-px",
-                                      site.color || "bg-sky-500"
-                                    )}
+                                    isNew={isRecentlyCreated}
+                                    className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
                                   />
                                 );
                               })}
