@@ -2782,10 +2782,6 @@ export default function Page() {
     setQuoteDetail((prev) => (prev ? normalizeQuoteRecord({ ...prev, ...refreshed }) : prev));
   }, [quotes, quoteDetail?.id]);
 
-  useEffect(() => {
-    safeQuotes.forEach((q) => upsertChantierFromQuote(q));
-  }, [safeQuotes, upsertChantierFromQuote]);
-
   const createSiteFromQuote = useCallback((quote: any) => {
     const id = typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `site-${Date.now()}`;
     const colorIndex = hashString(String(quote.id || quote.title || Date.now())) % SITE_COLORS.length;
