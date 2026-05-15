@@ -39,27 +39,22 @@ body { background: #fafafa; }
   transform: rotate(-6deg) scale(1.12);
 }
 
-/* Cellules : texture liège visible pour rappeler le tableau physique */
+/* Cellules : texture liège quasi-imperceptible, fond blanc préservé */
 .magic-board .magic-cell {
-  background-color: #fbf6ee;
   background-image:
-    radial-gradient(circle at 12% 22%, rgba(150,105,55,0.18) 0 1.4px, transparent 2.2px),
-    radial-gradient(circle at 78% 64%, rgba(165,120,70,0.15) 0 1.2px, transparent 2px),
-    radial-gradient(circle at 38% 82%, rgba(140,95,50,0.17) 0 1.4px, transparent 2.2px),
-    radial-gradient(circle at 60% 18%, rgba(170,125,75,0.14) 0 1.2px, transparent 2px),
-    radial-gradient(circle at 22% 58%, rgba(145,100,55,0.12) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 88% 32%, rgba(160,115,65,0.13) 0 1.2px, transparent 2px);
-  background-size: 18px 18px, 26px 26px, 22px 22px, 30px 30px, 14px 14px, 20px 20px;
-  background-position: 0 0, 7px 3px, 11px 9px, 4px 13px, 9px 5px, 2px 11px;
-  box-shadow: inset 0 0 0 1px rgba(120,80,40,0.08);
+    radial-gradient(circle at 12% 22%, rgba(150,105,55,0.05) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 78% 64%, rgba(165,120,70,0.04) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 38% 82%, rgba(140,95,50,0.05) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 60% 18%, rgba(170,125,75,0.04) 0 1px, transparent 1.6px);
+  background-size: 26px 26px, 34px 34px, 30px 30px, 38px 38px;
+  background-position: 0 0, 7px 3px, 11px 9px, 4px 13px;
   transition: box-shadow 200ms ease;
 }
 
 .magic-board .magic-cell.is-over {
   box-shadow:
-    inset 0 0 0 1px rgba(120,80,40,0.08),
-    inset 0 0 0 3px rgba(56,189,248,0.65),
-    0 0 0 5px rgba(56,189,248,0.14);
+    inset 0 0 0 2px rgba(56,189,248,0.55),
+    0 0 0 4px rgba(56,189,248,0.10);
 }
 
 /* Animation de "pose" quand on lâche une affectation */
