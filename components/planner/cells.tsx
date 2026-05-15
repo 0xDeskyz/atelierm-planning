@@ -25,8 +25,8 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
   return (
     <div
       className={cx(
-        "border min-h-20 p-2 rounded-xl bg-white",
-        isOver ? "ring-2 ring-sky-400" : "",
+        "border min-h-20 p-2 rounded-xl bg-white magic-cell",
+        isOver ? "ring-2 ring-sky-400 is-over" : "",
         status === "holiday"
           ? "bg-red-50 ring-2 ring-red-300 border-red-200"
           : status === "blocked"
@@ -120,7 +120,7 @@ export function HoursCell({ date, site, assignments, people, notes, hoursPerDay,
   return (
     <div
       className={cx(
-        "border min-h-[6rem] p-3 rounded-xl bg-white",
+        "border min-h-[6rem] p-3 rounded-xl bg-white magic-cell",
         status === "holiday"
           ? "bg-red-50 ring-2 ring-red-300 border-red-200"
           : status === "blocked"

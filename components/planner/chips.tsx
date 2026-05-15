@@ -7,14 +7,14 @@ import { cx, getPortion } from "../../lib/planner/helpers";
 // Draggable Person Chip
 // ==================================
 export function PersonChip({ person }: any) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `person-${person.id}`, data: { type: "person", person } });
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: "none" }
     : { touchAction: "none" };
   const initials = person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes}
-      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs shadow cursor-grab hover:brightness-110 transition", person.color || "bg-neutral-500")}
+      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs cursor-grab magic-chip-inner", person.color || "bg-neutral-500", isDragging && "is-dragging")}
     >
       <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center font-semibold text-[10px] shrink-0">{initials}</span>
       <span className="font-medium">{person.name}</span>
@@ -49,9 +49,9 @@ export function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any
       {...listeners}
       {...attributes}
       className={cx(
-        "pl-1 pr-2 py-0.5 rounded-full text-white text-xs flex items-center gap-1.5 select-none transition",
+        "pl-1 pr-2 py-0.5 rounded-full text-white text-xs flex items-center gap-1.5 select-none magic-chip-inner",
         person.color || "bg-neutral-500",
-        isDragging ? "opacity-80 ring-2 ring-black/30" : "hover:brightness-105",
+        isDragging ? "is-dragging opacity-95" : "hover:brightness-105",
         conflict ? "ring-2 ring-amber-400" : ""
       )}
       title={hasCustomHours ? `${person.name} – ${hours || 0}h` : portion !== 1 ? `${person.name} – ${portion} j.` : person.name}

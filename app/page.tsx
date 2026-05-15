@@ -1764,6 +1764,7 @@ export default function Page() {
     subtitle: string;
     accentColor: string;
     density: "normal" | "compact";
+    magicBoard: boolean;
   }>({
     logoText: "BT",
     logoImage: null,
@@ -1771,6 +1772,7 @@ export default function Page() {
     subtitle: "Tableau de bord & suivi collaboratif",
     accentColor: "#000000",
     density: "normal",
+    magicBoard: true,
   });
   const brandingHydrated = useRef(false);
   useEffect(() => {
@@ -3776,7 +3778,7 @@ useEffect(() => {
   // UI (Semaine / Mois / Heures)
   // ==========================
   return (
-    <div className="p-4 md:p-6 space-y-4 min-h-screen bg-neutral-50">
+    <div className={cx("p-4 md:p-6 space-y-4 min-h-screen bg-neutral-50", branding.magicBoard && "magic-board")}>
       {/* Header */}
       <div className="space-y-2">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
@@ -6940,6 +6942,20 @@ useEffect(() => {
                         </button>
                       ))}
                     </div>
+                  </div>
+                  <div className="space-y-1.5 pt-2 border-t border-neutral-100">
+                    <label className="text-xs font-semibold text-neutral-600">Tableau magique</label>
+                    <button
+                      onClick={() => setBranding((prev) => ({ ...prev, magicBoard: !prev.magicBoard }))}
+                      className={cx(
+                        "w-full flex items-center justify-between p-3 rounded-md border text-sm transition",
+                        branding.magicBoard ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-300 hover:bg-neutral-50"
+                      )}
+                    >
+                      <span>{branding.magicBoard ? "Activé" : "Désactivé"}</span>
+                      <span className={cx("text-[10px] px-2 py-0.5 rounded-full", branding.magicBoard ? "bg-white/20" : "bg-neutral-100 text-neutral-500")}>{branding.magicBoard ? "ON" : "OFF"}</span>
+                    </button>
+                    <p className="text-[11px] text-neutral-400">Inclinaison et ombre portée des épingles au drag, texture liège discrète dans les cellules. Effet purement visuel, n'affecte rien d'autre.</p>
                   </div>
                   <p className="text-xs text-neutral-400">La personnalisation est mémorisée dans votre navigateur (local). Pour la retrouver sur un autre poste, exportez/importez les données.</p>
                 </div>
