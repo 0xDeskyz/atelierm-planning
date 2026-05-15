@@ -1764,31 +1764,27 @@ export default function Page() {
     subtitle: string;
     accentColor: string;
     density: "normal" | "compact";
-  }>(() => {
-    const defaults = {
-      logoText: "BT",
-      logoImage: null,
-      title: "BTP Planner",
-      subtitle: "Tableau de bord & suivi collaboratif",
-      accentColor: "#000000",
-      density: "normal" as "normal" | "compact",
-    };
-    if (typeof window === "undefined") return defaults;
-    try {
-      const raw = window.localStorage.getItem("btp-planner-branding:v1");
-      if (!raw) return defaults;
-      const parsed = JSON.parse(raw);
-      return { ...defaults, ...parsed };
-    } catch {
-      return defaults;
-    }
+  }>({
+    logoText: "BT",
+    logoImage: null,
+    title: "BTP Planner",
+    subtitle: "Tableau de bord & suivi collaboratif",
+    accentColor: "#000000",
+    density: "normal",
   });
   const brandingHydrated = useRef(false);
   useEffect(() => {
-    if (!brandingHydrated.current) {
-      brandingHydrated.current = true;
-      return;
-    }
+    try {
+      const raw = localStorage.getItem("btp-planner-branding:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setBranding((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {}
+    brandingHydrated.current = true;
+  }, []);
+  useEffect(() => {
+    if (!brandingHydrated.current) return;
     try { localStorage.setItem("btp-planner-branding:v1", JSON.stringify(branding)); } catch {}
   }, [branding]);
   // Undo stack — 20 snapshots max
