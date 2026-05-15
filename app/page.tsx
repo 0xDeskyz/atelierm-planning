@@ -1827,17 +1827,6 @@ export default function Page() {
   const [minimapYear, setMinimapYear] = useState<number>(() => getISOWeekYear(new Date()));
   const [minimapMode, setMinimapMode] = useState<"list" | "density">("list");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (view !== "calendar") return;
-    const el = calendarScrollRef.current;
-    if (!el) return;
-    const todayKeyWk = weekKeyOf(new Date());
-    const idx = projectionWeekSummaries.findIndex((w: any) => w.weekKey === todayKeyWk);
-    if (idx < 0) return;
-    const colW = 152;
-    const target = Math.max(0, idx * colW - el.clientWidth / 2 + colW / 2);
-    requestAnimationFrame(() => { el.scrollLeft = target; });
-  }, [view, projectionWeekSummaries]);
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
@@ -2213,6 +2202,17 @@ export default function Page() {
       return `${eventWeekYear}-W${pad2(weekNum)}`;
     });
   }, [eventWeekYear]);
+  useEffect(() => {
+    if (view !== "calendar") return;
+    const el = calendarScrollRef.current;
+    if (!el) return;
+    const todayKeyWk = weekKeyOf(new Date());
+    const idx = projectionWeekSummaries.findIndex((w: any) => w.weekKey === todayKeyWk);
+    if (idx < 0) return;
+    const colW = 152;
+    const target = Math.max(0, idx * colW - el.clientWidth / 2 + colW / 2);
+    requestAnimationFrame(() => { el.scrollLeft = target; });
+  }, [view, projectionWeekSummaries]);
   const quoteWeeksInYear = useMemo(() => Math.max(54, getISOWeeksInYear(quoteWeekPickerYear)), [quoteWeekPickerYear]);
   const quoteWeeksList = useMemo(
     () => Array.from({ length: quoteWeeksInYear }, (_, idx) => idx + 1),
