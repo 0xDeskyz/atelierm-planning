@@ -445,7 +445,7 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
-function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
+function CalendarSiteChip({ site, weekKey, className, isNew }: { site: any; weekKey: string; className?: string; isNew?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
@@ -457,10 +457,20 @@ function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: st
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
-      title={site.name}
+      className={cx(
+        className,
+        "cursor-grab active:cursor-grabbing select-none relative",
+        isNew && "ring-[3px] ring-amber-300 ring-offset-1 shadow-lg new-chantier-glow",
+        isDragging && "opacity-50"
+      )}
+      title={isNew ? `🆕 ${site.name} (démarre cette semaine)` : site.name}
     >
-      {site.name}
+      {isNew && (
+        <span className="absolute -top-2 -left-1 bg-amber-400 text-neutral-900 text-[9px] font-extrabold uppercase px-1.5 py-px rounded-full leading-none shadow-md border border-amber-500 tracking-wide">
+          Nouveau
+        </span>
+      )}
+      {isNew ? `🆕 ${site.name}` : site.name}
     </div>
   );
 }
@@ -5335,14 +5345,25 @@ useEffect(() => {
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés */}
-                              {calFilterPlanned && week.planned.map((site: any) => (
-                                <CalendarSiteChip
-                                  key={`p-${site.id}`}
-                                  site={site}
-                                  weekKey={week.weekKey}
-                                  className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                />
-                              ))}
+                              {calFilterPlanned && week.planned.map((site: any) => {
+                                const planning: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                                const setWk = new Set(planning);
+                                const prevWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() - 7); return weekKeyOf(d); })();
+                                const isNew = prevWk ? !setWk.has(prevWk) : true;
+                                return (
+                                  <CalendarSiteChip
+                                    key={`p-${site.id}`}
+                                    site={site}
+                                    weekKey={week.weekKey}
+                                    isNew={isNew}
+                                    className={cx(
+                                      "rounded font-semibold text-white shadow-sm leading-5",
+                                      isNew ? "text-[11px] px-2.5 py-1 mt-2" : "text-[10px] px-2 py-px",
+                                      site.color || "bg-sky-500"
+                                    )}
+                                  />
+                                );
+                              })}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
