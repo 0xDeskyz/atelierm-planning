@@ -1822,10 +1822,8 @@ export default function Page() {
 
   // View / navigation
   const [view, setView] = useState<
-    "accueil" | "planning" | "hours" | "calendar" | "minimap" | "sites" | "salaries" | "rentabilite"
+    "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
   >("accueil");
-  const [minimapYear, setMinimapYear] = useState<number>(() => getISOWeekYear(new Date()));
-  const [minimapMode, setMinimapMode] = useState<"list" | "density">("list");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
@@ -3817,7 +3815,6 @@ useEffect(() => {
                 { v: "planning", label: "Planning", icon: <CalendarRange className="w-3.5 h-3.5" /> },
                 { v: "hours", label: "Heures", icon: <Clock3 className="w-3.5 h-3.5" /> },
                 { v: "calendar", label: "Calendrier", icon: <CalendarRange className="w-3.5 h-3.5" /> },
-                { v: "minimap", label: "Année", icon: <CalendarRange className="w-3.5 h-3.5" /> },
               ].map(({ v, label, icon }) => (
                 <button
                   key={v}
@@ -3901,7 +3898,7 @@ useEffect(() => {
         </Tabs>
 
         {/* Barre contextuelle */}
-        <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 shadow-sm", (view === "accueil" || view === "minimap") && "hidden")}>
+        <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 shadow-sm", view === "accueil" && "hidden")}>
           <div className="flex flex-wrap items-center gap-3">
             {view === "planning" && (
               <div className="flex items-center gap-1 pr-3 border-r border-neutral-200">
@@ -5892,158 +5889,6 @@ useEffect(() => {
                 </Card>
               </div>
             )}
-
-            {view === "minimap" && (() => {
-              const year = minimapYear;
-              const weeksInYear = getISOWeeksInYear(year);
-              const weekStarts: Date[] = Array.from({ length: weeksInYear }, (_, i) => getISOWeekStart(year, i + 1));
-              const weekKeys = weekStarts.map((d) => weekKeyOf(d));
-              const rows = safeSites.filter((s: any) => s.status !== "archived");
-              const COL_W = 22;
-              const ROW_H = 22;
-              const nameColW = 200;
-              const todayWk = weekKeyOf(new Date());
-              return (
-                <div className="space-y-3">
-                  <div className="rounded-xl border bg-white shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setMinimapYear((y) => y - 1)} className="h-8 w-8 rounded-md border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center">‹</button>
-                      <div className="px-3 py-1 text-sm font-semibold tabular-nums">{year}</div>
-                      <button onClick={() => setMinimapYear((y) => y + 1)} className="h-8 w-8 rounded-md border border-neutral-200 hover:bg-neutral-50 flex items-center justify-center">›</button>
-                      <button onClick={() => setMinimapYear(getISOWeekYear(new Date()))} className="ml-1 h-8 px-3 rounded-md border border-neutral-200 hover:bg-neutral-50 text-xs">Aujourd'hui</button>
-                    </div>
-                    <div className="ml-3 flex items-center gap-1 border-l border-neutral-200 pl-3">
-                      {(["list", "density"] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setMinimapMode(m)}
-                          className={cx(
-                            "h-8 px-3 rounded-md text-xs font-medium transition border",
-                            minimapMode === m ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-500 border-neutral-200 hover:bg-neutral-50"
-                          )}
-                          title={m === "list" ? "Une ligne par chantier (vue Gantt)" : "Charge agrégée par semaine"}
-                        >{m === "list" ? "Gantt" : "Densité"}</button>
-                      ))}
-                    </div>
-                    <div className="ml-auto text-xs text-neutral-500">{rows.length} chantier{rows.length > 1 ? "s" : ""} · {weeksInYear} semaines</div>
-                  </div>
-                  <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
-                    <div className="min-w-fit">
-                      {/* Header mois */}
-                      <div className="flex sticky top-0 bg-white z-10 border-b border-neutral-200">
-                        <div className="shrink-0 border-r border-neutral-200" style={{ width: nameColW }} />
-                        {weekStarts.map((d, i) => {
-                          const prevMonth = i > 0 ? weekStarts[i - 1].getMonth() : -1;
-                          const isMonthStart = d.getMonth() !== prevMonth;
-                          return (
-                            <div key={`mh-${i}`} className={cx("shrink-0 text-[10px] font-semibold uppercase text-neutral-500 px-1 py-1", isMonthStart && "border-l-2 border-neutral-300")} style={{ width: COL_W }}>
-                              {isMonthStart ? d.toLocaleString("fr-FR", { month: "short" }) : ""}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {/* Header semaines */}
-                      <div className="flex sticky top-7 bg-white z-10 border-b border-neutral-200">
-                        <div className="shrink-0 px-3 py-1 text-[11px] font-semibold text-neutral-600 border-r border-neutral-200" style={{ width: nameColW }}>Chantier</div>
-                        {weekKeys.map((wk, i) => {
-                          const isCurrent = wk === todayWk;
-                          const showNum = i === 0 || (i + 1) % 4 === 0;
-                          return (
-                            <button
-                              key={`wh-${wk}`}
-                              onClick={() => { setAnchor(weekStarts[i]); setView("planning"); }}
-                              className={cx(
-                                "shrink-0 text-[9px] text-neutral-400 border-l border-neutral-100 hover:bg-sky-50 transition py-1",
-                                isCurrent && "bg-sky-100 text-sky-700 font-bold"
-                              )}
-                              style={{ width: COL_W, height: 20 }}
-                              title={`Aller à ${wk}`}
-                            >{showNum ? `S${i + 1}` : ""}</button>
-                          );
-                        })}
-                      </div>
-                      {/* Lignes chantiers */}
-                      {rows.length === 0 && (
-                        <div className="px-4 py-8 text-center text-sm text-neutral-400">Aucun chantier à afficher.</div>
-                      )}
-                      {minimapMode === "list" && rows.map((s: any) => {
-                        const planning = new Set<string>(Array.isArray(s.planningWeeks) ? s.planningWeeks : []);
-                        return (
-                          <div key={s.id} className="flex items-stretch border-b border-neutral-100 hover:bg-neutral-50/60">
-                            <div className="shrink-0 px-3 py-1 text-xs font-medium text-neutral-800 truncate border-r border-neutral-200 flex items-center gap-2" style={{ width: nameColW }} title={s.name}>
-                              <span className={cx("w-2 h-2 rounded-full shrink-0", s.color || "bg-neutral-400")} />
-                              <span className="truncate">{s.name}</span>
-                            </div>
-                            {weekKeys.map((wk, i) => {
-                              const active = planning.has(wk);
-                              const isCurrent = wk === todayWk;
-                              return (
-                                <button
-                                  key={`${s.id}-${wk}`}
-                                  onClick={() => { setAnchor(weekStarts[i]); setView("planning"); }}
-                                  title={active ? `${s.name} — ${wk}` : `Aller à ${wk}`}
-                                  className={cx(
-                                    "shrink-0 border-l border-neutral-100 transition cursor-pointer",
-                                    active ? cx(s.color || "bg-neutral-400", "hover:brightness-110") : "hover:bg-sky-50",
-                                    isCurrent && !active && "bg-sky-50/60"
-                                  )}
-                                  style={{ width: COL_W, height: ROW_H }}
-                                />
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                      {minimapMode === "density" && (() => {
-                        const sitesPerWeek: Record<string, any[]> = {};
-                        weekKeys.forEach((wk) => { sitesPerWeek[wk] = []; });
-                        rows.forEach((s: any) => {
-                          (Array.isArray(s.planningWeeks) ? s.planningWeeks : []).forEach((wk: string) => {
-                            if (sitesPerWeek[wk]) sitesPerWeek[wk].push(s);
-                          });
-                        });
-                        const maxCount = Math.max(1, ...Object.values(sitesPerWeek).map((arr) => arr.length));
-                        const SEG_H = 6;
-                        const TRACK_H = Math.max(60, (maxCount + 1) * SEG_H);
-                        return (
-                          <div className="flex items-stretch border-b border-neutral-100">
-                            <div className="shrink-0 px-3 py-2 text-xs font-medium text-neutral-700 border-r border-neutral-200 flex flex-col justify-between" style={{ width: nameColW }}>
-                              <span>Charge / semaine</span>
-                              <span className="text-[10px] text-neutral-400">max : {maxCount} chantier{maxCount > 1 ? "s" : ""}</span>
-                            </div>
-                            {weekKeys.map((wk, i) => {
-                              const list = sitesPerWeek[wk];
-                              const isCurrent = wk === todayWk;
-                              const tooltip = list.length > 0
-                                ? `S${i + 1} · ${list.length} chantier${list.length > 1 ? "s" : ""}\n${list.map((x) => "• " + x.name).join("\n")}`
-                                : `S${i + 1} · aucun chantier`;
-                              return (
-                                <button
-                                  key={`d-${wk}`}
-                                  onClick={() => { setAnchor(weekStarts[i]); setView("planning"); }}
-                                  title={tooltip}
-                                  className={cx(
-                                    "shrink-0 border-l border-neutral-100 flex flex-col-reverse items-stretch p-0.5 gap-px transition",
-                                    isCurrent && "bg-sky-50/70",
-                                    "hover:bg-sky-50"
-                                  )}
-                                  style={{ width: COL_W, height: TRACK_H }}
-                                >
-                                  {list.map((s: any, segIdx: number) => (
-                                    <span key={segIdx} className={cx("block rounded-sm", s.color || "bg-neutral-400")} style={{ height: SEG_H }} />
-                                  ))}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                  <p className="text-xs text-neutral-400">Clic sur une case ou un numéro de semaine pour ouvrir le planning de cette semaine.</p>
-                </div>
-              );
-            })()}
 
             {view === "rentabilite" && (() => {
               const noTauxWarning = safePeople.filter((p: any) => p.status !== "archived" && p.tauxJournalier == null).length;
