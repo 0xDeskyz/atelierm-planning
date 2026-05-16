@@ -2215,8 +2215,13 @@ export default function Page() {
       return `${eventWeekYear}-W${pad2(weekNum)}`;
     });
   }, [eventWeekYear]);
+  const prevViewRef = useRef(view);
   useEffect(() => {
-    if (view !== "calendar") return;
+    if (view !== "calendar" || prevViewRef.current === "calendar") {
+      prevViewRef.current = view;
+      return;
+    }
+    prevViewRef.current = view;
     const el = calendarScrollRef.current;
     if (!el) return;
     const todayKeyWk = weekKeyOf(new Date());
@@ -2225,7 +2230,7 @@ export default function Page() {
     const colW = 152;
     const target = Math.max(0, idx * colW - el.clientWidth / 2 + colW / 2);
     requestAnimationFrame(() => { el.scrollLeft = target; });
-  }, [view, projectionWeekSummaries]);
+  }, [view]);
   const quoteWeeksInYear = useMemo(() => Math.max(54, getISOWeeksInYear(quoteWeekPickerYear)), [quoteWeekPickerYear]);
   const quoteWeeksList = useMemo(
     () => Array.from({ length: quoteWeeksInYear }, (_, idx) => idx + 1),
@@ -5334,13 +5339,13 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — starters first */}
+                              {/* Chantiers planifiés — vrais starters (1ʳᵉ semaine du chantier) en premier */}
                               {calFilterPlanned && (() => {
-                                const prevWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() - 7); return weekKeyOf(d); })();
                                 const startsThisWeek = (site: any) => {
-                                  if (!prevWk) return true;
                                   const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  return !pw.includes(prevWk);
+                                  if (pw.length === 0) return false;
+                                  const earliest = [...pw].sort()[0];
+                                  return earliest === week.weekKey;
                                 };
                                 const sorted = [...week.planned].sort((a: any, b: any) => {
                                   const sa = startsThisWeek(a) ? 0 : 1;
