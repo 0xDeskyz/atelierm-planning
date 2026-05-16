@@ -2178,18 +2178,16 @@ export default function Page() {
     return projectionWeeks.map((week) => {
       const weekStart = week.start.getTime();
       const weekEnd = week.end.getTime();
-      const planned = visiblePlannedSites.filter((site) => {
+      const matches = (site: any) => {
+        const pw: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+        if (pw.length > 0) return pw.includes(week.weekKey);
         const { startKey, endKey } = getSiteDateRange(site, todayKey);
         const start = fromLocalKey(startKey).getTime();
         const end = fromLocalKey(endKey).getTime();
         return start <= weekEnd && end >= weekStart;
-      });
-      const pending = visiblePendingSites.filter((site) => {
-        const { startKey, endKey } = getSiteDateRange(site, todayKey);
-        const start = fromLocalKey(startKey).getTime();
-        const end = fromLocalKey(endKey).getTime();
-        return start <= weekEnd && end >= weekStart;
-      });
+      };
+      const planned = visiblePlannedSites.filter(matches);
+      const pending = visiblePendingSites.filter(matches);
       const absences = absencesWeekPeople[week.weekKey] || [];
       const events = visibleCalendarEvents.filter((event) => {
         const start = fromLocalKey(event.dateKey).getTime();
