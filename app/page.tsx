@@ -5432,7 +5432,7 @@ useEffect(() => {
                                     </div>
                                     <div key="g-single" className="space-y-1">
                                       <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
-                                      {groups.single.length > 0 ? groups.single.map((s) => renderChip(s, "ring-2 ring-offset-1 ring-black/40")) : emptyHint}
+                                      {groups.single.length > 0 ? groups.single.map((s) => renderChip(s, "ring-1 ring-black/20")) : emptyHint}
                                     </div>
                                   </>
                                 );
@@ -5456,27 +5456,41 @@ useEffect(() => {
                                 </div>
                               )}
                               {/* Absences */}
-                              {calFilterAbsences && week.absences.map((name: string) => (
-                                <div
-                                  key={`a-${name}`}
-                                  className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
-                                  title={name}
-                                >🏖 {name}</div>
-                              ))}
+                              {calFilterAbsences && (
+                                <div className="space-y-1 pt-1 border-t border-neutral-100">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">Absences</div>
+                                  {week.absences.length > 0
+                                    ? week.absences.map((name: string) => (
+                                        <div
+                                          key={`a-${name}`}
+                                          className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
+                                          title={name}
+                                        >🏖 {name}</div>
+                                      ))
+                                    : <div className="text-[9px] text-neutral-300 italic px-1">—</div>}
+                                </div>
+                              )}
                               {/* Événements */}
-                              {calFilterEvents && week.events.map((event: any) => {
-                                const cal = eventCalendarsById[event.calendarId];
-                                const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
-                                return (
-                                  <CalendarEventChip
-                                    key={event.id}
-                                    event={event}
-                                    weekKey={week.weekKey}
-                                    calHex={calHex}
-                                    onEdit={() => openEventDialogForEvent(event)}
-                                  />
-                                );
-                              })}
+                              {calFilterEvents && (
+                                <div className="space-y-1 pt-1 border-t border-neutral-100">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-violet-500 mt-0.5">Événements</div>
+                                  {week.events.length > 0
+                                    ? week.events.map((event: any) => {
+                                        const cal = eventCalendarsById[event.calendarId];
+                                        const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
+                                        return (
+                                          <CalendarEventChip
+                                            key={event.id}
+                                            event={event}
+                                            weekKey={week.weekKey}
+                                            calHex={calHex}
+                                            onEdit={() => openEventDialogForEvent(event)}
+                                          />
+                                        );
+                                      })
+                                    : <div className="text-[9px] text-neutral-300 italic px-1">—</div>}
+                                </div>
+                              )}
                               {/* Semaine vide */}
                               {week.planned.length === 0 && week.pending.length === 0 && week.absences.length === 0 && week.events.length === 0 && (
                                 <div className="h-4" />
