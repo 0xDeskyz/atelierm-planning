@@ -5481,25 +5481,24 @@ useEffect(() => {
                                     />
                                   );
                                 };
-                                const emptyHint = <div className="text-[9px] text-neutral-300 italic px-1">—</div>;
                                 const headerCls = "text-[8px] font-semibold uppercase tracking-wider mt-0.5";
                                 return (
                                   <>
                                     <div key="g-starts" className="space-y-1">
                                       <div className={cx(headerCls, "text-emerald-600")}>Démarrent</div>
-                                      {groups.starts.length > 0 ? groups.starts.map((s) => renderChip(s)) : emptyHint}
+                                      {groups.starts.map((s) => renderChip(s))}
                                     </div>
                                     <div key="g-cont" className="space-y-1">
                                       <div className={cx(headerCls, "text-sky-600")}>Continuent</div>
-                                      {groups.continues.length > 0 ? groups.continues.map((s) => renderChip(s)) : emptyHint}
+                                      {groups.continues.map((s) => renderChip(s))}
                                     </div>
                                     <div key="g-ends" className="space-y-1">
                                       <div className={cx(headerCls, "text-amber-600")}>Terminent</div>
-                                      {groups.ends.length > 0 ? groups.ends.map((s) => renderChip(s)) : emptyHint}
+                                      {groups.ends.map((s) => renderChip(s))}
                                     </div>
                                     <div key="g-single" className="space-y-1">
                                       <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
-                                      {groups.single.length > 0 ? groups.single.map((s) => renderChip(s, "ring-1 ring-black/20")) : emptyHint}
+                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
                                     </div>
                                   </>
                                 );
@@ -5508,18 +5507,16 @@ useEffect(() => {
                               {calFilterPending && (
                                 <div className="space-y-1">
                                   <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">À planifier</div>
-                                  {week.pending.length > 0
-                                    ? [...week.pending]
-                                        .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
-                                        .map((site: any) => (
-                                          <CalendarSiteChip
-                                            key={`w-${site.id}`}
-                                            site={site}
-                                            weekKey={week.weekKey}
-                                            className="text-[10px] px-2 py-px rounded font-medium leading-5 bg-white text-neutral-600 border-2 border-dashed border-neutral-300 italic"
-                                          />
-                                        ))
-                                    : <div className="text-[9px] text-neutral-300 italic px-1">—</div>}
+                                  {[...week.pending]
+                                    .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
+                                    .map((site: any) => (
+                                      <CalendarSiteChip
+                                        key={`w-${site.id}`}
+                                        site={site}
+                                        weekKey={week.weekKey}
+                                        className="text-[10px] px-2 py-px rounded font-medium leading-5 bg-white text-neutral-600 border-2 border-dashed border-neutral-300 italic"
+                                      />
+                                    ))}
                                 </div>
                               )}
                               {/* Semaine vide */}
