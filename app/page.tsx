@@ -5334,31 +5334,38 @@ useEffect(() => {
                                   </span>
                                 )}
                               </div>
-                              {/* Bandeau au-dessus du label S — Absences + Événements */}
-                              {((calFilterAbsences && week.absences.length > 0) || (calFilterEvents && week.events.length > 0)) && (
-                                <div className="space-y-1 mb-1.5">
-                                  {calFilterAbsences && week.absences.map((name: string) => (
-                                    <div
-                                      key={`top-a-${name}`}
-                                      className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
-                                      title={`Absence — ${name}`}
-                                    >🏖 {name}</div>
-                                  ))}
-                                  {calFilterEvents && week.events.map((event: any) => {
-                                    const cal = eventCalendarsById[event.calendarId];
-                                    const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
-                                    return (
-                                      <CalendarEventChip
-                                        key={`top-e-${event.id}`}
-                                        event={event}
-                                        weekKey={week.weekKey}
-                                        calHex={calHex}
-                                        onEdit={() => openEventDialogForEvent(event)}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              )}
+                              {/* Bandeau au-dessus du label S — Absences + Événements (hauteur réservée pour alignement) */}
+                              {(() => {
+                                const maxTopItems = Math.max(0, ...projectionWeekSummaries.map((w: any) =>
+                                  (calFilterAbsences ? w.absences.length : 0) + (calFilterEvents ? w.events.length : 0)
+                                ));
+                                if (maxTopItems === 0) return null;
+                                const reservedPx = maxTopItems * 24 + 6;
+                                return (
+                                  <div className="space-y-1 mb-1.5" style={{ minHeight: `${reservedPx}px` }}>
+                                    {calFilterAbsences && week.absences.map((name: string) => (
+                                      <div
+                                        key={`top-a-${name}`}
+                                        className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
+                                        title={`Absence — ${name}`}
+                                      >🏖 {name}</div>
+                                    ))}
+                                    {calFilterEvents && week.events.map((event: any) => {
+                                      const cal = eventCalendarsById[event.calendarId];
+                                      const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
+                                      return (
+                                        <CalendarEventChip
+                                          key={`top-e-${event.id}`}
+                                          event={event}
+                                          weekKey={week.weekKey}
+                                          calHex={calHex}
+                                          onEdit={() => openEventDialogForEvent(event)}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                               <div className="flex items-center justify-between gap-1">
                                 <div className="flex items-center gap-1.5">
                                   <span className={cx(
