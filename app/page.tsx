@@ -460,22 +460,22 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(
-        className,
-        "cursor-grab active:cursor-grabbing select-none relative",
-        isStart && "pl-3",
-        isEnd && "pr-3",
-        isDragging && "opacity-50"
-      )}
+      className={cx(className, "cursor-grab active:cursor-grabbing select-none relative", isDragging && "opacity-50")}
       title={tooltipParts.join(" · ")}
     >
       {isStart && (
-        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/85 rounded-l" title="Démarre" />
+        <span
+          aria-hidden
+          className="absolute -top-[3px] -left-[3px] w-2 h-2 rounded-full bg-amber-400 ring-2 ring-neutral-900 shadow"
+        />
+      )}
+      {isEnd && (
+        <span
+          aria-hidden
+          className="absolute -top-[3px] -right-[3px] w-2 h-2 rounded-full bg-white ring-2 ring-neutral-900 shadow"
+        />
       )}
       {site.name}
-      {isEnd && (
-        <span aria-hidden className="absolute right-0 top-0 bottom-0 w-[3px] bg-black/35 rounded-r" title="Se termine" />
-      )}
     </div>
   );
 }
