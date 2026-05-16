@@ -466,13 +466,13 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       {isStart && (
         <span
           aria-hidden
-          className="absolute -top-[3px] -left-[3px] w-2 h-2 rounded-full bg-amber-400 ring-2 ring-neutral-900 shadow"
+          className="absolute top-[2px] left-[2px] w-1 h-1 rounded-full bg-amber-300 ring-[0.5px] ring-neutral-900/70"
         />
       )}
       {isEnd && (
         <span
           aria-hidden
-          className="absolute -top-[3px] -right-[3px] w-2 h-2 rounded-full bg-white ring-2 ring-neutral-900 shadow"
+          className="absolute top-[2px] right-[2px] w-1 h-1 rounded-full bg-white ring-[0.5px] ring-neutral-900/70"
         />
       )}
       {site.name}
