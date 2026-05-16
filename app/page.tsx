@@ -5339,18 +5339,22 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — anciens d'abord, nouveaux (1ʳᵉ semaine) en bas */}
+                              {/* Chantiers planifiés — anciens d'abord, nouveaux en bas, tri intra-groupe par 1ʳᵉ semaine */}
                               {calFilterPlanned && (() => {
-                                const startsHere = (site: any) => {
+                                const earliestOf = (site: any) => {
                                   const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  if (pw.length === 0) return false;
-                                  return [...pw].sort()[0] === week.weekKey;
+                                  if (pw.length === 0) return "9999-W99";
+                                  return [...pw].sort()[0];
                                 };
+                                const startsHere = (site: any) => earliestOf(site) === week.weekKey;
                                 return [...week.planned]
                                   .sort((a: any, b: any) => {
                                     const sa = startsHere(a) ? 1 : 0;
                                     const sb = startsHere(b) ? 1 : 0;
                                     if (sa !== sb) return sa - sb;
+                                    const ea = earliestOf(a);
+                                    const eb = earliestOf(b);
+                                    if (ea !== eb) return ea.localeCompare(eb);
                                     return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                                   })
                                   .map((site: any) => (
