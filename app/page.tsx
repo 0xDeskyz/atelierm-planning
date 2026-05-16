@@ -5339,28 +5339,17 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — vrais starters (1ʳᵉ semaine du chantier) en premier */}
-                              {calFilterPlanned && (() => {
-                                const startsThisWeek = (site: any) => {
-                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  if (pw.length === 0) return false;
-                                  const earliest = [...pw].sort()[0];
-                                  return earliest === week.weekKey;
-                                };
-                                const sorted = [...week.planned].sort((a: any, b: any) => {
-                                  const sa = startsThisWeek(a) ? 0 : 1;
-                                  const sb = startsThisWeek(b) ? 0 : 1;
-                                  return sa - sb;
-                                });
-                                return sorted.map((site: any) => (
+                              {/* Chantiers planifiés — tri global stable (alphabétique) */}
+                              {calFilterPlanned && [...week.planned]
+                                .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
+                                .map((site: any) => (
                                   <CalendarSiteChip
                                     key={`p-${site.id}`}
                                     site={site}
                                     weekKey={week.weekKey}
                                     className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
                                   />
-                                ));
-                              })()}
+                                ))}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
