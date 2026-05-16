@@ -5415,22 +5415,23 @@ useEffect(() => {
                                   );
                                 };
                                 const emptyHint = <div className="text-[9px] text-neutral-300 italic px-1">—</div>;
+                                const headerCls = "text-[8px] font-semibold uppercase tracking-wider mt-0.5";
                                 return (
                                   <>
                                     <div key="g-starts" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent</div>
+                                      <div className={cx(headerCls, "text-emerald-600")}>Démarrent</div>
                                       {groups.starts.length > 0 ? groups.starts.map((s) => renderChip(s)) : emptyHint}
                                     </div>
                                     <div key="g-cont" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Continuent</div>
-                                      {groups.continues.length > 0 ? groups.continues.map((s) => renderChip(s, "opacity-75")) : emptyHint}
+                                      <div className={cx(headerCls, "text-sky-600")}>Continuent</div>
+                                      {groups.continues.length > 0 ? groups.continues.map((s) => renderChip(s)) : emptyHint}
                                     </div>
                                     <div key="g-ends" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Terminent</div>
-                                      {groups.ends.length > 0 ? groups.ends.map((s) => renderChip(s, "opacity-50 italic line-through decoration-from-font")) : emptyHint}
+                                      <div className={cx(headerCls, "text-amber-600")}>Terminent</div>
+                                      {groups.ends.length > 0 ? groups.ends.map((s) => renderChip(s)) : emptyHint}
                                     </div>
                                     <div key="g-single" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
+                                      <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
                                       {groups.single.length > 0 ? groups.single.map((s) => renderChip(s, "ring-2 ring-offset-1 ring-black/40")) : emptyHint}
                                     </div>
                                   </>
@@ -5439,7 +5440,7 @@ useEffect(() => {
                               {/* Chantiers à planifier (status = pending) */}
                               {calFilterPending && (
                                 <div className="space-y-1">
-                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">À planifier</div>
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">À planifier</div>
                                   {week.pending.length > 0
                                     ? [...week.pending]
                                         .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
