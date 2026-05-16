@@ -5360,19 +5360,21 @@ useEffect(() => {
                                   if (ea !== eb) return ea.localeCompare(eb);
                                   return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                                 };
-                                const groups: { single: any[]; continues: any[]; boundary: any[] } = { single: [], continues: [], boundary: [] };
+                                const groups: { starts: any[]; continues: any[]; ends: any[]; single: any[] } = { starts: [], continues: [], ends: [], single: [] };
                                 week.planned.forEach((site: any) => {
                                   const sw = sortedWeeks(site);
                                   const len = sw.length;
                                   const isStart = len > 0 && sw[0] === week.weekKey;
                                   const isEnd = len > 0 && sw[len - 1] === week.weekKey;
                                   if (len === 1) groups.single.push(site);
-                                  else if (isStart || isEnd) groups.boundary.push(site);
+                                  else if (isStart) groups.starts.push(site);
+                                  else if (isEnd) groups.ends.push(site);
                                   else groups.continues.push(site);
                                 });
-                                groups.single.sort(sortComparator);
+                                groups.starts.sort(sortComparator);
                                 groups.continues.sort(sortComparator);
-                                groups.boundary.sort(sortComparator);
+                                groups.ends.sort(sortComparator);
+                                groups.single.sort(sortComparator);
                                 const renderChip = (site: any) => {
                                   const sw = sortedWeeks(site);
                                   const isStart = sw.length > 0 && sw[0] === week.weekKey;
@@ -5389,11 +5391,11 @@ useEffect(() => {
                                   );
                                 };
                                 const blocks: React.ReactNode[] = [];
-                                if (groups.single.length > 0) {
+                                if (groups.starts.length > 0) {
                                   blocks.push(
-                                    <div key="g-single" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
-                                      {groups.single.map(renderChip)}
+                                    <div key="g-starts" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent</div>
+                                      {groups.starts.map(renderChip)}
                                     </div>
                                   );
                                 }
@@ -5405,11 +5407,19 @@ useEffect(() => {
                                     </div>
                                   );
                                 }
-                                if (groups.boundary.length > 0) {
+                                if (groups.ends.length > 0) {
                                   blocks.push(
-                                    <div key="g-bound" className="space-y-1">
-                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent / terminent</div>
-                                      {groups.boundary.map(renderChip)}
+                                    <div key="g-ends" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Terminent</div>
+                                      {groups.ends.map(renderChip)}
+                                    </div>
+                                  );
+                                }
+                                if (groups.single.length > 0) {
+                                  blocks.push(
+                                    <div key="g-single" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
+                                      {groups.single.map(renderChip)}
                                     </div>
                                   );
                                 }
