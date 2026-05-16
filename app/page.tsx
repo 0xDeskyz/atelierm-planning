@@ -5334,15 +5334,28 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés */}
-                              {calFilterPlanned && week.planned.map((site: any) => (
-                                <CalendarSiteChip
-                                  key={`p-${site.id}`}
-                                  site={site}
-                                  weekKey={week.weekKey}
-                                  className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                />
-                              ))}
+                              {/* Chantiers planifiés — starters first */}
+                              {calFilterPlanned && (() => {
+                                const prevWk = (() => { const p = parseWeekKey(week.weekKey); if (!p) return null; const d = getISOWeekStart(p.year, p.week); d.setDate(d.getDate() - 7); return weekKeyOf(d); })();
+                                const startsThisWeek = (site: any) => {
+                                  if (!prevWk) return true;
+                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                                  return !pw.includes(prevWk);
+                                };
+                                const sorted = [...week.planned].sort((a: any, b: any) => {
+                                  const sa = startsThisWeek(a) ? 0 : 1;
+                                  const sb = startsThisWeek(b) ? 0 : 1;
+                                  return sa - sb;
+                                });
+                                return sorted.map((site: any) => (
+                                  <CalendarSiteChip
+                                    key={`p-${site.id}`}
+                                    site={site}
+                                    weekKey={week.weekKey}
+                                    className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                  />
+                                ));
+                              })()}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
