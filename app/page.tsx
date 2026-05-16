@@ -445,22 +445,37 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
-function CalendarSiteChip({ site, weekKey, className }: { site: any; weekKey: string; className?: string }) {
+function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
   });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
+  const tooltipParts: string[] = [site.name];
+  if (isStart) tooltipParts.push("démarre cette semaine");
+  if (isEnd) tooltipParts.push("se termine cette semaine");
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
-      title={site.name}
+      className={cx(
+        className,
+        "cursor-grab active:cursor-grabbing select-none relative",
+        isStart && "pl-3",
+        isEnd && "pr-3",
+        isDragging && "opacity-50"
+      )}
+      title={tooltipParts.join(" · ")}
     >
+      {isStart && (
+        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/85 rounded-l" title="Démarre" />
+      )}
       {site.name}
+      {isEnd && (
+        <span aria-hidden className="absolute right-0 top-0 bottom-0 w-[3px] bg-black/35 rounded-r" title="Se termine" />
+      )}
     </div>
   );
 }
@@ -5339,11 +5354,11 @@ useEffect(() => {
                             <div className="p-1.5 space-y-1 flex-1">
                               {/* Chantiers planifiés — tri stable par 1ʳᵉ apparition dans l'année */}
                               {calFilterPlanned && (() => {
-                                const earliestOf = (site: any) => {
+                                const sortedWeeks = (site: any) => {
                                   const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  if (pw.length === 0) return "9999-W99";
-                                  return [...pw].sort()[0];
+                                  return [...pw].sort();
                                 };
+                                const earliestOf = (site: any) => sortedWeeks(site)[0] || "9999-W99";
                                 return [...week.planned]
                                   .sort((a: any, b: any) => {
                                     const ea = earliestOf(a);
@@ -5351,14 +5366,21 @@ useEffect(() => {
                                     if (ea !== eb) return ea.localeCompare(eb);
                                     return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                                   })
-                                  .map((site: any) => (
-                                    <CalendarSiteChip
-                                      key={`p-${site.id}`}
-                                      site={site}
-                                      weekKey={week.weekKey}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                    />
-                                  ));
+                                  .map((site: any) => {
+                                    const sw = sortedWeeks(site);
+                                    const isStart = sw.length > 0 && sw[0] === week.weekKey;
+                                    const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
+                                    return (
+                                      <CalendarSiteChip
+                                        key={`p-${site.id}`}
+                                        site={site}
+                                        weekKey={week.weekKey}
+                                        isStart={isStart}
+                                        isEnd={isEnd}
+                                        className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                      />
+                                    );
+                                  });
                               })()}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
