@@ -5346,33 +5346,47 @@ useEffect(() => {
                                     {anyAbs && (
                                       <div
                                         className={cx(
-                                          "text-[10px] px-2 py-px rounded font-semibold leading-5 truncate",
+                                          "text-[10px] px-2 py-px rounded font-semibold leading-5 flex items-center gap-1.5 overflow-hidden",
                                           absencesList.length > 0 ? "bg-rose-100 text-rose-700" : "bg-transparent text-transparent"
                                         )}
                                         title={absencesList.length > 0 ? `Absences — ${absencesList.join(", ")}` : ""}
                                       >
-                                        {absencesList.length > 0 ? `🏖 ${absencesList.join(", ")}` : "·"}
+                                        {absencesList.length > 0 ? (
+                                          <>
+                                            <span className="shrink-0">🏖 {absencesList.length}</span>
+                                            <span className="text-rose-500 shrink-0">·</span>
+                                            <span className="truncate min-w-0">{absencesList.join(", ")}</span>
+                                          </>
+                                        ) : "·"}
                                       </div>
                                     )}
                                     {anyEvt && (
                                       <div
                                         className={cx(
-                                          "text-[10px] px-2 py-px rounded leading-5 truncate flex items-center gap-1.5 overflow-hidden",
+                                          "text-[10px] px-2 py-px rounded leading-5 flex items-center gap-1.5 overflow-hidden",
                                           eventsList.length > 0 ? "bg-neutral-100 text-neutral-700" : "bg-transparent text-transparent"
                                         )}
                                         title={eventsList.length > 0 ? `Événements — ${eventsList.map((e: any) => e.title).join(" · ")}` : ""}
                                       >
-                                        {eventsList.length > 0 ? eventsList.map((event: any, idx: number) => {
-                                          const cal = eventCalendarsById[event.calendarId];
-                                          const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
-                                          return (
-                                            <span key={`top-e-${event.id}`} className="inline-flex items-center gap-1 shrink-0">
-                                              {idx > 0 && <span className="text-neutral-300">·</span>}
-                                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: calHex }} />
-                                              <span className="truncate max-w-[80px]">{event.title}</span>
+                                        {eventsList.length > 0 ? (
+                                          <>
+                                            <span className="font-semibold shrink-0">📅 {eventsList.length}</span>
+                                            <span className="text-neutral-300 shrink-0">·</span>
+                                            <span className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                                              {eventsList.map((event: any, idx: number) => {
+                                                const cal = eventCalendarsById[event.calendarId];
+                                                const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
+                                                return (
+                                                  <span key={`top-e-${event.id}`} className="inline-flex items-center gap-1 shrink-0">
+                                                    {idx > 0 && <span className="text-neutral-300">·</span>}
+                                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: calHex }} />
+                                                    <span className="truncate max-w-[80px]">{event.title}</span>
+                                                  </span>
+                                                );
+                                              })}
                                             </span>
-                                          );
-                                        }) : "·"}
+                                          </>
+                                        ) : "·"}
                                       </div>
                                     )}
                                   </div>
