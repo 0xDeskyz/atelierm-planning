@@ -5334,35 +5334,47 @@ useEffect(() => {
                                   </span>
                                 )}
                               </div>
-                              {/* Bandeau au-dessus du label S — Absences + Événements (hauteur réservée pour alignement) */}
+                              {/* Bandeau au-dessus du label S — Absences (1 ligne) + Événements (1 ligne) */}
                               {(() => {
-                                const maxTopItems = Math.max(0, ...projectionWeekSummaries.map((w: any) =>
-                                  (calFilterAbsences ? w.absences.length : 0) + (calFilterEvents ? w.events.length : 0)
-                                ));
-                                if (maxTopItems === 0) return null;
-                                const reservedPx = maxTopItems * 24 + 6;
+                                const anyAbs = calFilterAbsences && projectionWeekSummaries.some((w: any) => w.absences.length > 0);
+                                const anyEvt = calFilterEvents && projectionWeekSummaries.some((w: any) => w.events.length > 0);
+                                if (!anyAbs && !anyEvt) return null;
+                                const absencesList = calFilterAbsences ? week.absences : [];
+                                const eventsList = calFilterEvents ? week.events : [];
                                 return (
-                                  <div className="space-y-1 mb-1.5" style={{ minHeight: `${reservedPx}px` }}>
-                                    {calFilterAbsences && week.absences.map((name: string) => (
+                                  <div className="space-y-1 mb-1.5">
+                                    {anyAbs && (
                                       <div
-                                        key={`top-a-${name}`}
-                                        className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-rose-100 text-rose-700 truncate"
-                                        title={`Absence — ${name}`}
-                                      >🏖 {name}</div>
-                                    ))}
-                                    {calFilterEvents && week.events.map((event: any) => {
-                                      const cal = eventCalendarsById[event.calendarId];
-                                      const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
-                                      return (
-                                        <CalendarEventChip
-                                          key={`top-e-${event.id}`}
-                                          event={event}
-                                          weekKey={week.weekKey}
-                                          calHex={calHex}
-                                          onEdit={() => openEventDialogForEvent(event)}
-                                        />
-                                      );
-                                    })}
+                                        className={cx(
+                                          "text-[10px] px-2 py-px rounded font-semibold leading-5 truncate",
+                                          absencesList.length > 0 ? "bg-rose-100 text-rose-700" : "bg-transparent text-transparent"
+                                        )}
+                                        title={absencesList.length > 0 ? `Absences — ${absencesList.join(", ")}` : ""}
+                                      >
+                                        {absencesList.length > 0 ? `🏖 ${absencesList.join(", ")}` : "·"}
+                                      </div>
+                                    )}
+                                    {anyEvt && (
+                                      <div
+                                        className={cx(
+                                          "text-[10px] px-2 py-px rounded leading-5 truncate flex items-center gap-1.5 overflow-hidden",
+                                          eventsList.length > 0 ? "bg-neutral-100 text-neutral-700" : "bg-transparent text-transparent"
+                                        )}
+                                        title={eventsList.length > 0 ? `Événements — ${eventsList.map((e: any) => e.title).join(" · ")}` : ""}
+                                      >
+                                        {eventsList.length > 0 ? eventsList.map((event: any, idx: number) => {
+                                          const cal = eventCalendarsById[event.calendarId];
+                                          const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
+                                          return (
+                                            <span key={`top-e-${event.id}`} className="inline-flex items-center gap-1 shrink-0">
+                                              {idx > 0 && <span className="text-neutral-300">·</span>}
+                                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: calHex }} />
+                                              <span className="truncate max-w-[80px]">{event.title}</span>
+                                            </span>
+                                          );
+                                        }) : "·"}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })()}
