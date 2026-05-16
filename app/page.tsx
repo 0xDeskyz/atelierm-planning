@@ -5414,55 +5414,44 @@ useEffect(() => {
                                     />
                                   );
                                 };
-                                const blocks: React.ReactNode[] = [];
-                                if (groups.starts.length > 0) {
-                                  blocks.push(
+                                const emptyHint = <div className="text-[9px] text-neutral-300 italic px-1">—</div>;
+                                return (
+                                  <>
                                     <div key="g-starts" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent</div>
-                                      {groups.starts.map((s) => renderChip(s))}
+                                      {groups.starts.length > 0 ? groups.starts.map((s) => renderChip(s)) : emptyHint}
                                     </div>
-                                  );
-                                }
-                                if (groups.continues.length > 0) {
-                                  blocks.push(
                                     <div key="g-cont" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Continuent</div>
-                                      {groups.continues.map((s) => renderChip(s, "opacity-75"))}
+                                      {groups.continues.length > 0 ? groups.continues.map((s) => renderChip(s, "opacity-75")) : emptyHint}
                                     </div>
-                                  );
-                                }
-                                if (groups.ends.length > 0) {
-                                  blocks.push(
                                     <div key="g-ends" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Terminent</div>
-                                      {groups.ends.map((s) => renderChip(s, "opacity-75 italic"))}
+                                      {groups.ends.length > 0 ? groups.ends.map((s) => renderChip(s, "opacity-50 italic line-through decoration-from-font")) : emptyHint}
                                     </div>
-                                  );
-                                }
-                                if (groups.single.length > 0) {
-                                  blocks.push(
                                     <div key="g-single" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
-                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
+                                      {groups.single.length > 0 ? groups.single.map((s) => renderChip(s, "ring-2 ring-offset-1 ring-black/40")) : emptyHint}
                                     </div>
-                                  );
-                                }
-                                return blocks;
+                                  </>
+                                );
                               })()}
                               {/* Chantiers à planifier (status = pending) */}
-                              {calFilterPending && week.pending.length > 0 && (
+                              {calFilterPending && (
                                 <div className="space-y-1">
                                   <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">À planifier</div>
-                                  {[...week.pending]
-                                    .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
-                                    .map((site: any) => (
-                                      <CalendarSiteChip
-                                        key={`w-${site.id}`}
-                                        site={site}
-                                        weekKey={week.weekKey}
-                                        className="text-[10px] px-2 py-px rounded font-medium leading-5 bg-white text-neutral-600 border-2 border-dashed border-neutral-300 italic"
-                                      />
-                                    ))}
+                                  {week.pending.length > 0
+                                    ? [...week.pending]
+                                        .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
+                                        .map((site: any) => (
+                                          <CalendarSiteChip
+                                            key={`w-${site.id}`}
+                                            site={site}
+                                            weekKey={week.weekKey}
+                                            className="text-[10px] px-2 py-px rounded font-medium leading-5 bg-white text-neutral-600 border-2 border-dashed border-neutral-300 italic"
+                                          />
+                                        ))
+                                    : <div className="text-[9px] text-neutral-300 italic px-1">—</div>}
                                 </div>
                               )}
                               {/* Absences */}
