@@ -5339,17 +5339,29 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — tri global stable (alphabétique) */}
-                              {calFilterPlanned && [...week.planned]
-                                .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
-                                .map((site: any) => (
-                                  <CalendarSiteChip
-                                    key={`p-${site.id}`}
-                                    site={site}
-                                    weekKey={week.weekKey}
-                                    className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                  />
-                                ))}
+                              {/* Chantiers planifiés — anciens d'abord, nouveaux (1ʳᵉ semaine) en bas */}
+                              {calFilterPlanned && (() => {
+                                const startsHere = (site: any) => {
+                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                                  if (pw.length === 0) return false;
+                                  return [...pw].sort()[0] === week.weekKey;
+                                };
+                                return [...week.planned]
+                                  .sort((a: any, b: any) => {
+                                    const sa = startsHere(a) ? 1 : 0;
+                                    const sb = startsHere(b) ? 1 : 0;
+                                    if (sa !== sb) return sa - sb;
+                                    return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
+                                  })
+                                  .map((site: any) => (
+                                    <CalendarSiteChip
+                                      key={`p-${site.id}`}
+                                      site={site}
+                                      weekKey={week.weekKey}
+                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                    />
+                                  ));
+                              })()}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
                                 <CalendarSiteChip
