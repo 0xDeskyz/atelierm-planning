@@ -5347,35 +5347,73 @@ useEffect(() => {
 
                             {/* Post-its */}
                             <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — tri stable par 1ʳᵉ apparition dans l'année */}
+                              {/* Chantiers planifiés — groupés par cycle de vie */}
                               {calFilterPlanned && (() => {
                                 const sortedWeeks = (site: any) => {
                                   const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
                                   return [...pw].sort();
                                 };
                                 const earliestOf = (site: any) => sortedWeeks(site)[0] || "9999-W99";
-                                return [...week.planned]
-                                  .sort((a: any, b: any) => {
-                                    const ea = earliestOf(a);
-                                    const eb = earliestOf(b);
-                                    if (ea !== eb) return ea.localeCompare(eb);
-                                    return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
-                                  })
-                                  .map((site: any) => {
-                                    const sw = sortedWeeks(site);
-                                    const isStart = sw.length > 0 && sw[0] === week.weekKey;
-                                    const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
-                                    return (
-                                      <CalendarSiteChip
-                                        key={`p-${site.id}`}
-                                        site={site}
-                                        weekKey={week.weekKey}
-                                        isStart={isStart}
-                                        isEnd={isEnd}
-                                        className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
-                                      />
-                                    );
-                                  });
+                                const sortComparator = (a: any, b: any) => {
+                                  const ea = earliestOf(a);
+                                  const eb = earliestOf(b);
+                                  if (ea !== eb) return ea.localeCompare(eb);
+                                  return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
+                                };
+                                const groups: { single: any[]; continues: any[]; boundary: any[] } = { single: [], continues: [], boundary: [] };
+                                week.planned.forEach((site: any) => {
+                                  const sw = sortedWeeks(site);
+                                  const len = sw.length;
+                                  const isStart = len > 0 && sw[0] === week.weekKey;
+                                  const isEnd = len > 0 && sw[len - 1] === week.weekKey;
+                                  if (len === 1) groups.single.push(site);
+                                  else if (isStart || isEnd) groups.boundary.push(site);
+                                  else groups.continues.push(site);
+                                });
+                                groups.single.sort(sortComparator);
+                                groups.continues.sort(sortComparator);
+                                groups.boundary.sort(sortComparator);
+                                const renderChip = (site: any) => {
+                                  const sw = sortedWeeks(site);
+                                  const isStart = sw.length > 0 && sw[0] === week.weekKey;
+                                  const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
+                                  return (
+                                    <CalendarSiteChip
+                                      key={`p-${site.id}`}
+                                      site={site}
+                                      weekKey={week.weekKey}
+                                      isStart={isStart}
+                                      isEnd={isEnd}
+                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                    />
+                                  );
+                                };
+                                const blocks: React.ReactNode[] = [];
+                                if (groups.single.length > 0) {
+                                  blocks.push(
+                                    <div key="g-single" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
+                                      {groups.single.map(renderChip)}
+                                    </div>
+                                  );
+                                }
+                                if (groups.continues.length > 0) {
+                                  blocks.push(
+                                    <div key="g-cont" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Continuent</div>
+                                      {groups.continues.map(renderChip)}
+                                    </div>
+                                  );
+                                }
+                                if (groups.boundary.length > 0) {
+                                  blocks.push(
+                                    <div key="g-bound" className="space-y-1">
+                                      <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent / terminent</div>
+                                      {groups.boundary.map(renderChip)}
+                                    </div>
+                                  );
+                                }
+                                return blocks;
                               })()}
                               {/* Chantiers en attente */}
                               {calFilterPending && week.pending.map((site: any) => (
