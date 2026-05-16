@@ -455,11 +455,11 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
   if (isStart) tooltipParts.push("démarre cette semaine");
   if (isEnd) tooltipParts.push("se termine cette semaine");
   const shape = isStart && isEnd
-    ? "rounded-full pl-3 pr-3"
+    ? "rounded-l-xl rounded-r-xl"
     : isStart
-      ? "rounded-l-full pl-3"
+      ? "rounded-l-xl"
       : isEnd
-        ? "rounded-r-full pr-3"
+        ? "rounded-r-xl"
         : "";
   return (
     <div
@@ -467,7 +467,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, shape, "cursor-grab active:cursor-grabbing select-none", isDragging && "opacity-50")}
+      className={cx(className, shape, "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate", isDragging && "opacity-50")}
       title={tooltipParts.join(" · ")}
     >
       {site.name}
