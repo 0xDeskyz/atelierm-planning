@@ -636,6 +636,7 @@ function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
   const [color, setColor] = useState<string>(SITE_COLORS[6]);
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>([]);
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
+  const [pending, setPending] = useState<boolean>(false);
   const toggleWeek = (wkKey: string) =>
     setSelectedWeeks((prev) => prev.includes(wkKey) ? prev.filter((w) => w !== wkKey) : [...prev, wkKey]);
   const toggleMonth = (keys: string[], allSelected: boolean) =>
@@ -670,18 +671,41 @@ function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
             <p className="text-[11px] text-neutral-400">Cliquer sur un mois pour le sélectionner entier, ou sur les numéros de semaine. Laisser vide = toute l'année.</p>
             <WeekPicker year={pickerYear} selectedWeeks={selectedWeeks} onToggleWeek={toggleWeek} onToggleMonth={toggleMonth} />
           </div>
+          <div className="space-y-1 pt-1">
+            <div className="text-sm font-medium text-neutral-700">Statut initial</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPending(false)}
+                className={cx(
+                  "flex-1 px-3 py-2 rounded-md border text-sm font-medium transition",
+                  !pending ? "bg-sky-50 border-sky-300 text-sky-800" : "bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                )}
+              >Planifié</button>
+              <button
+                type="button"
+                onClick={() => setPending(true)}
+                className={cx(
+                  "flex-1 px-3 py-2 rounded-md border text-sm font-medium transition",
+                  pending ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                )}
+              >À planifier</button>
+            </div>
+            <p className="text-[11px] text-neutral-400">"À planifier" : le chantier est créé mais reste en attente, pas encore programmé sur une semaine.</p>
+          </div>
         </div>
         <DialogFooter>
           <Button
             onClick={() => {
               const n = name.trim();
               if (!n) return;
-              onAdd(n, selectedWeeks, color);
+              onAdd(n, selectedWeeks, color, pending ? "pending" : "planned");
               setOpen(false);
               setName("");
               setColor(SITE_COLORS[6]);
               setSelectedWeeks([]);
               setPickerYear(new Date().getFullYear());
+              setPending(false);
             }}
           >
             Ajouter
@@ -1689,7 +1713,7 @@ function AddPerson({ onAdd, usedColors = [] }: { onAdd: (name: string, color: st
     </>
   );
 }
-function AddSite({ onAdd, usedColors = [] }: { onAdd: (name: string, planningWeeks: string[], color: string) => void; usedColors?: string[] }) {
+function AddSite({ onAdd, usedColors = [] }: { onAdd: (name: string, planningWeeks: string[], color: string, status?: "planned" | "pending") => void; usedColors?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -3259,7 +3283,7 @@ export default function Page() {
     setAssignments((as) => as.filter((a) => a.personId !== id));
     setAbsencesByWeek((prev) => { const next: typeof prev = { ...prev }; for (const wk of Object.keys(next)) { if (next[wk] && Object.prototype.hasOwnProperty.call(next[wk], id)) { const { [id]: _omit, ...rest } = next[wk]; (next as any)[wk] = rest; } } return next; });
   };
-  const addSite = (name: string, planningWeeks: string[], color: string) => {
+  const addSite = (name: string, planningWeeks: string[], color: string, status: "planned" | "pending" = "planned") => {
     const derived = planningWeeks.length ? getWeekRangeFromKeys(planningWeeks) : null;
     const startDate = derived?.startKey || toLocalKey(new Date());
     const endDate = derived?.endKey || startDate;
@@ -3275,7 +3299,7 @@ export default function Page() {
         startDate,
         endDate,
         color,
-        status: "planned",
+        status,
         planningWeeks,
       }),
     ]);
@@ -5375,7 +5399,7 @@ useEffect(() => {
                                 groups.continues.sort(sortComparator);
                                 groups.ends.sort(sortComparator);
                                 groups.single.sort(sortComparator);
-                                const renderChip = (site: any) => {
+                                const renderChip = (site: any, extra = "") => {
                                   const sw = sortedWeeks(site);
                                   const isStart = sw.length > 0 && sw[0] === week.weekKey;
                                   const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
@@ -5386,7 +5410,7 @@ useEffect(() => {
                                       weekKey={week.weekKey}
                                       isStart={isStart}
                                       isEnd={isEnd}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500")}
+                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500", extra)}
                                     />
                                   );
                                 };
@@ -5395,7 +5419,7 @@ useEffect(() => {
                                   blocks.push(
                                     <div key="g-starts" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Démarrent</div>
-                                      {groups.starts.map(renderChip)}
+                                      {groups.starts.map((s) => renderChip(s))}
                                     </div>
                                   );
                                 }
@@ -5403,7 +5427,7 @@ useEffect(() => {
                                   blocks.push(
                                     <div key="g-cont" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Continuent</div>
-                                      {groups.continues.map(renderChip)}
+                                      {groups.continues.map((s) => renderChip(s, "opacity-75"))}
                                     </div>
                                   );
                                 }
@@ -5411,7 +5435,7 @@ useEffect(() => {
                                   blocks.push(
                                     <div key="g-ends" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Terminent</div>
-                                      {groups.ends.map(renderChip)}
+                                      {groups.ends.map((s) => renderChip(s, "opacity-75 italic"))}
                                     </div>
                                   );
                                 }
@@ -5419,21 +5443,28 @@ useEffect(() => {
                                   blocks.push(
                                     <div key="g-single" className="space-y-1">
                                       <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">Sur la semaine</div>
-                                      {groups.single.map(renderChip)}
+                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
                                     </div>
                                   );
                                 }
                                 return blocks;
                               })()}
-                              {/* Chantiers en attente */}
-                              {calFilterPending && week.pending.map((site: any) => (
-                                <CalendarSiteChip
-                                  key={`w-${site.id}`}
-                                  site={site}
-                                  weekKey={week.weekKey}
-                                  className="text-[10px] px-2 py-px rounded font-semibold leading-5 bg-amber-100 text-amber-800 border border-amber-200"
-                                />
-                              ))}
+                              {/* Chantiers à planifier (status = pending) */}
+                              {calFilterPending && week.pending.length > 0 && (
+                                <div className="space-y-1">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-neutral-400 mt-0.5">À planifier</div>
+                                  {[...week.pending]
+                                    .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
+                                    .map((site: any) => (
+                                      <CalendarSiteChip
+                                        key={`w-${site.id}`}
+                                        site={site}
+                                        weekKey={week.weekKey}
+                                        className="text-[10px] px-2 py-px rounded font-medium leading-5 bg-white text-neutral-600 border-2 border-dashed border-neutral-300 italic"
+                                      />
+                                    ))}
+                                </div>
+                              )}
                               {/* Absences */}
                               {calFilterAbsences && week.absences.map((name: string) => (
                                 <div
