@@ -1861,6 +1861,7 @@ export default function Page() {
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+  const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -5344,12 +5345,16 @@ useEffect(() => {
                                 return (
                                   <div className="space-y-1 mb-1.5">
                                     {anyAbs && (
-                                      <div
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (absencesList.length === 0 && eventsList.length === 0) return;
+                                          setWeekDetailTarget({ weekKey: week.weekKey, weekNum: week.weekNum, start: week.start, absences: absencesList, events: eventsList });
+                                        }}
                                         className={cx(
-                                          "text-[10px] px-2 py-px rounded font-semibold leading-5 flex items-center gap-1.5 overflow-hidden",
-                                          absencesList.length > 0 ? "bg-rose-100 text-rose-700" : "bg-transparent text-transparent"
+                                          "w-full text-left text-[10px] px-2 py-px rounded font-semibold leading-5 flex items-center gap-1.5 overflow-hidden",
+                                          absencesList.length > 0 ? "bg-rose-100 text-rose-700 hover:bg-rose-200" : "bg-transparent text-transparent pointer-events-none"
                                         )}
-                                        title={absencesList.length > 0 ? `Absences — ${absencesList.join(", ")}` : ""}
                                       >
                                         {absencesList.length > 0 ? (
                                           <>
@@ -5358,15 +5363,19 @@ useEffect(() => {
                                             <span className="truncate min-w-0">{absencesList.join(", ")}</span>
                                           </>
                                         ) : "·"}
-                                      </div>
+                                      </button>
                                     )}
                                     {anyEvt && (
-                                      <div
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (absencesList.length === 0 && eventsList.length === 0) return;
+                                          setWeekDetailTarget({ weekKey: week.weekKey, weekNum: week.weekNum, start: week.start, absences: absencesList, events: eventsList });
+                                        }}
                                         className={cx(
-                                          "text-[10px] px-2 py-px rounded leading-5 flex items-center gap-1.5 overflow-hidden",
-                                          eventsList.length > 0 ? "bg-neutral-100 text-neutral-700" : "bg-transparent text-transparent"
+                                          "w-full text-left text-[10px] px-2 py-px rounded leading-5 flex items-center gap-1.5 overflow-hidden",
+                                          eventsList.length > 0 ? "bg-neutral-100 text-neutral-700 hover:bg-neutral-200" : "bg-transparent text-transparent pointer-events-none"
                                         )}
-                                        title={eventsList.length > 0 ? `Événements — ${eventsList.map((e: any) => e.title).join(" · ")}` : ""}
                                       >
                                         {eventsList.length > 0 ? (
                                           <>
@@ -5387,7 +5396,7 @@ useEffect(() => {
                                             </span>
                                           </>
                                         ) : "·"}
-                                      </div>
+                                      </button>
                                     )}
                                   </div>
                                 );
@@ -7365,6 +7374,60 @@ useEffect(() => {
           </>
         );
       })()}
+
+      {/* Popup détail semaine (absences + événements) */}
+      {weekDetailTarget && (
+        <>
+          <div onClick={() => setWeekDetailTarget(null)} className="fixed inset-0 bg-black/30 z-40 animate-fadeIn" />
+          <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl border border-neutral-200 p-5 w-[min(90vw,440px)] max-h-[80vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="text-sm font-semibold text-neutral-800">Semaine {weekDetailTarget.weekNum}</div>
+                <div className="text-xs text-neutral-500">{weekDetailTarget.start.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</div>
+              </div>
+              <button onClick={() => setWeekDetailTarget(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 flex items-center justify-center">×</button>
+            </div>
+            {weekDetailTarget.absences.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-rose-500 mb-1.5">🏖 Absences ({weekDetailTarget.absences.length})</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {weekDetailTarget.absences.map((name: string) => (
+                    <span key={`wd-a-${name}`} className="text-xs px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200">{name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {weekDetailTarget.events.length > 0 && (
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-500 mb-1.5">📅 Événements ({weekDetailTarget.events.length})</div>
+                <div className="space-y-1.5">
+                  {weekDetailTarget.events.map((event: any) => {
+                    const cal = eventCalendarsById[event.calendarId];
+                    const calHex = cal?.color ? (COLOR_HEX[cal.color] || "#8b5cf6") : "#8b5cf6";
+                    return (
+                      <button
+                        key={`wd-e-${event.id}`}
+                        type="button"
+                        onClick={() => { const e = event; setWeekDetailTarget(null); openEventDialogForEvent(e); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 hover:bg-neutral-50 text-left"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: calHex }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-neutral-800 truncate">{event.title}</div>
+                          {cal && <div className="text-[11px] text-neutral-500 truncate">{cal.name}</div>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {weekDetailTarget.absences.length === 0 && weekDetailTarget.events.length === 0 && (
+              <div className="text-sm text-neutral-400 italic text-center py-4">Aucune absence ni événement cette semaine</div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* FAB ⊕ — Ajouter rapide */}
       {(view === "planning" || view === "hours" || view === "calendar") && (
