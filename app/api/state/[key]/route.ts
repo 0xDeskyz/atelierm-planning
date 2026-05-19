@@ -59,7 +59,8 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     }
 
     // Reject stale writes: if the server already has a newer version, return 409
-    if (incomingVersion > 0 && prev) {
+    // force:true bypasses this check (used by the restore tool)
+    if (body?.force !== true && incomingVersion > 0 && prev) {
       const storedVersion = Number(prev?.updatedAt || 0);
       if (storedVersion > 0 && incomingVersion < storedVersion) {
         return Response.json(
