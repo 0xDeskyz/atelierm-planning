@@ -450,6 +450,19 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
+// Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
+function getSiteDisplayColor(site: any, mode: "default" | "difficulte" | "categorie"): string {
+  if (mode === "difficulte") {
+    const lvl = computeDifficulteLevel(site?.difficulte);
+    return DIFFICULTE_LEVEL_META[lvl].color;
+  }
+  if (mode === "categorie") {
+    const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+    return cat?.color || "bg-neutral-400";
+  }
+  return site?.color || "bg-sky-500";
+}
+
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
@@ -5377,8 +5390,8 @@ useEffect(() => {
                                 <span
                                   className={cx(
                                     "w-3 h-3 rounded-full border flex-shrink-0",
-                                    site.color || "bg-neutral-300",
-                                    site.color ? "border-black/10" : "border-neutral-200"
+                                    getSiteDisplayColor(site, siteColorMode),
+                                    "border-black/10"
                                   )}
                                   aria-hidden
                                 />
@@ -5439,6 +5452,24 @@ useEffect(() => {
                     ))}
                   </div>
                   <div className="flex-1" />
+                  {/* Toggle mode de coloration des chantiers */}
+                  <div className="flex items-center gap-1 rounded-full bg-neutral-100 p-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2">Couleur</span>
+                    {([
+                      { key: "default",    label: "Libre" },
+                      { key: "difficulte", label: "Difficulté" },
+                      { key: "categorie",  label: "Catégorie" },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setSiteColorMode(key)}
+                        className={cx(
+                          "px-2.5 py-1 rounded-full text-xs font-medium transition",
+                          siteColorMode === key ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                        )}
+                      >{label}</button>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
@@ -5614,7 +5645,7 @@ useEffect(() => {
                                       weekKey={week.weekKey}
                                       isStart={isStart}
                                       isEnd={isEnd}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500", extra)}
+                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", getSiteDisplayColor(site, siteColorMode), extra)}
                                     />
                                   );
                                 };
@@ -5760,7 +5791,7 @@ useEffect(() => {
                       <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
                         <div className="flex flex-col gap-1 px-2 text-sm">
                           <div className="flex items-center gap-2">
-                            <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className={cx("w-3 h-3 rounded-full border border-black/10", getSiteDisplayColor(row.site, siteColorMode))} />
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
@@ -5777,7 +5808,7 @@ useEffect(() => {
                             className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
                             style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
                           >
-                            <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
+                            <div className={cx("h-full w-full rounded-full opacity-90", getSiteDisplayColor(row.site, siteColorMode))}></div>
                           </div>
                         </div>
                       </div>
