@@ -5845,13 +5845,18 @@ useEffect(() => {
                             <div className="py-1.5 flex-1">
                               {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {usedLaneIndices.map((actualLane, rowIdx) => {
-                                    // Trouver le chantier de cette lane actif sur cette semaine
+                                  {/* Par semaine : on n'affiche que les lanes dont le chantier
+                                      a un chip cette semaine — zéro ligne vide, calendrier compact. */}
+                                  {usedLaneIndices.filter((laneIdx) =>
+                                    sortedSites.some((s: any) =>
+                                      siteLane.get(s.id) === laneIdx &&
+                                      Array.isArray(s.planningWeeks) &&
+                                      s.planningWeeks.includes(week.weekKey)
+                                    )
+                                  ).map((actualLane, rowIdx) => {
                                     const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
                                     const laneIdx = rowIdx;
-                                    if (!site) {
-                                      return <div key={`lane-${laneIdx}`} style={{ height: LANE_H }} />;
-                                    }
+                                    if (!site) return null;
                                     const pw = [...site.planningWeeks].sort();
                                     const isStart = pw[0] === week.weekKey;
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
