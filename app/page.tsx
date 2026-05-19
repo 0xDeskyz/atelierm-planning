@@ -3710,8 +3710,12 @@ export default function Page() {
         occupied.get(chosen)!.push(span);
         next[s.id] = chosen;
       });
-      // Préserve les entrées des chantiers absents (supprimés du store mais peut-être recréés)
-      Object.entries(prev).forEach(([id, lane]) => { if (!(id in next)) next[id] = lane; });
+      // Compactage : on remappe les indices vers 0..N-1 pour éliminer les "trous"
+      // hérités d'anciennes assignations. L'ordre relatif est préservé.
+      const used = Array.from(new Set(Object.values(next))).sort((a, b) => a - b);
+      const remap = new Map<number, number>();
+      used.forEach((l, i) => remap.set(l, i));
+      Object.keys(next).forEach((id) => { next[id] = remap.get(next[id])!; });
       // Pas de changement → retourner prev pour éviter un re-render inutile
       const prevKeys = Object.keys(prev);
       const nextKeys = Object.keys(next);
@@ -5669,10 +5673,11 @@ useEffect(() => {
                         }
                         siteLane.set(site.id, assigned);
                       });
-                      const numLanes = siteLane.size === 0
-                        ? 0
-                        : Math.max(...Array.from(siteLane.values())) + 1;
-                      // Pour onDragEnd : liste des chantiers visibles triés par leur ligne
+                      // Compactage au rendu : on ne montre que les lignes effectivement utilisées
+                      // par un chantier visible (les "trous" laissés par d'anciennes assignations
+                      // sparse ne créent pas de lignes vides).
+                      const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
+                      const numLanes = usedLaneIndices.length;
                       const sortedSites = visibleSites
                         .filter((s: any) => siteLane.has(s.id))
                         .sort((a: any, b: any) => siteLane.get(a.id)! - siteLane.get(b.id)!);
@@ -5802,9 +5807,10 @@ useEffect(() => {
                             <div className="py-1.5 flex-1">
                               {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {Array.from({ length: numLanes }).map((_, laneIdx) => {
+                                  {usedLaneIndices.map((actualLane, rowIdx) => {
                                     // Trouver le chantier de cette lane actif sur cette semaine
-                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === laneIdx && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
+                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
+                                    const laneIdx = rowIdx;
                                     if (!site) {
                                       return <div key={`lane-${laneIdx}`} style={{ height: LANE_H }} />;
                                     }
