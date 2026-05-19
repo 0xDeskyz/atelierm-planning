@@ -40,6 +40,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
   try {
     const body = await req.json();
+    const incomingVersion = Number(body?.updatedAt || 0);
     const supabase = getSupabase();
 
     const { data: prevRow } = await supabase
@@ -49,11 +50,23 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .single();
     const prev = prevRow?.data;
 
+    // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
       return Response.json(
         { ok: false, error: "Refused: incoming payload is empty while existing state has data. Pass force:true to override." },
         { status: 409, headers: { "x-state-storage": "refused-empty" } }
       );
+    }
+
+    // Reject stale writes: if the server already has a newer version, return 409
+    if (incomingVersion > 0 && prev) {
+      const storedVersion = Number(prev?.updatedAt || 0);
+      if (storedVersion > 0 && incomingVersion < storedVersion) {
+        return Response.json(
+          { ok: false, conflict: true, storedVersion, incomingVersion },
+          { status: 409 }
+        );
+      }
     }
 
     if (prev) {
