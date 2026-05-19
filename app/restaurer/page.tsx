@@ -13,13 +13,18 @@ type Snapshot = {
 export default function RestorePage() {
   const [byWeek, setByWeek] = useState<Record<string, Snapshot[]>>({});
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     fetch("/api/restore/all")
       .then((r) => r.json())
-      .then((d) => { if (d.ok) setByWeek(d.byWeek); })
+      .then((d) => {
+        if (d.ok) setByWeek(d.byWeek);
+        else setFetchError(d.error || "Erreur inconnue");
+      })
+      .catch((e) => setFetchError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -67,7 +72,13 @@ export default function RestorePage() {
 
       {loading && <p>Chargement des backups…</p>}
 
-      {!loading && weeks.length === 0 && (
+      {fetchError && (
+        <div style={{ padding: 24, background: "#fee2e2", borderRadius: 8, color: "#991b1b", marginBottom: 20 }}>
+          <strong>Erreur Supabase :</strong> <code>{fetchError}</code>
+        </div>
+      )}
+
+      {!loading && !fetchError && weeks.length === 0 && (
         <div style={{ padding: 24, background: "#fef3c7", borderRadius: 8, color: "#92400e" }}>
           <strong>Aucun backup trouvé.</strong> La table <code>planner_state_backup</code> est vide ou n'existe pas encore dans Supabase.
         </div>
