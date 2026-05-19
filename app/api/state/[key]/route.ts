@@ -76,6 +76,17 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
         .insert({ key: params.key, data: prev });
       if (backupErr) {
         console.warn("Snapshot backup failed (non-blocking):", backupErr.message);
+      } else {
+        // Keep only the 20 most recent snapshots per week key
+        const { data: ids } = await supabase
+          .from("planner_state_backup")
+          .select("id")
+          .eq("key", params.key)
+          .order("created_at", { ascending: false });
+        if (ids && ids.length > 20) {
+          const toDelete = ids.slice(20).map((r: any) => r.id);
+          await supabase.from("planner_state_backup").delete().in("id", toDelete);
+        }
       }
     }
 
