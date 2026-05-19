@@ -40,6 +40,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
   try {
     const body = await req.json();
+    const incomingVersion = Number(body?.updatedAt || 0);
     const supabase = getSupabase();
 
     const { data: prevRow } = await supabase
@@ -49,6 +50,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .single();
     const prev = prevRow?.data;
 
+    // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
       return Response.json(
         { ok: false, error: "Refused: incoming payload is empty while existing state has data. Pass force:true to override." },
@@ -56,13 +58,38 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       );
     }
 
+    // Reject stale writes: if the server already has a newer version, return 409
+    // force:true bypasses this check (used by the restore tool)
+    if (body?.force !== true && incomingVersion > 0 && prev) {
+      const storedVersion = Number(prev?.updatedAt || 0);
+      if (storedVersion > 0 && incomingVersion < storedVersion) {
+        return Response.json(
+          { ok: false, conflict: true, storedVersion, incomingVersion },
+          { status: 409 }
+        );
+      }
+    }
+
+    let backupStatus: string = "skipped (no prev)";
     if (prev) {
-      try {
-        await supabase
+      const { error: backupErr } = await supabase
+        .from("planner_state_backup")
+        .insert({ key: params.key, data: prev });
+      if (backupErr) {
+        backupStatus = `error: ${backupErr.message}`;
+        console.warn("Snapshot backup failed (non-blocking):", backupErr.message);
+      } else {
+        backupStatus = "ok";
+        // Keep only the 20 most recent snapshots per week key
+        const { data: ids } = await supabase
           .from("planner_state_backup")
-          .insert({ key: params.key, data: prev, created_at: new Date().toISOString() });
-      } catch (backupErr) {
-        console.warn("Snapshot backup failed (non-blocking)", backupErr);
+          .select("id")
+          .eq("key", params.key)
+          .order("created_at", { ascending: false });
+        if (ids && ids.length > 20) {
+          const toDelete = ids.slice(20).map((r: any) => r.id);
+          await supabase.from("planner_state_backup").delete().in("id", toDelete);
+        }
       }
     }
 
@@ -74,7 +101,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase" }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }

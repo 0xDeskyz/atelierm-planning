@@ -8,6 +8,7 @@ import {
   PointerSensor,
   TouchSensor,
   closestCenter,
+  useDndContext,
   useDroppable,
   useSensor,
   useSensors,
@@ -82,6 +83,11 @@ import {
   normalizePersonRecord,
   normalizeSiteRecord,
   ORIGINE_OPTIONS,
+  CATEGORIE_PRINCIPALE_OPTIONS,
+  DEFAULT_SOUS_CATEGORIES,
+  DIFFICULTE_FLAG_LABELS,
+  DIFFICULTE_LEVEL_META,
+  computeDifficulteLevel,
   normalizeQuoteRecord,
   normalizeTenderRecord,
   normalizeClientRecord,
@@ -445,11 +451,31 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
+// Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
+function getSiteDisplayColor(site: any, mode: "default" | "difficulte" | "categorie"): string {
+  if (mode === "difficulte") {
+    const lvl = computeDifficulteLevel(site?.difficulte);
+    return DIFFICULTE_LEVEL_META[lvl].color;
+  }
+  if (mode === "categorie") {
+    const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+    return cat?.color || "bg-neutral-400";
+  }
+  return site?.color || "bg-sky-500";
+}
+
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
   });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `calendar-site-drop-${site.id}-${weekKey}`,
+    data: { type: "lane-drop", siteId: site.id },
+  });
+  const { active } = useDndContext();
+  const isLaneReorderDrag = active?.data?.current?.type === "lane-reorder";
+  const setNodeRef = (el: HTMLElement | null) => { setDragRef(el); setDropRef(el); };
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
   const tooltipParts: string[] = [site.name];
   if (isStart) tooltipParts.push("démarre cette semaine");
@@ -467,10 +493,42 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, shape, "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate", isDragging && "opacity-50")}
+      className={cx(
+        className, shape,
+        "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate",
+        isDragging && "opacity-50",
+        isOver && isLaneReorderDrag && "brightness-110 ring-2 ring-white ring-inset"
+      )}
       title={tooltipParts.join(" · ")}
     >
       {site.name}
+    </div>
+  );
+}
+
+// Drag handle for vertical lane reordering
+function LaneDragHandle({ siteId, weekKey }: { siteId: string; weekKey: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `lane-drag-${siteId}-${weekKey}`,
+    data: { type: "lane-reorder", siteId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cx(
+        "absolute left-0 inset-y-0 w-3 flex items-center justify-center cursor-grab z-10 select-none touch-none",
+        "opacity-0 group-hover:opacity-100 transition-opacity",
+        isDragging && "opacity-100"
+      )}
+      title="Glisser pour réordonner"
+    >
+      <svg viewBox="0 0 8 12" className="w-1.5 h-2.5 fill-current text-white/80 shrink-0">
+        <circle cx="2" cy="2" r="1"/><circle cx="6" cy="2" r="1"/>
+        <circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/>
+        <circle cx="2" cy="10" r="1"/><circle cx="6" cy="10" r="1"/>
+      </svg>
     </div>
   );
 }
@@ -811,7 +869,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie }: any) {
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
@@ -837,6 +895,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [newSitMontant, setNewSitMontant] = useState("");
   const [newSitDate, setNewSitDate] = useState("");
   const [origine, setOrigine] = useState<string>("");
+  const [categoriePrincipale, setCategoriePrincipale] = useState<string>("");
+  const [sousCategorie, setSousCategorie] = useState<string>("");
+  const [newSousCatInput, setNewSousCatInput] = useState<string>("");
+  const [diffTechnique, setDiffTechnique] = useState<boolean>(false);
+  const [diffDelai, setDiffDelai] = useState<boolean>(false);
+  const [diffMarge, setDiffMarge] = useState<boolean>(false);
 
   useEffect(() => {
     setTab("infos");
@@ -865,6 +929,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewSitMontant("");
     setNewSitDate("");
     setOrigine(site?.origine || "");
+    setCategoriePrincipale(site?.categoriePrincipale || "");
+    setSousCategorie(site?.sousCategorie || "");
+    setNewSousCatInput("");
+    setDiffTechnique(!!site?.difficulte?.technique);
+    setDiffDelai(!!site?.difficulte?.delai);
+    setDiffMarge(!!site?.difficulte?.marge);
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -895,6 +965,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       couts,
       situations,
       origine: origine || null,
+      categoriePrincipale: categoriePrincipale || null,
+      sousCategorie: sousCategorie || null,
+      difficulte: { technique: diffTechnique, delai: diffDelai, marge: diffMarge },
     });
   };
 
@@ -968,6 +1041,92 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   ))}
                 </select>
               </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Catégorie principale</span>
+                <select
+                  value={categoriePrincipale}
+                  onChange={(e) => setCategoriePrincipale(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                >
+                  <option value="">— Non renseignée</option>
+                  {CATEGORIE_PRINCIPALE_OPTIONS.map(c => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Sous-catégorie</span>
+                <div className="flex gap-1.5">
+                  <select
+                    value={sousCategorie}
+                    onChange={(e) => setSousCategorie(e.target.value)}
+                    className="flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                  >
+                    <option value="">— Non renseignée</option>
+                    {[...DEFAULT_SOUS_CATEGORIES, ...customSousCategories].map((s: string) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-1.5 mt-1">
+                  <Input
+                    value={newSousCatInput}
+                    onChange={(e: any) => setNewSousCatInput(e.target.value)}
+                    placeholder="Ajouter une sous-catégorie"
+                    onKeyDown={(e: any) => {
+                      if (e.key === "Enter" && newSousCatInput.trim()) {
+                        e.preventDefault();
+                        const t = newSousCatInput.trim();
+                        if (onAddSousCategorie) onAddSousCategorie(t);
+                        setSousCategorie(t);
+                        setNewSousCatInput("");
+                      }
+                    }}
+                  />
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const t = newSousCatInput.trim();
+                    if (!t) return;
+                    if (onAddSousCategorie) onAddSousCategorie(t);
+                    setSousCategorie(t);
+                    setNewSousCatInput("");
+                  }}>Ajouter</Button>
+                </div>
+              </label>
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
+                  {(() => {
+                    const lvl = computeDifficulteLevel({ technique: diffTechnique, delai: diffDelai, marge: diffMarge });
+                    const meta = DIFFICULTE_LEVEL_META[lvl];
+                    return (
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full border", meta.badge)}>
+                        ● {meta.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { key: "technique", val: diffTechnique, set: setDiffTechnique },
+                    { key: "delai",     val: diffDelai,     set: setDiffDelai },
+                    { key: "marge",     val: diffMarge,     set: setDiffMarge },
+                  ] as const).map(({ key, val, set }) => (
+                    <label key={key} className={cx(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
+                      val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                    )}>
+                      <input
+                        type="checkbox"
+                        checked={val}
+                        onChange={(e) => set(e.target.checked)}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>{DIFFICULTE_FLAG_LABELS[key]}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge</p>
+              </div>
               <label className="space-y-1 md:col-span-2">
                 <span className="text-[11px] text-neutral-600">Couleur</span>
                 <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
@@ -1788,6 +1947,10 @@ export default function Page() {
   const [exportStartDate, setExportStartDate] = useState<string>(toLocalKey(startOfMonthLocal(new Date())));
   const [exportEndDate, setExportEndDate] = useState<string>(toLocalKey(endOfMonthLocal(new Date())));
   const syncVersionRef = useRef<number>(0);
+  // Prevents auto-save from firing when state was just received from a remote device
+  const isApplyingRemote = useRef(false);
+  // Stable ref to loadWeekState for use inside useMemo callbacks
+  const loadWeekStateRef = useRef<(markLoaded: boolean) => void>(() => {});
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
@@ -1859,6 +2022,7 @@ export default function Page() {
     "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
   >("accueil");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  const calendarSortedSitesRef = useRef<any[]>([]);
   const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
@@ -1889,6 +2053,13 @@ export default function Page() {
   const [calFilterPending, setCalFilterPending] = useState(true);
   const [calFilterAbsences, setCalFilterAbsences] = useState(true);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
+  // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
+  const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
+  // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
+  const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
+  // Ordre manuel des chantiers dans le calendrier (drag-and-drop).
+  // Les nouveaux chantiers sont auto-ajoutés en fin de liste.
+  const [calendarLaneOrder, setCalendarLaneOrder] = useState<string[]>([]);
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -2935,6 +3106,25 @@ export default function Page() {
     const { active, over } = e;
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
+
+    if (data.type === "lane-reorder" && over.data?.current?.type === "lane-drop") {
+      const fromSiteId: string = data.siteId;
+      const toSiteId: string | null = over.data.current.siteId;
+      if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return;
+      setCalendarLaneOrder(() => {
+        const sorted = calendarSortedSitesRef.current;
+        const base = sorted.map((s: any) => s.id);
+        const fromIdx = base.indexOf(fromSiteId);
+        const toIdx = base.indexOf(toSiteId);
+        if (fromIdx === -1 || toIdx === -1) return calendarLaneOrder;
+        const next = [...base];
+        next.splice(fromIdx, 1);
+        next.splice(toIdx > fromIdx ? toIdx - 1 : toIdx, 0, fromSiteId);
+        return next;
+      });
+      return;
+    }
+
     if (data.type === "quote" && over.data?.current?.type === "quote-column") {
       const newStatus = over.data.current.status;
       if (!newStatus || data.status === newStatus) return;
@@ -3449,8 +3639,29 @@ export default function Page() {
     if (state.validatedWeeks && typeof state.validatedWeeks === "object") setValidatedWeeks(state.validatedWeeks);
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
+    if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
+    if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
+    // Supporte l'ancien format siteLaneAssignments (Record) → conversion en ordre simple
+    if (state.siteLaneAssignments && typeof state.siteLaneAssignments === "object" && !Array.isArray(state.siteLaneAssignments)) {
+      const pairs = Object.entries(state.siteLaneAssignments as Record<string, number>)
+        .filter(([id, v]) => typeof id === "string" && Number.isFinite(Number(v)))
+        .sort((a, b) => Number(a[1]) - Number(b[1]));
+      setCalendarLaneOrder(pairs.map(([id]) => id));
+    } else if (Array.isArray(state.calendarLaneOrder)) {
+      setCalendarLaneOrder(state.calendarLaneOrder.filter((s: any) => typeof s === "string"));
+    }
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
+
+  // Auto-ajout des nouveaux chantiers en fin d'ordre (sans modifier l'ordre existant)
+  useEffect(() => {
+    setCalendarLaneOrder((prev) => {
+      const known = new Set(prev);
+      const newIds = sites.filter((s: any) => !known.has(s.id)).map((s: any) => s.id);
+      if (newIds.length === 0) return prev;
+      return [...prev, ...newIds];
+    });
+  }, [sites]);
 
   const firstLoad = useRef(true);
   const localStateKey = useMemo(() => `btp-planner-state:v1:${currentWeekKey}`, [currentWeekKey]);
@@ -3513,6 +3724,8 @@ export default function Page() {
     [applyState, currentWeekKey, localStateKey]
   );
 
+  useEffect(() => { loadWeekStateRef.current = loadWeekState; }, [loadWeekState]);
+
   const refreshPlanning = useCallback(() => {
     loadWeekState(false);
   }, [loadWeekState]);
@@ -3543,6 +3756,7 @@ useEffect(() => {
         const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
 
         if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
+          isApplyingRemote.current = true;
           applyState(data);
         }
       }
@@ -3591,6 +3805,7 @@ useEffect(() => {
         const remoteVersion = Number(remote.updatedAt || 0);
         if (remoteClient === clientIdRef.current) return; // c'est notre propre update
         if (remoteVersion <= syncVersionRef.current) return; // on a déjà plus récent
+        isApplyingRemote.current = true;
         applyState(remote, false);
         syncVersionRef.current = remoteVersion;
         setSyncStatus("synced");
@@ -3608,6 +3823,11 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 409) {
+      // Server has a newer version — reload silently instead of overwriting
+      loadWeekStateRef.current(false);
+      return;
+    }
     if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
   } catch (err) {
     console.error("Autosave distant impossible", err);
@@ -3632,11 +3852,14 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     eventCalendars,
     calendarEvents,
     validatedWeeks,
+    customSousCategories,
+    siteColorMode,
+    calendarLaneOrder,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, calendarLaneOrder]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -3664,6 +3887,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (res.status === 409) {
+        setSyncStatus("error");
+        setSaveStatusMessage("Conflit : une version plus récente existe sur le serveur. Rechargement en cours…");
+        loadWeekStateRef.current(false);
+        return;
+      }
       if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
       setSyncStatus("synced");
     } catch (err) {
@@ -3675,9 +3904,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     }
   }, [buildSyncPayload, currentWeekKey, localStateKey]);
 
-// Sauvegarder à chaque modif
+// Sauvegarder à chaque modif (sauf si l'état vient d'être reçu d'un autre appareil)
 useEffect(() => {
   if (firstLoad.current) return;
+  if (isApplyingRemote.current) {
+    isApplyingRemote.current = false;
+    return;
+  }
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
@@ -5240,8 +5473,8 @@ useEffect(() => {
                                 <span
                                   className={cx(
                                     "w-3 h-3 rounded-full border flex-shrink-0",
-                                    site.color || "bg-neutral-300",
-                                    site.color ? "border-black/10" : "border-neutral-200"
+                                    getSiteDisplayColor(site, siteColorMode),
+                                    "border-black/10"
                                   )}
                                   aria-hidden
                                 />
@@ -5302,6 +5535,24 @@ useEffect(() => {
                     ))}
                   </div>
                   <div className="flex-1" />
+                  {/* Toggle mode de coloration des chantiers */}
+                  <div className="flex items-center gap-1 rounded-full bg-neutral-100 p-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2">Couleur</span>
+                    {([
+                      { key: "default",    label: "Libre" },
+                      { key: "difficulte", label: "Difficulté" },
+                      { key: "categorie",  label: "Catégorie" },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setSiteColorMode(key)}
+                        className={cx(
+                          "px-2.5 py-1 rounded-full text-xs font-medium transition",
+                          siteColorMode === key ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                        )}
+                      >{label}</button>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
@@ -5317,6 +5568,45 @@ useEffect(() => {
                 {/* Table horizontale */}
                 <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto" ref={calendarScrollRef}>
+                    {(() => {
+                      // 1. Collecte des chantiers planifiés visibles
+                      const seen = new Map<string, any>();
+                      if (calFilterPlanned) {
+                        projectionWeekSummaries.forEach((w: any) => {
+                          (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
+                        });
+                      }
+                      // 2. Tri : ordre manuel (calendarLaneOrder) puis 1re semaine puis nom
+                      const manualOrderIdx = new Map<string, number>();
+                      calendarLaneOrder.forEach((id: string, i: number) => manualOrderIdx.set(id, i));
+                      const sortedSites = Array.from(seen.values()).sort((a: any, b: any) => {
+                        const ma = manualOrderIdx.has(a.id) ? manualOrderIdx.get(a.id)! : Infinity;
+                        const mb = manualOrderIdx.has(b.id) ? manualOrderIdx.get(b.id)! : Infinity;
+                        if (ma !== mb) return ma - mb;
+                        const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
+                        const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
+                        if (sa !== sb) return sa.localeCompare(sb);
+                        return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
+                      });
+                      // 3. Greedy lane packing : chevauchement par semaine individuelle
+                      const lanes: Set<string>[] = [];
+                      const siteLane = new Map<string, number>();
+                      sortedSites.forEach((site: any) => {
+                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        let assigned = -1;
+                        for (let i = 0; i < lanes.length; i++) {
+                          let overlap = false;
+                          for (const wk of wks) { if (lanes[i].has(wk)) { overlap = true; break; } }
+                          if (!overlap) { wks.forEach((wk) => lanes[i].add(wk)); assigned = i; break; }
+                        }
+                        if (assigned === -1) { lanes.push(new Set(wks)); assigned = lanes.length - 1; }
+                        siteLane.set(site.id, assigned);
+                      });
+                      const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
+                      const numLanes = usedLaneIndices.length;
+                      calendarSortedSitesRef.current = sortedSites;
+                      const LANE_H = 26; // px par ligne
+                    return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
                       {projectionWeekSummaries.map((week) => {
                         const isCurrentWeek = week.weekKey === weekKeyOf(new Date());
@@ -5436,77 +5726,47 @@ useEffect(() => {
                               </div>
                             </div>
 
-                            {/* Post-its */}
-                            <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — groupés par cycle de vie */}
-                              {calFilterPlanned && (() => {
-                                const sortedWeeks = (site: any) => {
-                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  return [...pw].sort();
-                                };
-                                const earliestOf = (site: any) => sortedWeeks(site)[0] || "9999-W99";
-                                const sortComparator = (a: any, b: any) => {
-                                  const ea = earliestOf(a);
-                                  const eb = earliestOf(b);
-                                  if (ea !== eb) return ea.localeCompare(eb);
-                                  return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
-                                };
-                                const groups: { starts: any[]; continues: any[]; ends: any[]; single: any[] } = { starts: [], continues: [], ends: [], single: [] };
-                                week.planned.forEach((site: any) => {
-                                  const sw = sortedWeeks(site);
-                                  const len = sw.length;
-                                  const isStart = len > 0 && sw[0] === week.weekKey;
-                                  const isEnd = len > 0 && sw[len - 1] === week.weekKey;
-                                  if (len === 1) groups.single.push(site);
-                                  else if (isStart) groups.starts.push(site);
-                                  else if (isEnd) groups.ends.push(site);
-                                  else groups.continues.push(site);
-                                });
-                                groups.starts.sort(sortComparator);
-                                groups.continues.sort(sortComparator);
-                                groups.ends.sort(sortComparator);
-                                groups.single.sort(sortComparator);
-                                const renderChip = (site: any, extra = "") => {
-                                  const sw = sortedWeeks(site);
-                                  const isStart = sw.length > 0 && sw[0] === week.weekKey;
-                                  const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
-                                  return (
-                                    <CalendarSiteChip
-                                      key={`p-${site.id}`}
-                                      site={site}
-                                      weekKey={week.weekKey}
-                                      isStart={isStart}
-                                      isEnd={isEnd}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500", extra)}
-                                    />
-                                  );
-                                };
-                                const headerCls = "text-[8px] font-semibold uppercase tracking-wider mt-0.5";
-                                return (
-                                  <>
-                                    <div key="g-starts" className="space-y-1">
-                                      <div className={cx(headerCls, "text-emerald-600")}>Démarrent</div>
-                                      {groups.starts.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-cont" className="space-y-1">
-                                      <div className={cx(headerCls, "text-sky-600")}>Continuent</div>
-                                      {groups.continues.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-ends" className="space-y-1">
-                                      <div className={cx(headerCls, "text-amber-600")}>Terminent</div>
-                                      {groups.ends.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-single" className="space-y-1">
-                                      <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
-                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                              {/* Chantiers à planifier (status = pending) */}
-                              {calFilterPending && (
-                                <div className="space-y-1">
-                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">À planifier</div>
+                            {/* Lanes : chaque chantier sur sa ligne fixe (lane packing) */}
+                            <div className="py-1.5 flex-1">
+                              {calFilterPlanned && numLanes > 0 && (
+                                <div className="px-0">
+                                  {/* Par semaine : on n'affiche que les lanes dont le chantier
+                                      a un chip cette semaine — zéro ligne vide, calendrier compact. */}
+                                  {usedLaneIndices.filter((laneIdx) =>
+                                    sortedSites.some((s: any) =>
+                                      siteLane.get(s.id) === laneIdx &&
+                                      Array.isArray(s.planningWeeks) &&
+                                      s.planningWeeks.includes(week.weekKey)
+                                    )
+                                  ).map((actualLane, rowIdx) => {
+                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
+                                    const laneIdx = rowIdx;
+                                    if (!site) return null;
+                                    const pw = [...site.planningWeeks].sort();
+                                    const isStart = pw[0] === week.weekKey;
+                                    const isEnd = pw[pw.length - 1] === week.weekKey;
+                                    return (
+                                      <div key={`lane-${laneIdx}`} className="relative flex items-center group" style={{ height: LANE_H }}>
+                                        <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
+                                        <CalendarSiteChip
+                                          site={site}
+                                          weekKey={week.weekKey}
+                                          isStart={isStart}
+                                          isEnd={isEnd}
+                                          className={cx(
+                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-6 truncate",
+                                            getSiteDisplayColor(site, siteColorMode)
+                                          )}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {/* Chantiers à planifier (status = pending) — séparés en bas */}
+                              {calFilterPending && week.pending.length > 0 && (
+                                <div className="px-1.5 space-y-1 mt-2 pt-2 border-t border-dashed border-neutral-200">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500">À planifier</div>
                                   {[...week.pending]
                                     .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
                                     .map((site: any) => (
@@ -5519,15 +5779,13 @@ useEffect(() => {
                                     ))}
                                 </div>
                               )}
-                              {/* Semaine vide */}
-                              {week.planned.length === 0 && week.pending.length === 0 && week.absences.length === 0 && week.events.length === 0 && (
-                                <div className="h-4" />
-                              )}
                             </div>
                           </CalendarWeekDropZone>
                         );
                       })}
                     </div>
+                    );
+                    })()}
                   </div>
                 </div>
 
@@ -5623,7 +5881,7 @@ useEffect(() => {
                       <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
                         <div className="flex flex-col gap-1 px-2 text-sm">
                           <div className="flex items-center gap-2">
-                            <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className={cx("w-3 h-3 rounded-full border border-black/10", getSiteDisplayColor(row.site, siteColorMode))} />
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
@@ -5640,7 +5898,7 @@ useEffect(() => {
                             className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
                             style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
                           >
-                            <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
+                            <div className={cx("h-full w-full rounded-full opacity-90", getSiteDisplayColor(row.site, siteColorMode))}></div>
                           </div>
                         </div>
                       </div>
@@ -6756,6 +7014,12 @@ useEffect(() => {
           tauxMaterielDefault={tauxMaterielDefault}
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
+          customSousCategories={customSousCategories}
+          onAddSousCategorie={(name: string) => {
+            const t = name.trim();
+            if (!t) return;
+            setCustomSousCategories((prev) => prev.includes(t) || DEFAULT_SOUS_CATEGORIES.includes(t) ? prev : [...prev, t]);
+          }}
         />
       )}
 
