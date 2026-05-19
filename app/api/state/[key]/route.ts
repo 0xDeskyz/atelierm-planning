@@ -70,13 +70,16 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
+    let backupStatus: string = "skipped (no prev)";
     if (prev) {
       const { error: backupErr } = await supabase
         .from("planner_state_backup")
         .insert({ key: params.key, data: prev });
       if (backupErr) {
+        backupStatus = `error: ${backupErr.message}`;
         console.warn("Snapshot backup failed (non-blocking):", backupErr.message);
       } else {
+        backupStatus = "ok";
         // Keep only the 20 most recent snapshots per week key
         const { data: ids } = await supabase
           .from("planner_state_backup")
@@ -98,7 +101,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase" }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
