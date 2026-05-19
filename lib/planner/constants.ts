@@ -35,6 +35,28 @@ export const COLORS = [
 ];
 export const SITE_COLORS = COLORS;
 
+export const COLOR_HEX: Record<string, string> = {
+  "bg-red-400": "#f87171", "bg-red-500": "#ef4444", "bg-red-600": "#dc2626",
+  "bg-rose-400": "#fb7185", "bg-rose-500": "#f43f5e", "bg-rose-600": "#e11d48",
+  "bg-orange-400": "#fb923c", "bg-orange-500": "#f97316", "bg-orange-600": "#ea580c",
+  "bg-amber-400": "#fbbf24", "bg-amber-500": "#f59e0b", "bg-amber-600": "#d97706",
+  "bg-yellow-400": "#facc15", "bg-yellow-500": "#eab308",
+  "bg-lime-400": "#a3e635", "bg-lime-500": "#84cc16",
+  "bg-green-400": "#4ade80", "bg-green-500": "#22c55e", "bg-green-600": "#16a34a",
+  "bg-emerald-400": "#34d399", "bg-emerald-500": "#10b981", "bg-emerald-600": "#059669",
+  "bg-teal-400": "#2dd4bf", "bg-teal-500": "#14b8a6",
+  "bg-cyan-400": "#22d3ee", "bg-cyan-500": "#06b6d4",
+  "bg-sky-400": "#38bdf8", "bg-sky-500": "#0ea5e9",
+  "bg-blue-400": "#60a5fa", "bg-blue-500": "#3b82f6", "bg-blue-600": "#2563eb",
+  "bg-indigo-400": "#818cf8", "bg-indigo-500": "#6366f1",
+  "bg-violet-400": "#a78bfa", "bg-violet-500": "#8b5cf6",
+  "bg-purple-400": "#c084fc", "bg-purple-500": "#a855f7",
+  "bg-fuchsia-400": "#e879f9", "bg-fuchsia-500": "#d946ef",
+  "bg-pink-400": "#f472b6", "bg-pink-500": "#ec4899",
+  "bg-slate-400": "#94a3b8", "bg-slate-500": "#64748b", "bg-slate-600": "#475569",
+  "bg-zinc-500": "#71717a", "bg-neutral-600": "#525252",
+};
+
 // Pastels (3 options) pour mini post-it & surlignage
 export const PASTELS: Record<string, { bg: string; ring: string; text: string }> = {
   mint: { bg: "bg-green-100", ring: "ring-green-200", text: "text-green-900" },
