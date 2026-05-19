@@ -2057,8 +2057,10 @@ export default function Page() {
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
-  // Ordre manuel des chantiers dans le calendrier (siteIds dans l'ordre voulu, les autres en dessous par date de début)
-  const [calendarLaneOrder, setCalendarLaneOrder] = useState<string[]>([]);
+  // Assignation explicite d'une ligne fixe par chantier dans le calendrier.
+  // siteId → laneIdx. Une fois assigné, le chantier reste sur sa ligne (sauf drag manuel).
+  // Plusieurs chantiers peuvent partager une même ligne s'ils ne se chevauchent pas dans le temps.
+  const [siteLaneAssignments, setSiteLaneAssignments] = useState<Record<string, number>>({});
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3110,16 +3112,21 @@ export default function Page() {
       const fromSiteId: string = data.siteId;
       const toSiteId: string | null = over.data.current.siteId;
       if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return;
-      const sorted = calendarSortedSitesRef.current;
-      const base = sorted.map((s: any) => s.id);
-      const fromIdx = base.indexOf(fromSiteId);
-      const toIdx = base.indexOf(toSiteId);
-      if (fromIdx === -1 || toIdx === -1) return;
-      const next = [...base];
-      next.splice(fromIdx, 1);
-      const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
-      next.splice(adjustedTo, 0, fromSiteId);
-      setCalendarLaneOrder(next);
+      setSiteLaneAssignments((prev) => {
+        const fromLane = prev[fromSiteId];
+        const toLane = prev[toSiteId];
+        if (fromLane === undefined || toLane === undefined || fromLane === toLane) return prev;
+        // Swap : les deux chantiers échangent leurs lignes.
+        // Tous les autres chantiers qui partagent la même ligne suivent (les chantiers sur la
+        // ligne d'origine de A se retrouvent sur celle de B, et vice-versa).
+        const next: Record<string, number> = {};
+        Object.entries(prev).forEach(([id, lane]) => {
+          if (lane === fromLane) next[id] = toLane;
+          else if (lane === toLane) next[id] = fromLane;
+          else next[id] = lane;
+        });
+        return next;
+      });
       return;
     }
 
@@ -3639,9 +3646,59 @@ export default function Page() {
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
     if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
-    if (Array.isArray(state.calendarLaneOrder)) setCalendarLaneOrder(state.calendarLaneOrder.filter((s: any) => typeof s === "string"));
+    if (state.siteLaneAssignments && typeof state.siteLaneAssignments === "object" && !Array.isArray(state.siteLaneAssignments)) {
+      const cleaned: Record<string, number> = {};
+      Object.entries(state.siteLaneAssignments).forEach(([id, v]) => {
+        const n = Number(v);
+        if (typeof id === "string" && Number.isFinite(n) && n >= 0) cleaned[id] = Math.floor(n);
+      });
+      setSiteLaneAssignments(cleaned);
+    } else if (Array.isArray(state.calendarLaneOrder)) {
+      // Migration de l'ancien format (array d'ordre) → assignations explicites par index
+      const migrated: Record<string, number> = {};
+      state.calendarLaneOrder.forEach((id: any, i: number) => {
+        if (typeof id === "string") migrated[id] = i;
+      });
+      setSiteLaneAssignments(migrated);
+    }
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
+
+  // Auto-assignation des lignes : chaque chantier visible au calendrier qui n'a pas
+  // encore de ligne en reçoit une (première ligne libre où aucun chantier déjà assigné
+  // ne chevauche dans le temps). Les chantiers existants gardent leur ligne — c'est ce qui
+  // garantit la stabilité visuelle quand on ajoute un nouveau chantier.
+  useEffect(() => {
+    setSiteLaneAssignments((prev) => {
+      const updated: Record<string, number> = { ...prev };
+      const occupied = new Map<number, Set<string>>();
+      sites.forEach((s: any) => {
+        const idx = updated[s.id];
+        if (idx === undefined) return;
+        const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+        if (wks.length === 0) return;
+        if (!occupied.has(idx)) occupied.set(idx, new Set());
+        wks.forEach((wk: string) => occupied.get(idx)!.add(wk));
+      });
+      let changed = false;
+      sites.forEach((s: any) => {
+        if (updated[s.id] !== undefined) return;
+        const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+        if (wks.length === 0) return;
+        let assigned = -1;
+        for (let i = 0; assigned === -1; i++) {
+          if (!occupied.has(i)) occupied.set(i, new Set());
+          const o = occupied.get(i)!;
+          let overlap = false;
+          for (const wk of wks) { if (o.has(wk)) { overlap = true; break; } }
+          if (!overlap) { wks.forEach((wk: string) => o.add(wk)); assigned = i; }
+        }
+        updated[s.id] = assigned;
+        changed = true;
+      });
+      return changed ? updated : prev;
+    });
+  }, [sites]);
 
   const firstLoad = useRef(true);
   const localStateKey = useMemo(() => `btp-planner-state:v1:${currentWeekKey}`, [currentWeekKey]);
@@ -3834,12 +3891,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     validatedWeeks,
     customSousCategories,
     siteColorMode,
-    calendarLaneOrder,
+    siteLaneAssignments,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, calendarLaneOrder]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, siteLaneAssignments]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -5556,45 +5613,42 @@ useEffect(() => {
                           (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
                         });
                       }
-                      // 2. Tri : d'abord les chantiers présents dans calendarLaneOrder (dans l'ordre),
-                      //    puis les autres par première semaine planifiée puis nom.
-                      const manualOrderIdx = new Map<string, number>();
-                      calendarLaneOrder.forEach((id, i) => manualOrderIdx.set(id, i));
-                      const sortedSites = Array.from(seen.values()).sort((a: any, b: any) => {
-                        const ma = manualOrderIdx.has(a.id) ? manualOrderIdx.get(a.id)! : Infinity;
-                        const mb = manualOrderIdx.has(b.id) ? manualOrderIdx.get(b.id)! : Infinity;
-                        if (ma !== mb) return ma - mb;
-                        const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
-                        const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
-                        if (sa !== sb) return sa.localeCompare(sb);
-                        return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
-                      });
-                      // 3. Lane packing : on assigne à chaque chantier la 1re ligne libre où il ne chevauche pas un autre
-                      const lanes: Set<string>[] = []; // lanes[i] = ensemble des weekKey occupées
+                      // 2. Utilisation des assignations explicites (siteLaneAssignments).
+                      //    Les chantiers non-encore assignés (cas rare, race condition avec
+                      //    l'effet d'auto-assignation) reçoivent un fallback temporaire.
+                      const visibleSites = Array.from(seen.values());
                       const siteLane = new Map<string, number>();
-                      sortedSites.forEach((site: any) => {
+                      const usedLanes = new Map<number, Set<string>>();
+                      visibleSites.forEach((site: any) => {
+                        const idx = siteLaneAssignments[site.id];
+                        if (idx === undefined) return;
                         const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        siteLane.set(site.id, idx);
+                        if (!usedLanes.has(idx)) usedLanes.set(idx, new Set());
+                        wks.forEach((wk) => usedLanes.get(idx)!.add(wk));
+                      });
+                      // Fallback pour les chantiers visibles non-assignés (l'effet va corriger au prochain render)
+                      visibleSites.forEach((site: any) => {
+                        if (siteLane.has(site.id)) return;
+                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        if (wks.length === 0) return;
                         let assigned = -1;
-                        for (let i = 0; i < lanes.length; i++) {
+                        for (let i = 0; assigned === -1; i++) {
+                          if (!usedLanes.has(i)) usedLanes.set(i, new Set());
+                          const o = usedLanes.get(i)!;
                           let overlap = false;
-                          for (const wk of wks) { if (lanes[i].has(wk)) { overlap = true; break; } }
-                          if (!overlap) {
-                            wks.forEach((wk) => lanes[i].add(wk));
-                            assigned = i;
-                            break;
-                          }
-                        }
-                        if (assigned === -1) {
-                          lanes.push(new Set(wks));
-                          assigned = lanes.length - 1;
+                          for (const wk of wks) { if (o.has(wk)) { overlap = true; break; } }
+                          if (!overlap) { wks.forEach((wk) => o.add(wk)); assigned = i; }
                         }
                         siteLane.set(site.id, assigned);
                       });
-                      // 4. Construction inverse : lanes[laneIdx] → siteId | null par semaine
-                      const numLanes = lanes.length;
-                      const siteById = new Map<string, any>();
-                      sortedSites.forEach((s: any) => siteById.set(s.id, s));
-                      // Expose sortedSites to onDragEnd for lane-reorder drops
+                      const numLanes = siteLane.size === 0
+                        ? 0
+                        : Math.max(...Array.from(siteLane.values())) + 1;
+                      // Pour onDragEnd : liste des chantiers visibles triés par leur ligne
+                      const sortedSites = visibleSites
+                        .filter((s: any) => siteLane.has(s.id))
+                        .sort((a: any, b: any) => siteLane.get(a.id)! - siteLane.get(b.id)!);
                       calendarSortedSitesRef.current = sortedSites;
                       const LANE_H = 22; // px par ligne
                     return (
