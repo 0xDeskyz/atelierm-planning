@@ -3668,35 +3668,55 @@ export default function Page() {
   // encore de ligne en reçoit une (première ligne libre où aucun chantier déjà assigné
   // ne chevauche dans le temps). Les chantiers existants gardent leur ligne — c'est ce qui
   // garantit la stabilité visuelle quand on ajoute un nouveau chantier.
+  // Le chevauchement se fait sur la PLAGE (1re → dernière semaine planifiée), pas sur les
+  // semaines individuelles : un chantier conserve sa ligne même s'il a des trous dans son planning.
   useEffect(() => {
     setSiteLaneAssignments((prev) => {
-      const updated: Record<string, number> = { ...prev };
-      const occupied = new Map<number, Set<string>>();
-      sites.forEach((s: any) => {
-        const idx = updated[s.id];
-        if (idx === undefined) return;
+      const spanOf = (s: any): [string, string] | null => {
         const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
-        if (wks.length === 0) return;
-        if (!occupied.has(idx)) occupied.set(idx, new Set());
-        wks.forEach((wk: string) => occupied.get(idx)!.add(wk));
+        if (wks.length === 0) return null;
+        const sorted = [...wks].sort();
+        return [sorted[0], sorted[sorted.length - 1]];
+      };
+      const overlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
+      // Tri : 1) ligne assignée la plus basse en priorité, 2) à égalité, plage la plus précoce.
+      // Le premier servi conserve sa ligne ; les conflits sont déplacés vers la 1re ligne libre.
+      const ordered = [...sites].sort((a: any, b: any) => {
+        const la = prev[a.id] ?? Number.POSITIVE_INFINITY;
+        const lb = prev[b.id] ?? Number.POSITIVE_INFINITY;
+        if (la !== lb) return la - lb;
+        const sa = spanOf(a)?.[0] ?? "9999-W99";
+        const sb = spanOf(b)?.[0] ?? "9999-W99";
+        return sa.localeCompare(sb);
       });
-      let changed = false;
-      sites.forEach((s: any) => {
-        if (updated[s.id] !== undefined) return;
-        const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
-        if (wks.length === 0) return;
-        let assigned = -1;
-        for (let i = 0; assigned === -1; i++) {
-          if (!occupied.has(i)) occupied.set(i, new Set());
-          const o = occupied.get(i)!;
-          let overlap = false;
-          for (const wk of wks) { if (o.has(wk)) { overlap = true; break; } }
-          if (!overlap) { wks.forEach((wk: string) => o.add(wk)); assigned = i; }
+      const occupied = new Map<number, Array<[string, string]>>();
+      const next: Record<string, number> = {};
+      ordered.forEach((s: any) => {
+        const span = spanOf(s);
+        if (!span) return;
+        const preferred = prev[s.id];
+        let chosen = -1;
+        if (preferred !== undefined) {
+          const ranges = occupied.get(preferred) || [];
+          if (!ranges.some((r) => overlap(r, span))) chosen = preferred;
         }
-        updated[s.id] = assigned;
-        changed = true;
+        if (chosen === -1) {
+          for (let i = 0; chosen === -1; i++) {
+            const ranges = occupied.get(i) || [];
+            if (!ranges.some((r) => overlap(r, span))) chosen = i;
+          }
+        }
+        if (!occupied.has(chosen)) occupied.set(chosen, []);
+        occupied.get(chosen)!.push(span);
+        next[s.id] = chosen;
       });
-      return changed ? updated : prev;
+      // Préserve les entrées des chantiers absents (supprimés du store mais peut-être recréés)
+      Object.entries(prev).forEach(([id, lane]) => { if (!(id in next)) next[id] = lane; });
+      // Pas de changement → retourner prev pour éviter un re-render inutile
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length === nextKeys.length && prevKeys.every((k) => prev[k] === next[k])) return prev;
+      return next;
     });
   }, [sites]);
 
@@ -5616,29 +5636,36 @@ useEffect(() => {
                       // 2. Utilisation des assignations explicites (siteLaneAssignments).
                       //    Les chantiers non-encore assignés (cas rare, race condition avec
                       //    l'effet d'auto-assignation) reçoivent un fallback temporaire.
+                      //    Chevauchement = sur la PLAGE [première, dernière] semaine planifiée.
                       const visibleSites = Array.from(seen.values());
                       const siteLane = new Map<string, number>();
-                      const usedLanes = new Map<number, Set<string>>();
+                      const usedLanes = new Map<number, Array<[string, string]>>();
+                      const spanOf = (s: any): [string, string] | null => {
+                        const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+                        if (wks.length === 0) return null;
+                        const sorted = [...wks].sort();
+                        return [sorted[0], sorted[sorted.length - 1]];
+                      };
+                      const rangesOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
                       visibleSites.forEach((site: any) => {
                         const idx = siteLaneAssignments[site.id];
                         if (idx === undefined) return;
-                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        const span = spanOf(site);
                         siteLane.set(site.id, idx);
-                        if (!usedLanes.has(idx)) usedLanes.set(idx, new Set());
-                        wks.forEach((wk) => usedLanes.get(idx)!.add(wk));
+                        if (span) {
+                          if (!usedLanes.has(idx)) usedLanes.set(idx, []);
+                          usedLanes.get(idx)!.push(span);
+                        }
                       });
-                      // Fallback pour les chantiers visibles non-assignés (l'effet va corriger au prochain render)
                       visibleSites.forEach((site: any) => {
                         if (siteLane.has(site.id)) return;
-                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                        if (wks.length === 0) return;
+                        const span = spanOf(site);
+                        if (!span) return;
                         let assigned = -1;
                         for (let i = 0; assigned === -1; i++) {
-                          if (!usedLanes.has(i)) usedLanes.set(i, new Set());
-                          const o = usedLanes.get(i)!;
-                          let overlap = false;
-                          for (const wk of wks) { if (o.has(wk)) { overlap = true; break; } }
-                          if (!overlap) { wks.forEach((wk) => o.add(wk)); assigned = i; }
+                          if (!usedLanes.has(i)) usedLanes.set(i, []);
+                          const ranges = usedLanes.get(i)!;
+                          if (!ranges.some((r) => rangesOverlap(r, span))) { ranges.push(span); assigned = i; }
                         }
                         siteLane.set(site.id, assigned);
                       });
