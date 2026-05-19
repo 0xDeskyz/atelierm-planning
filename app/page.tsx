@@ -5738,21 +5738,18 @@ useEffect(() => {
                             <div className="py-1.5 flex-1">
                               {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {/* Lanes actives = span du chantier couvre cette semaine.
-                                      Chip si planningWeeks inclut la semaine, sinon placeholder vide
-                                      → la ligne reste alignée et réservée toute la durée du chantier. */}
-                                  {usedLaneIndices.filter((laneIdx) =>
-                                    sortedSites.some((s: any) => {
-                                      if (siteLane.get(s.id) !== laneIdx) return false;
+                                  {/* Pour chaque lane : trouver le chantier dont la span couvre
+                                      cette semaine. Chip si planningWeeks l'inclut, placeholder sinon.
+                                      null si aucun chantier n'est actif dans cette lane cette semaine. */}
+                                  {usedLaneIndices.map((actualLane) => {
+                                    const site = sortedSites.find((s: any) => {
+                                      if (siteLane.get(s.id) !== actualLane) return false;
                                       const sp = siteSpanMap.get(s.id);
                                       return sp ? sp[0] <= week.weekKey && week.weekKey <= sp[1] : false;
-                                    })
-                                  ).map((actualLane) => {
-                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane);
+                                    });
                                     if (!site) return null;
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
-                                      // Semaine dans la span mais sans chip → ligne vide réservée
                                       return <div key={`lane-${actualLane}`} style={{ height: LANE_H }} />;
                                     }
                                     const pw = [...site.planningWeeks].sort();
