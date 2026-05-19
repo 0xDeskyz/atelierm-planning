@@ -71,12 +71,11 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     }
 
     if (prev) {
-      try {
-        await supabase
-          .from("planner_state_backup")
-          .insert({ key: params.key, data: prev, created_at: new Date().toISOString() });
-      } catch (backupErr) {
-        console.warn("Snapshot backup failed (non-blocking)", backupErr);
+      const { error: backupErr } = await supabase
+        .from("planner_state_backup")
+        .insert({ key: params.key, data: prev });
+      if (backupErr) {
+        console.warn("Snapshot backup failed (non-blocking):", backupErr.message);
       }
     }
 
