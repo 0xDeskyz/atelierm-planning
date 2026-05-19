@@ -8,6 +8,7 @@ import {
   PointerSensor,
   TouchSensor,
   closestCenter,
+  useDndContext,
   useDroppable,
   useSensor,
   useSensors,
@@ -464,10 +465,17 @@ function getSiteDisplayColor(site: any, mode: "default" | "difficulte" | "catego
 }
 
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
   });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `calendar-site-drop-${site.id}-${weekKey}`,
+    data: { type: "lane-drop", siteId: site.id },
+  });
+  const { active } = useDndContext();
+  const isLaneReorderDrag = active?.data?.current?.type === "lane-reorder";
+  const setNodeRef = (el: HTMLElement | null) => { setDragRef(el); setDropRef(el); };
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
   const tooltipParts: string[] = [site.name];
   if (isStart) tooltipParts.push("démarre cette semaine");
@@ -485,10 +493,42 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       style={style}
       {...listeners}
       {...attributes}
-      className={cx(className, shape, "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate", isDragging && "opacity-50")}
+      className={cx(
+        className, shape,
+        "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate",
+        isDragging && "opacity-50",
+        isOver && isLaneReorderDrag && "brightness-110 ring-2 ring-white ring-inset"
+      )}
       title={tooltipParts.join(" · ")}
     >
       {site.name}
+    </div>
+  );
+}
+
+// Drag handle for vertical lane reordering
+function LaneDragHandle({ siteId, weekKey }: { siteId: string; weekKey: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `lane-drag-${siteId}-${weekKey}`,
+    data: { type: "lane-reorder", siteId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cx(
+        "absolute left-0 inset-y-0 w-3 flex items-center justify-center cursor-grab z-10 select-none touch-none",
+        "opacity-0 group-hover:opacity-100 transition-opacity",
+        isDragging && "opacity-100"
+      )}
+      title="Glisser pour réordonner"
+    >
+      <svg viewBox="0 0 8 12" className="w-1.5 h-2.5 fill-current text-white/80 shrink-0">
+        <circle cx="2" cy="2" r="1"/><circle cx="6" cy="2" r="1"/>
+        <circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/>
+        <circle cx="2" cy="10" r="1"/><circle cx="6" cy="10" r="1"/>
+      </svg>
     </div>
   );
 }
@@ -1982,6 +2022,7 @@ export default function Page() {
     "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
   >("accueil");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  const calendarSortedSitesRef = useRef<any[]>([]);
   const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
@@ -3064,6 +3105,24 @@ export default function Page() {
     const { active, over } = e;
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
+
+    if (data.type === "lane-reorder" && over.data?.current?.type === "lane-drop") {
+      const fromSiteId: string = data.siteId;
+      const toSiteId: string | null = over.data.current.siteId;
+      if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return;
+      const sorted = calendarSortedSitesRef.current;
+      const base = sorted.map((s: any) => s.id);
+      const fromIdx = base.indexOf(fromSiteId);
+      const toIdx = base.indexOf(toSiteId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const next = [...base];
+      next.splice(fromIdx, 1);
+      const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
+      next.splice(adjustedTo, 0, fromSiteId);
+      setCalendarLaneOrder(next);
+      return;
+    }
+
     if (data.type === "quote" && over.data?.current?.type === "quote-column") {
       const newStatus = over.data.current.status;
       if (!newStatus || data.status === newStatus) return;
@@ -5535,24 +5594,8 @@ useEffect(() => {
                       const numLanes = lanes.length;
                       const siteById = new Map<string, any>();
                       sortedSites.forEach((s: any) => siteById.set(s.id, s));
-                      // Helper de réordre
-                      const reorderLane = (siteId: string, direction: -1 | 1 | "top" | "bottom") => {
-                        setCalendarLaneOrder((prev) => {
-                          // Construire la base = ordre actuel effectif des sortedSites
-                          const base = sortedSites.map((s: any) => s.id);
-                          const idx = base.indexOf(siteId);
-                          if (idx === -1) return prev;
-                          const next = [...base];
-                          next.splice(idx, 1);
-                          if (direction === "top") next.unshift(siteId);
-                          else if (direction === "bottom") next.push(siteId);
-                          else {
-                            const target = Math.max(0, Math.min(next.length, idx + direction));
-                            next.splice(target, 0, siteId);
-                          }
-                          return next;
-                        });
-                      };
+                      // Expose sortedSites to onDragEnd for lane-reorder drops
+                      calendarSortedSitesRef.current = sortedSites;
                       const LANE_H = 22; // px par ligne
                     return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
@@ -5689,6 +5732,7 @@ useEffect(() => {
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
                                     return (
                                       <div key={`lane-${laneIdx}`} className="relative flex items-center group" style={{ height: LANE_H }}>
+                                        <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
                                         <CalendarSiteChip
                                           site={site}
                                           weekKey={week.weekKey}
@@ -5699,31 +5743,6 @@ useEffect(() => {
                                             getSiteDisplayColor(site, siteColorMode)
                                           )}
                                         />
-                                        {isStart && (
-                                          <div className="absolute right-0.5 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex gap-0.5">
-                                            <button
-                                              type="button"
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, "top"); }}
-                                              title="Tout en haut"
-                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
-                                            >⇈</button>
-                                            <button
-                                              type="button"
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, -1); }}
-                                              title="Monter"
-                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
-                                            >↑</button>
-                                            <button
-                                              type="button"
-                                              onPointerDown={(e) => e.stopPropagation()}
-                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, +1); }}
-                                              title="Descendre"
-                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
-                                            >↓</button>
-                                          </div>
-                                        )}
                                       </div>
                                     );
                                   })}
