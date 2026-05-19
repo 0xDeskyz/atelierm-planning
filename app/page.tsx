@@ -5588,18 +5588,26 @@ useEffect(() => {
                         if (sa !== sb) return sa.localeCompare(sb);
                         return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                       });
-                      // 3. Greedy lane packing : chevauchement par semaine individuelle
-                      const lanes: Set<string>[] = [];
+                      // 3. Greedy lane packing : chevauchement par span (1re–dernière semaine du chantier)
+                      // → la lane reste réservée pendant toute la durée, même les semaines sans chip
+                      const siteSpanMap = new Map<string, [string, string]>();
+                      sortedSites.forEach((site: any) => {
+                        const wks: string[] = Array.isArray(site.planningWeeks) ? [...site.planningWeeks].sort() : [];
+                        if (wks.length > 0) siteSpanMap.set(site.id, [wks[0], wks[wks.length - 1]]);
+                      });
+                      const spansOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
+                      const laneSpans: Array<Array<[string, string]>> = [];
                       const siteLane = new Map<string, number>();
                       sortedSites.forEach((site: any) => {
-                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        const span = siteSpanMap.get(site.id);
+                        if (!span) return;
                         let assigned = -1;
-                        for (let i = 0; i < lanes.length; i++) {
-                          let overlap = false;
-                          for (const wk of wks) { if (lanes[i].has(wk)) { overlap = true; break; } }
-                          if (!overlap) { wks.forEach((wk) => lanes[i].add(wk)); assigned = i; break; }
+                        for (let i = 0; i < laneSpans.length; i++) {
+                          if (!laneSpans[i].some((s) => spansOverlap(s, span))) {
+                            laneSpans[i].push(span); assigned = i; break;
+                          }
                         }
-                        if (assigned === -1) { lanes.push(new Set(wks)); assigned = lanes.length - 1; }
+                        if (assigned === -1) { laneSpans.push([span]); assigned = laneSpans.length - 1; }
                         siteLane.set(site.id, assigned);
                       });
                       const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
@@ -5730,23 +5738,28 @@ useEffect(() => {
                             <div className="py-1.5 flex-1">
                               {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {/* Par semaine : on n'affiche que les lanes dont le chantier
-                                      a un chip cette semaine — zéro ligne vide, calendrier compact. */}
+                                  {/* Lanes actives = span du chantier couvre cette semaine.
+                                      Chip si planningWeeks inclut la semaine, sinon placeholder vide
+                                      → la ligne reste alignée et réservée toute la durée du chantier. */}
                                   {usedLaneIndices.filter((laneIdx) =>
-                                    sortedSites.some((s: any) =>
-                                      siteLane.get(s.id) === laneIdx &&
-                                      Array.isArray(s.planningWeeks) &&
-                                      s.planningWeeks.includes(week.weekKey)
-                                    )
-                                  ).map((actualLane, rowIdx) => {
-                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
-                                    const laneIdx = rowIdx;
+                                    sortedSites.some((s: any) => {
+                                      if (siteLane.get(s.id) !== laneIdx) return false;
+                                      const sp = siteSpanMap.get(s.id);
+                                      return sp ? sp[0] <= week.weekKey && week.weekKey <= sp[1] : false;
+                                    })
+                                  ).map((actualLane) => {
+                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === actualLane);
                                     if (!site) return null;
+                                    const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
+                                    if (!hasChip) {
+                                      // Semaine dans la span mais sans chip → ligne vide réservée
+                                      return <div key={`lane-${actualLane}`} style={{ height: LANE_H }} />;
+                                    }
                                     const pw = [...site.planningWeeks].sort();
                                     const isStart = pw[0] === week.weekKey;
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
                                     return (
-                                      <div key={`lane-${laneIdx}`} className="relative flex items-center group" style={{ height: LANE_H }}>
+                                      <div key={`lane-${actualLane}`} className="relative flex items-center group" style={{ height: LANE_H }}>
                                         <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
                                         <CalendarSiteChip
                                           site={site}
