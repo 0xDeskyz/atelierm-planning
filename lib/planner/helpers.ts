@@ -245,6 +245,45 @@ export const ORIGINE_OPTIONS = [
 ] as const;
 export type OrigineType = typeof ORIGINE_OPTIONS[number]["value"];
 
+// Catégorisation business des chantiers (analyse)
+export const CATEGORIE_PRINCIPALE_OPTIONS = [
+  { value: "ao",          label: "Appel d'offre", badge: "bg-indigo-100 text-indigo-700 border-indigo-200", color: "bg-indigo-500", hex: "#6366f1" },
+  { value: "particulier", label: "Particulier",   badge: "bg-emerald-100 text-emerald-700 border-emerald-200", color: "bg-emerald-500", hex: "#10b981" },
+  { value: "pro",         label: "Professionnel", badge: "bg-sky-100 text-sky-700 border-sky-200", color: "bg-sky-500", hex: "#0ea5e9" },
+] as const;
+export type CategoriePrincipale = typeof CATEGORIE_PRINCIPALE_OPTIONS[number]["value"];
+
+export const DEFAULT_SOUS_CATEGORIES = [
+  "Dégâts des eaux",
+  "Patrimoine",
+  "Syndic",
+  "Architecte",
+  "Mairie",
+  "Autre",
+];
+
+// Difficulté : 3 flags → niveau auto
+export const DIFFICULTE_FLAG_LABELS = {
+  technique: "Technique délicate",
+  delai:     "Délai serré",
+  marge:     "Marge incertaine",
+} as const;
+export type DifficulteFlagKey = keyof typeof DIFFICULTE_FLAG_LABELS;
+
+export type DifficulteLevel = "jaune" | "orange" | "rouge";
+export const DIFFICULTE_LEVEL_META: Record<DifficulteLevel, { label: string; color: string; hex: string; badge: string }> = {
+  jaune:  { label: "Jaune",  color: "bg-yellow-400", hex: "#facc15", badge: "bg-yellow-100 text-yellow-800 border-yellow-200" },
+  orange: { label: "Orange", color: "bg-orange-500", hex: "#f97316", badge: "bg-orange-100 text-orange-800 border-orange-200" },
+  rouge:  { label: "Rouge",  color: "bg-red-500",    hex: "#ef4444", badge: "bg-red-100 text-red-800 border-red-200" },
+};
+
+export function computeDifficulteLevel(flags?: { technique?: boolean; delai?: boolean; marge?: boolean } | null): DifficulteLevel {
+  const count = (flags?.technique ? 1 : 0) + (flags?.delai ? 1 : 0) + (flags?.marge ? 1 : 0);
+  if (count >= 2) return "rouge";
+  if (count === 1) return "orange";
+  return "jaune";
+}
+
 export const normalizeSiteRecord = (site: any) => {
   const base = typeof site === "object" && site !== null ? site : {};
   const start = (base as any)?.startDate || toLocalKey(new Date());
@@ -255,6 +294,15 @@ export const normalizeSiteRecord = (site: any) => {
   const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
   const validOrigines = ORIGINE_OPTIONS.map(o => o.value) as string[];
   const origine = validOrigines.includes((base as any)?.origine) ? (base as any).origine : null;
+  const validCategories = CATEGORIE_PRINCIPALE_OPTIONS.map(c => c.value) as string[];
+  const categoriePrincipale = validCategories.includes((base as any)?.categoriePrincipale) ? (base as any).categoriePrincipale : null;
+  const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
+  const sousCategorie = sousCategorieRaw || null;
+  const difficulte = {
+    technique: !!(base as any)?.difficulte?.technique,
+    delai:     !!(base as any)?.difficulte?.delai,
+    marge:     !!(base as any)?.difficulte?.marge,
+  };
   return {
     ...base,
     id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),
@@ -277,6 +325,9 @@ export const normalizeSiteRecord = (site: any) => {
       montant: Number.isFinite(Number(c?.montant)) ? Number(c.montant) : 0,
     })) : [],
     origine,
+    categoriePrincipale,
+    sousCategorie,
+    difficulte,
     situations: Array.isArray((base as any)?.situations) ? (base as any).situations.map((s: any) => ({
       id: s?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `sit-${Date.now()}-${Math.random()}`),
       label: typeof s?.label === "string" ? s.label : "",

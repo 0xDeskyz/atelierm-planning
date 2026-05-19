@@ -82,6 +82,11 @@ import {
   normalizePersonRecord,
   normalizeSiteRecord,
   ORIGINE_OPTIONS,
+  CATEGORIE_PRINCIPALE_OPTIONS,
+  DEFAULT_SOUS_CATEGORIES,
+  DIFFICULTE_FLAG_LABELS,
+  DIFFICULTE_LEVEL_META,
+  computeDifficulteLevel,
   normalizeQuoteRecord,
   normalizeTenderRecord,
   normalizeClientRecord,
@@ -811,7 +816,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie }: any) {
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
@@ -837,6 +842,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [newSitMontant, setNewSitMontant] = useState("");
   const [newSitDate, setNewSitDate] = useState("");
   const [origine, setOrigine] = useState<string>("");
+  const [categoriePrincipale, setCategoriePrincipale] = useState<string>("");
+  const [sousCategorie, setSousCategorie] = useState<string>("");
+  const [newSousCatInput, setNewSousCatInput] = useState<string>("");
+  const [diffTechnique, setDiffTechnique] = useState<boolean>(false);
+  const [diffDelai, setDiffDelai] = useState<boolean>(false);
+  const [diffMarge, setDiffMarge] = useState<boolean>(false);
 
   useEffect(() => {
     setTab("infos");
@@ -865,6 +876,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewSitMontant("");
     setNewSitDate("");
     setOrigine(site?.origine || "");
+    setCategoriePrincipale(site?.categoriePrincipale || "");
+    setSousCategorie(site?.sousCategorie || "");
+    setNewSousCatInput("");
+    setDiffTechnique(!!site?.difficulte?.technique);
+    setDiffDelai(!!site?.difficulte?.delai);
+    setDiffMarge(!!site?.difficulte?.marge);
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -895,6 +912,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       couts,
       situations,
       origine: origine || null,
+      categoriePrincipale: categoriePrincipale || null,
+      sousCategorie: sousCategorie || null,
+      difficulte: { technique: diffTechnique, delai: diffDelai, marge: diffMarge },
     });
   };
 
@@ -968,6 +988,92 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   ))}
                 </select>
               </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Catégorie principale</span>
+                <select
+                  value={categoriePrincipale}
+                  onChange={(e) => setCategoriePrincipale(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                >
+                  <option value="">— Non renseignée</option>
+                  {CATEGORIE_PRINCIPALE_OPTIONS.map(c => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Sous-catégorie</span>
+                <div className="flex gap-1.5">
+                  <select
+                    value={sousCategorie}
+                    onChange={(e) => setSousCategorie(e.target.value)}
+                    className="flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                  >
+                    <option value="">— Non renseignée</option>
+                    {[...DEFAULT_SOUS_CATEGORIES, ...customSousCategories].map((s: string) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-1.5 mt-1">
+                  <Input
+                    value={newSousCatInput}
+                    onChange={(e: any) => setNewSousCatInput(e.target.value)}
+                    placeholder="Ajouter une sous-catégorie"
+                    onKeyDown={(e: any) => {
+                      if (e.key === "Enter" && newSousCatInput.trim()) {
+                        e.preventDefault();
+                        const t = newSousCatInput.trim();
+                        if (onAddSousCategorie) onAddSousCategorie(t);
+                        setSousCategorie(t);
+                        setNewSousCatInput("");
+                      }
+                    }}
+                  />
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const t = newSousCatInput.trim();
+                    if (!t) return;
+                    if (onAddSousCategorie) onAddSousCategorie(t);
+                    setSousCategorie(t);
+                    setNewSousCatInput("");
+                  }}>Ajouter</Button>
+                </div>
+              </label>
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
+                  {(() => {
+                    const lvl = computeDifficulteLevel({ technique: diffTechnique, delai: diffDelai, marge: diffMarge });
+                    const meta = DIFFICULTE_LEVEL_META[lvl];
+                    return (
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full border", meta.badge)}>
+                        ● {meta.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { key: "technique", val: diffTechnique, set: setDiffTechnique },
+                    { key: "delai",     val: diffDelai,     set: setDiffDelai },
+                    { key: "marge",     val: diffMarge,     set: setDiffMarge },
+                  ] as const).map(({ key, val, set }) => (
+                    <label key={key} className={cx(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
+                      val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                    )}>
+                      <input
+                        type="checkbox"
+                        checked={val}
+                        onChange={(e) => set(e.target.checked)}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>{DIFFICULTE_FLAG_LABELS[key]}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge</p>
+              </div>
               <label className="space-y-1 md:col-span-2">
                 <span className="text-[11px] text-neutral-600">Couleur</span>
                 <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
@@ -1893,6 +1999,10 @@ export default function Page() {
   const [calFilterPending, setCalFilterPending] = useState(true);
   const [calFilterAbsences, setCalFilterAbsences] = useState(true);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
+  // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
+  const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
+  // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
+  const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3453,6 +3563,8 @@ export default function Page() {
     if (state.validatedWeeks && typeof state.validatedWeeks === "object") setValidatedWeeks(state.validatedWeeks);
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
+    if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
+    if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -3645,11 +3757,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     eventCalendars,
     calendarEvents,
     validatedWeeks,
+    customSousCategories,
+    siteColorMode,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -6779,6 +6893,12 @@ useEffect(() => {
           tauxMaterielDefault={tauxMaterielDefault}
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
+          customSousCategories={customSousCategories}
+          onAddSousCategorie={(name: string) => {
+            const t = name.trim();
+            if (!t) return;
+            setCustomSousCategories((prev) => prev.includes(t) || DEFAULT_SOUS_CATEGORIES.includes(t) ? prev : [...prev, t]);
+          }}
         />
       )}
 
