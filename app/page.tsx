@@ -1529,6 +1529,10 @@ export default function Page() {
   const [exportStartDate, setExportStartDate] = useState<string>(toLocalKey(startOfMonthLocal(new Date())));
   const [exportEndDate, setExportEndDate] = useState<string>(toLocalKey(endOfMonthLocal(new Date())));
   const syncVersionRef = useRef<number>(0);
+  // Prevents auto-save from firing when state was just received from a remote device
+  const isApplyingRemote = useRef(false);
+  // Stable ref to loadWeekState for use inside useMemo callbacks
+  const loadWeekStateRef = useRef<(markLoaded: boolean) => void>(() => {});
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
@@ -3062,6 +3066,8 @@ export default function Page() {
     [applyState, currentWeekKey, localStateKey]
   );
 
+  useEffect(() => { loadWeekStateRef.current = loadWeekState; }, [loadWeekState]);
+
   const refreshPlanning = useCallback(() => {
     loadWeekState(false);
   }, [loadWeekState]);
@@ -3092,6 +3098,7 @@ useEffect(() => {
         const hasPayload = Array.isArray((data as any).people) || Array.isArray((data as any).sites);
 
         if (fromOther && hasVersion && hasPayload && remoteVersion > syncVersionRef.current) {
+          isApplyingRemote.current = true;
           applyState(data);
         }
       }
@@ -3140,6 +3147,7 @@ useEffect(() => {
         const remoteVersion = Number(remote.updatedAt || 0);
         if (remoteClient === clientIdRef.current) return; // c'est notre propre update
         if (remoteVersion <= syncVersionRef.current) return; // on a déjà plus récent
+        isApplyingRemote.current = true;
         applyState(remote, false);
         syncVersionRef.current = remoteVersion;
         setSyncStatus("synced");
@@ -3157,6 +3165,11 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 409) {
+      // Server has a newer version — reload silently instead of overwriting
+      loadWeekStateRef.current(false);
+      return;
+    }
     if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
   } catch (err) {
     console.error("Autosave distant impossible", err);
@@ -3210,6 +3223,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (res.status === 409) {
+        setSyncStatus("error");
+        setSaveStatusMessage("Conflit : une version plus récente existe sur le serveur. Rechargement en cours…");
+        loadWeekStateRef.current(false);
+        return;
+      }
       if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
       setSyncStatus("synced");
     } catch (err) {
@@ -3221,9 +3240,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     }
   }, [buildSyncPayload, currentWeekKey, localStateKey]);
 
-// Sauvegarder à chaque modif
+// Sauvegarder à chaque modif (sauf si l'état vient d'être reçu d'un autre appareil)
 useEffect(() => {
   if (firstLoad.current) return;
+  if (isApplyingRemote.current) {
+    isApplyingRemote.current = false;
+    return;
+  }
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
