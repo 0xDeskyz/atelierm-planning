@@ -2016,6 +2016,8 @@ export default function Page() {
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
+  // Ordre manuel des chantiers dans le calendrier (siteIds dans l'ordre voulu, les autres en dessous par date de début)
+  const [calendarLaneOrder, setCalendarLaneOrder] = useState<string[]>([]);
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3578,6 +3580,7 @@ export default function Page() {
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
     if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
+    if (Array.isArray(state.calendarLaneOrder)) setCalendarLaneOrder(state.calendarLaneOrder.filter((s: any) => typeof s === "string"));
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -3772,11 +3775,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     validatedWeeks,
     customSousCategories,
     siteColorMode,
+    calendarLaneOrder,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, calendarLaneOrder]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -5486,20 +5490,69 @@ useEffect(() => {
                 <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto" ref={calendarScrollRef}>
                     {(() => {
-                      // Calcul global des "lanes" : chaque chantier planifié obtient une ligne fixe
-                      // qui traverse toutes les colonnes semaines, triée par première semaine planifiée puis nom.
+                      // 1. Collecte des chantiers planifiés visibles
                       const seen = new Map<string, any>();
                       if (calFilterPlanned) {
                         projectionWeekSummaries.forEach((w: any) => {
                           (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
                         });
                       }
-                      const plannedSitesGlobal = Array.from(seen.values()).sort((a: any, b: any) => {
+                      // 2. Tri : d'abord les chantiers présents dans calendarLaneOrder (dans l'ordre),
+                      //    puis les autres par première semaine planifiée puis nom.
+                      const manualOrderIdx = new Map<string, number>();
+                      calendarLaneOrder.forEach((id, i) => manualOrderIdx.set(id, i));
+                      const sortedSites = Array.from(seen.values()).sort((a: any, b: any) => {
+                        const ma = manualOrderIdx.has(a.id) ? manualOrderIdx.get(a.id)! : Infinity;
+                        const mb = manualOrderIdx.has(b.id) ? manualOrderIdx.get(b.id)! : Infinity;
+                        if (ma !== mb) return ma - mb;
                         const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
                         const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
                         if (sa !== sb) return sa.localeCompare(sb);
                         return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                       });
+                      // 3. Lane packing : on assigne à chaque chantier la 1re ligne libre où il ne chevauche pas un autre
+                      const lanes: Set<string>[] = []; // lanes[i] = ensemble des weekKey occupées
+                      const siteLane = new Map<string, number>();
+                      sortedSites.forEach((site: any) => {
+                        const wks: string[] = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
+                        let assigned = -1;
+                        for (let i = 0; i < lanes.length; i++) {
+                          let overlap = false;
+                          for (const wk of wks) { if (lanes[i].has(wk)) { overlap = true; break; } }
+                          if (!overlap) {
+                            wks.forEach((wk) => lanes[i].add(wk));
+                            assigned = i;
+                            break;
+                          }
+                        }
+                        if (assigned === -1) {
+                          lanes.push(new Set(wks));
+                          assigned = lanes.length - 1;
+                        }
+                        siteLane.set(site.id, assigned);
+                      });
+                      // 4. Construction inverse : lanes[laneIdx] → siteId | null par semaine
+                      const numLanes = lanes.length;
+                      const siteById = new Map<string, any>();
+                      sortedSites.forEach((s: any) => siteById.set(s.id, s));
+                      // Helper de réordre
+                      const reorderLane = (siteId: string, direction: -1 | 1 | "top" | "bottom") => {
+                        setCalendarLaneOrder((prev) => {
+                          // Construire la base = ordre actuel effectif des sortedSites
+                          const base = sortedSites.map((s: any) => s.id);
+                          const idx = base.indexOf(siteId);
+                          if (idx === -1) return prev;
+                          const next = [...base];
+                          next.splice(idx, 1);
+                          if (direction === "top") next.unshift(siteId);
+                          else if (direction === "bottom") next.push(siteId);
+                          else {
+                            const target = Math.max(0, Math.min(next.length, idx + direction));
+                            next.splice(target, 0, siteId);
+                          }
+                          return next;
+                        });
+                      };
                       const LANE_H = 22; // px par ligne
                     return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
@@ -5621,20 +5674,21 @@ useEffect(() => {
                               </div>
                             </div>
 
-                            {/* Lanes : chaque chantier sur sa ligne fixe, traverse les colonnes */}
+                            {/* Lanes : chaque chantier sur sa ligne fixe (lane packing) */}
                             <div className="py-1.5 flex-1">
-                              {calFilterPlanned && plannedSitesGlobal.length > 0 && (
+                              {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {plannedSitesGlobal.map((site: any) => {
-                                    const pw = Array.isArray(site.planningWeeks) ? [...site.planningWeeks].sort() : [];
-                                    const inWeek = pw.includes(week.weekKey);
-                                    if (!inWeek) {
-                                      return <div key={`slot-${site.id}`} style={{ height: LANE_H }} />;
+                                  {Array.from({ length: numLanes }).map((_, laneIdx) => {
+                                    // Trouver le chantier de cette lane actif sur cette semaine
+                                    const site = sortedSites.find((s: any) => siteLane.get(s.id) === laneIdx && Array.isArray(s.planningWeeks) && s.planningWeeks.includes(week.weekKey));
+                                    if (!site) {
+                                      return <div key={`lane-${laneIdx}`} style={{ height: LANE_H }} />;
                                     }
+                                    const pw = [...site.planningWeeks].sort();
                                     const isStart = pw[0] === week.weekKey;
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
                                     return (
-                                      <div key={`slot-${site.id}`} className="flex items-center" style={{ height: LANE_H }}>
+                                      <div key={`lane-${laneIdx}`} className="relative flex items-center group" style={{ height: LANE_H }}>
                                         <CalendarSiteChip
                                           site={site}
                                           weekKey={week.weekKey}
@@ -5645,6 +5699,31 @@ useEffect(() => {
                                             getSiteDisplayColor(site, siteColorMode)
                                           )}
                                         />
+                                        {isStart && (
+                                          <div className="absolute right-0.5 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex gap-0.5">
+                                            <button
+                                              type="button"
+                                              onPointerDown={(e) => e.stopPropagation()}
+                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, "top"); }}
+                                              title="Tout en haut"
+                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
+                                            >⇈</button>
+                                            <button
+                                              type="button"
+                                              onPointerDown={(e) => e.stopPropagation()}
+                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, -1); }}
+                                              title="Monter"
+                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
+                                            >↑</button>
+                                            <button
+                                              type="button"
+                                              onPointerDown={(e) => e.stopPropagation()}
+                                              onClick={(e) => { e.stopPropagation(); reorderLane(site.id, +1); }}
+                                              title="Descendre"
+                                              className="w-4 h-4 rounded bg-black/50 hover:bg-black/80 text-white text-[9px] leading-none flex items-center justify-center"
+                                            >↓</button>
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })}
