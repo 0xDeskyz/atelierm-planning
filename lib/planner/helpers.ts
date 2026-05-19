@@ -272,7 +272,7 @@ export type DifficulteFlagKey = keyof typeof DIFFICULTE_FLAG_LABELS;
 
 export type DifficulteLevel = "jaune" | "orange" | "rouge";
 export const DIFFICULTE_LEVEL_META: Record<DifficulteLevel, { label: string; color: string; hex: string; badge: string }> = {
-  jaune:  { label: "Jaune",  color: "bg-yellow-400", hex: "#facc15", badge: "bg-yellow-100 text-yellow-800 border-yellow-200" },
+  jaune:  { label: "Jaune",  color: "bg-amber-500", hex: "#f59e0b", badge: "bg-amber-100 text-amber-800 border-amber-200" },
   orange: { label: "Orange", color: "bg-orange-500", hex: "#f97316", badge: "bg-orange-100 text-orange-800 border-orange-200" },
   rouge:  { label: "Rouge",  color: "bg-red-500",    hex: "#ef4444", badge: "bg-red-100 text-red-800 border-red-200" },
 };

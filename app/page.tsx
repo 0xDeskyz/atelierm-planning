@@ -3116,14 +3116,52 @@ export default function Page() {
         const fromLane = prev[fromSiteId];
         const toLane = prev[toSiteId];
         if (fromLane === undefined || toLane === undefined || fromLane === toLane) return prev;
-        // Swap : les deux chantiers échangent leurs lignes.
-        // Tous les autres chantiers qui partagent la même ligne suivent (les chantiers sur la
-        // ligne d'origine de A se retrouvent sur celle de B, et vice-versa).
-        const next: Record<string, number> = {};
-        Object.entries(prev).forEach(([id, lane]) => {
-          if (lane === fromLane) next[id] = toLane;
-          else if (lane === toLane) next[id] = fromLane;
-          else next[id] = lane;
+        const spanOf = (s: any): [string, string] | null => {
+          const wks = Array.isArray(s.planningWeeks) ? s.planningWeeks : [];
+          if (wks.length === 0) return null;
+          const sorted = [...wks].sort();
+          return [sorted[0], sorted[sorted.length - 1]];
+        };
+        const overlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
+        const fromSite = sites.find((s: any) => s.id === fromSiteId);
+        if (!fromSite) return prev;
+        const fromSpan = spanOf(fromSite);
+        // Déplacement ciblé : seul fromSite change de ligne. Les autres chantiers qui partageaient
+        // sa ligne d'origine y restent.
+        const next: Record<string, number> = { ...prev, [fromSiteId]: toLane };
+        if (!fromSpan) return next;
+        // Conflits sur la ligne d'arrivée : on déplace les chantiers qui chevauchent.
+        const toBump: string[] = [];
+        sites.forEach((s: any) => {
+          if (s.id === fromSiteId) return;
+          if (next[s.id] !== toLane) return;
+          const sp = spanOf(s);
+          if (sp && overlap(fromSpan, sp)) toBump.push(s.id);
+        });
+        if (toBump.length === 0) return next;
+        // Reconstruction de l'occupation de toutes les lignes (sans les sites à déplacer)
+        const occupied = new Map<number, Array<[string, string]>>();
+        sites.forEach((s: any) => {
+          if (toBump.includes(s.id)) return;
+          const lane = next[s.id];
+          if (lane === undefined) return;
+          const sp = spanOf(s);
+          if (!sp) return;
+          if (!occupied.has(lane)) occupied.set(lane, []);
+          occupied.get(lane)!.push(sp);
+        });
+        toBump.forEach((id) => {
+          const s = sites.find((x: any) => x.id === id);
+          if (!s) return;
+          const sp = spanOf(s);
+          if (!sp) return;
+          let assigned = -1;
+          for (let i = 0; assigned === -1; i++) {
+            if (!occupied.has(i)) occupied.set(i, []);
+            const ranges = occupied.get(i)!;
+            if (!ranges.some((r) => overlap(r, sp))) { ranges.push(sp); assigned = i; }
+          }
+          next[id] = assigned;
         });
         return next;
       });
@@ -5682,7 +5720,7 @@ useEffect(() => {
                         .filter((s: any) => siteLane.has(s.id))
                         .sort((a: any, b: any) => siteLane.get(a.id)! - siteLane.get(b.id)!);
                       calendarSortedSitesRef.current = sortedSites;
-                      const LANE_H = 22; // px par ligne
+                      const LANE_H = 26; // px par ligne
                     return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
                       {projectionWeekSummaries.map((week) => {
@@ -5826,7 +5864,7 @@ useEffect(() => {
                                           isStart={isStart}
                                           isEnd={isEnd}
                                           className={cx(
-                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-5 truncate",
+                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-6 truncate",
                                             getSiteDisplayColor(site, siteColorMode)
                                           )}
                                         />
