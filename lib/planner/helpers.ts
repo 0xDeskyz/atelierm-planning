@@ -247,9 +247,9 @@ export type OrigineType = typeof ORIGINE_OPTIONS[number]["value"];
 
 // Catégorisation business des chantiers (analyse)
 export const CATEGORIE_PRINCIPALE_OPTIONS = [
-  { value: "ao",          label: "Appel d'offre", badge: "bg-indigo-100 text-indigo-700 border-indigo-200", color: "bg-indigo-500", hex: "#6366f1" },
-  { value: "particulier", label: "Particulier",   badge: "bg-emerald-100 text-emerald-700 border-emerald-200", color: "bg-emerald-500", hex: "#10b981" },
-  { value: "pro",         label: "Professionnel", badge: "bg-sky-100 text-sky-700 border-sky-200", color: "bg-sky-500", hex: "#0ea5e9" },
+  { value: "ao",          label: "Appel d'offre", badge: "bg-emerald-100 text-emerald-800 border-emerald-200", color: "bg-emerald-600", hex: "#059669" },
+  { value: "particulier", label: "Particulier",   badge: "bg-violet-100 text-violet-800 border-violet-200",     color: "bg-violet-500", hex: "#8b5cf6" },
+  { value: "pro",         label: "Professionnel", badge: "bg-blue-100 text-blue-800 border-blue-200",           color: "bg-blue-600",   hex: "#2563eb" },
 ] as const;
 export type CategoriePrincipale = typeof CATEGORIE_PRINCIPALE_OPTIONS[number]["value"];
 
