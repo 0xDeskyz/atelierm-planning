@@ -5485,6 +5485,23 @@ useEffect(() => {
                 {/* Table horizontale */}
                 <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto" ref={calendarScrollRef}>
+                    {(() => {
+                      // Calcul global des "lanes" : chaque chantier planifié obtient une ligne fixe
+                      // qui traverse toutes les colonnes semaines, triée par première semaine planifiée puis nom.
+                      const seen = new Map<string, any>();
+                      if (calFilterPlanned) {
+                        projectionWeekSummaries.forEach((w: any) => {
+                          (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
+                        });
+                      }
+                      const plannedSitesGlobal = Array.from(seen.values()).sort((a: any, b: any) => {
+                        const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
+                        const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
+                        if (sa !== sb) return sa.localeCompare(sb);
+                        return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
+                      });
+                      const LANE_H = 22; // px par ligne
+                    return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
                       {projectionWeekSummaries.map((week) => {
                         const isCurrentWeek = week.weekKey === weekKeyOf(new Date());
@@ -5604,77 +5621,39 @@ useEffect(() => {
                               </div>
                             </div>
 
-                            {/* Post-its */}
-                            <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — groupés par cycle de vie */}
-                              {calFilterPlanned && (() => {
-                                const sortedWeeks = (site: any) => {
-                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  return [...pw].sort();
-                                };
-                                const earliestOf = (site: any) => sortedWeeks(site)[0] || "9999-W99";
-                                const sortComparator = (a: any, b: any) => {
-                                  const ea = earliestOf(a);
-                                  const eb = earliestOf(b);
-                                  if (ea !== eb) return ea.localeCompare(eb);
-                                  return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
-                                };
-                                const groups: { starts: any[]; continues: any[]; ends: any[]; single: any[] } = { starts: [], continues: [], ends: [], single: [] };
-                                week.planned.forEach((site: any) => {
-                                  const sw = sortedWeeks(site);
-                                  const len = sw.length;
-                                  const isStart = len > 0 && sw[0] === week.weekKey;
-                                  const isEnd = len > 0 && sw[len - 1] === week.weekKey;
-                                  if (len === 1) groups.single.push(site);
-                                  else if (isStart) groups.starts.push(site);
-                                  else if (isEnd) groups.ends.push(site);
-                                  else groups.continues.push(site);
-                                });
-                                groups.starts.sort(sortComparator);
-                                groups.continues.sort(sortComparator);
-                                groups.ends.sort(sortComparator);
-                                groups.single.sort(sortComparator);
-                                const renderChip = (site: any, extra = "") => {
-                                  const sw = sortedWeeks(site);
-                                  const isStart = sw.length > 0 && sw[0] === week.weekKey;
-                                  const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
-                                  return (
-                                    <CalendarSiteChip
-                                      key={`p-${site.id}`}
-                                      site={site}
-                                      weekKey={week.weekKey}
-                                      isStart={isStart}
-                                      isEnd={isEnd}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", getSiteDisplayColor(site, siteColorMode), extra)}
-                                    />
-                                  );
-                                };
-                                const headerCls = "text-[8px] font-semibold uppercase tracking-wider mt-0.5";
-                                return (
-                                  <>
-                                    <div key="g-starts" className="space-y-1">
-                                      <div className={cx(headerCls, "text-emerald-600")}>Démarrent</div>
-                                      {groups.starts.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-cont" className="space-y-1">
-                                      <div className={cx(headerCls, "text-sky-600")}>Continuent</div>
-                                      {groups.continues.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-ends" className="space-y-1">
-                                      <div className={cx(headerCls, "text-amber-600")}>Terminent</div>
-                                      {groups.ends.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-single" className="space-y-1">
-                                      <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
-                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                              {/* Chantiers à planifier (status = pending) */}
-                              {calFilterPending && (
-                                <div className="space-y-1">
-                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">À planifier</div>
+                            {/* Lanes : chaque chantier sur sa ligne fixe, traverse les colonnes */}
+                            <div className="py-1.5 flex-1">
+                              {calFilterPlanned && plannedSitesGlobal.length > 0 && (
+                                <div className="px-0">
+                                  {plannedSitesGlobal.map((site: any) => {
+                                    const pw = Array.isArray(site.planningWeeks) ? [...site.planningWeeks].sort() : [];
+                                    const inWeek = pw.includes(week.weekKey);
+                                    if (!inWeek) {
+                                      return <div key={`slot-${site.id}`} style={{ height: LANE_H }} />;
+                                    }
+                                    const isStart = pw[0] === week.weekKey;
+                                    const isEnd = pw[pw.length - 1] === week.weekKey;
+                                    return (
+                                      <div key={`slot-${site.id}`} className="flex items-center" style={{ height: LANE_H }}>
+                                        <CalendarSiteChip
+                                          site={site}
+                                          weekKey={week.weekKey}
+                                          isStart={isStart}
+                                          isEnd={isEnd}
+                                          className={cx(
+                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-5 truncate",
+                                            getSiteDisplayColor(site, siteColorMode)
+                                          )}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {/* Chantiers à planifier (status = pending) — séparés en bas */}
+                              {calFilterPending && week.pending.length > 0 && (
+                                <div className="px-1.5 space-y-1 mt-2 pt-2 border-t border-dashed border-neutral-200">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500">À planifier</div>
                                   {[...week.pending]
                                     .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
                                     .map((site: any) => (
@@ -5687,15 +5666,13 @@ useEffect(() => {
                                     ))}
                                 </div>
                               )}
-                              {/* Semaine vide */}
-                              {week.planned.length === 0 && week.pending.length === 0 && week.absences.length === 0 && week.events.length === 0 && (
-                                <div className="h-4" />
-                              )}
                             </div>
                           </CalendarWeekDropZone>
                         );
                       })}
                     </div>
+                    );
+                    })()}
                   </div>
                 </div>
 
