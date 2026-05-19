@@ -82,6 +82,11 @@ import {
   normalizePersonRecord,
   normalizeSiteRecord,
   ORIGINE_OPTIONS,
+  CATEGORIE_PRINCIPALE_OPTIONS,
+  DEFAULT_SOUS_CATEGORIES,
+  DIFFICULTE_FLAG_LABELS,
+  DIFFICULTE_LEVEL_META,
+  computeDifficulteLevel,
   normalizeQuoteRecord,
   normalizeTenderRecord,
   normalizeClientRecord,
@@ -443,6 +448,19 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
       <span className="truncate text-neutral-700">{event.title}</span>
     </div>
   );
+}
+
+// Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
+function getSiteDisplayColor(site: any, mode: "default" | "difficulte" | "categorie"): string {
+  if (mode === "difficulte") {
+    const lvl = computeDifficulteLevel(site?.difficulte);
+    return DIFFICULTE_LEVEL_META[lvl].color;
+  }
+  if (mode === "categorie") {
+    const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+    return cat?.color || "bg-neutral-400";
+  }
+  return site?.color || "bg-sky-500";
 }
 
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
@@ -811,7 +829,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie }: any) {
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
@@ -837,6 +855,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [newSitMontant, setNewSitMontant] = useState("");
   const [newSitDate, setNewSitDate] = useState("");
   const [origine, setOrigine] = useState<string>("");
+  const [categoriePrincipale, setCategoriePrincipale] = useState<string>("");
+  const [sousCategorie, setSousCategorie] = useState<string>("");
+  const [newSousCatInput, setNewSousCatInput] = useState<string>("");
+  const [diffTechnique, setDiffTechnique] = useState<boolean>(false);
+  const [diffDelai, setDiffDelai] = useState<boolean>(false);
+  const [diffMarge, setDiffMarge] = useState<boolean>(false);
 
   useEffect(() => {
     setTab("infos");
@@ -865,6 +889,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewSitMontant("");
     setNewSitDate("");
     setOrigine(site?.origine || "");
+    setCategoriePrincipale(site?.categoriePrincipale || "");
+    setSousCategorie(site?.sousCategorie || "");
+    setNewSousCatInput("");
+    setDiffTechnique(!!site?.difficulte?.technique);
+    setDiffDelai(!!site?.difficulte?.delai);
+    setDiffMarge(!!site?.difficulte?.marge);
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site]);
@@ -895,6 +925,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       couts,
       situations,
       origine: origine || null,
+      categoriePrincipale: categoriePrincipale || null,
+      sousCategorie: sousCategorie || null,
+      difficulte: { technique: diffTechnique, delai: diffDelai, marge: diffMarge },
     });
   };
 
@@ -968,6 +1001,92 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   ))}
                 </select>
               </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Catégorie principale</span>
+                <select
+                  value={categoriePrincipale}
+                  onChange={(e) => setCategoriePrincipale(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                >
+                  <option value="">— Non renseignée</option>
+                  {CATEGORIE_PRINCIPALE_OPTIONS.map(c => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-neutral-600">Sous-catégorie</span>
+                <div className="flex gap-1.5">
+                  <select
+                    value={sousCategorie}
+                    onChange={(e) => setSousCategorie(e.target.value)}
+                    className="flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                  >
+                    <option value="">— Non renseignée</option>
+                    {[...DEFAULT_SOUS_CATEGORIES, ...customSousCategories].map((s: string) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-1.5 mt-1">
+                  <Input
+                    value={newSousCatInput}
+                    onChange={(e: any) => setNewSousCatInput(e.target.value)}
+                    placeholder="Ajouter une sous-catégorie"
+                    onKeyDown={(e: any) => {
+                      if (e.key === "Enter" && newSousCatInput.trim()) {
+                        e.preventDefault();
+                        const t = newSousCatInput.trim();
+                        if (onAddSousCategorie) onAddSousCategorie(t);
+                        setSousCategorie(t);
+                        setNewSousCatInput("");
+                      }
+                    }}
+                  />
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const t = newSousCatInput.trim();
+                    if (!t) return;
+                    if (onAddSousCategorie) onAddSousCategorie(t);
+                    setSousCategorie(t);
+                    setNewSousCatInput("");
+                  }}>Ajouter</Button>
+                </div>
+              </label>
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
+                  {(() => {
+                    const lvl = computeDifficulteLevel({ technique: diffTechnique, delai: diffDelai, marge: diffMarge });
+                    const meta = DIFFICULTE_LEVEL_META[lvl];
+                    return (
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full border", meta.badge)}>
+                        ● {meta.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { key: "technique", val: diffTechnique, set: setDiffTechnique },
+                    { key: "delai",     val: diffDelai,     set: setDiffDelai },
+                    { key: "marge",     val: diffMarge,     set: setDiffMarge },
+                  ] as const).map(({ key, val, set }) => (
+                    <label key={key} className={cx(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
+                      val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                    )}>
+                      <input
+                        type="checkbox"
+                        checked={val}
+                        onChange={(e) => set(e.target.checked)}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>{DIFFICULTE_FLAG_LABELS[key]}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge</p>
+              </div>
               <label className="space-y-1 md:col-span-2">
                 <span className="text-[11px] text-neutral-600">Couleur</span>
                 <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
@@ -1893,6 +2012,10 @@ export default function Page() {
   const [calFilterPending, setCalFilterPending] = useState(true);
   const [calFilterAbsences, setCalFilterAbsences] = useState(true);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
+  // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
+  const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
+  // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
+  const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3453,6 +3576,8 @@ export default function Page() {
     if (state.validatedWeeks && typeof state.validatedWeeks === "object") setValidatedWeeks(state.validatedWeeks);
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
+    if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
+    if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
@@ -3645,11 +3770,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     eventCalendars,
     calendarEvents,
     validatedWeeks,
+    customSousCategories,
+    siteColorMode,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -5263,8 +5390,8 @@ useEffect(() => {
                                 <span
                                   className={cx(
                                     "w-3 h-3 rounded-full border flex-shrink-0",
-                                    site.color || "bg-neutral-300",
-                                    site.color ? "border-black/10" : "border-neutral-200"
+                                    getSiteDisplayColor(site, siteColorMode),
+                                    "border-black/10"
                                   )}
                                   aria-hidden
                                 />
@@ -5325,6 +5452,24 @@ useEffect(() => {
                     ))}
                   </div>
                   <div className="flex-1" />
+                  {/* Toggle mode de coloration des chantiers */}
+                  <div className="flex items-center gap-1 rounded-full bg-neutral-100 p-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2">Couleur</span>
+                    {([
+                      { key: "default",    label: "Libre" },
+                      { key: "difficulte", label: "Difficulté" },
+                      { key: "categorie",  label: "Catégorie" },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setSiteColorMode(key)}
+                        className={cx(
+                          "px-2.5 py-1 rounded-full text-xs font-medium transition",
+                          siteColorMode === key ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                        )}
+                      >{label}</button>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setCalendarDraft({ name: "", color: COLORS[3] }); setCalendarEditTarget(null); setCalendarDialogOpen(true); }}
@@ -5340,6 +5485,23 @@ useEffect(() => {
                 {/* Table horizontale */}
                 <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto" ref={calendarScrollRef}>
+                    {(() => {
+                      // Calcul global des "lanes" : chaque chantier planifié obtient une ligne fixe
+                      // qui traverse toutes les colonnes semaines, triée par première semaine planifiée puis nom.
+                      const seen = new Map<string, any>();
+                      if (calFilterPlanned) {
+                        projectionWeekSummaries.forEach((w: any) => {
+                          (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
+                        });
+                      }
+                      const plannedSitesGlobal = Array.from(seen.values()).sort((a: any, b: any) => {
+                        const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
+                        const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
+                        if (sa !== sb) return sa.localeCompare(sb);
+                        return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
+                      });
+                      const LANE_H = 22; // px par ligne
+                    return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
                       {projectionWeekSummaries.map((week) => {
                         const isCurrentWeek = week.weekKey === weekKeyOf(new Date());
@@ -5459,77 +5621,39 @@ useEffect(() => {
                               </div>
                             </div>
 
-                            {/* Post-its */}
-                            <div className="p-1.5 space-y-1 flex-1">
-                              {/* Chantiers planifiés — groupés par cycle de vie */}
-                              {calFilterPlanned && (() => {
-                                const sortedWeeks = (site: any) => {
-                                  const pw = Array.isArray(site.planningWeeks) ? site.planningWeeks : [];
-                                  return [...pw].sort();
-                                };
-                                const earliestOf = (site: any) => sortedWeeks(site)[0] || "9999-W99";
-                                const sortComparator = (a: any, b: any) => {
-                                  const ea = earliestOf(a);
-                                  const eb = earliestOf(b);
-                                  if (ea !== eb) return ea.localeCompare(eb);
-                                  return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
-                                };
-                                const groups: { starts: any[]; continues: any[]; ends: any[]; single: any[] } = { starts: [], continues: [], ends: [], single: [] };
-                                week.planned.forEach((site: any) => {
-                                  const sw = sortedWeeks(site);
-                                  const len = sw.length;
-                                  const isStart = len > 0 && sw[0] === week.weekKey;
-                                  const isEnd = len > 0 && sw[len - 1] === week.weekKey;
-                                  if (len === 1) groups.single.push(site);
-                                  else if (isStart) groups.starts.push(site);
-                                  else if (isEnd) groups.ends.push(site);
-                                  else groups.continues.push(site);
-                                });
-                                groups.starts.sort(sortComparator);
-                                groups.continues.sort(sortComparator);
-                                groups.ends.sort(sortComparator);
-                                groups.single.sort(sortComparator);
-                                const renderChip = (site: any, extra = "") => {
-                                  const sw = sortedWeeks(site);
-                                  const isStart = sw.length > 0 && sw[0] === week.weekKey;
-                                  const isEnd = sw.length > 0 && sw[sw.length - 1] === week.weekKey;
-                                  return (
-                                    <CalendarSiteChip
-                                      key={`p-${site.id}`}
-                                      site={site}
-                                      weekKey={week.weekKey}
-                                      isStart={isStart}
-                                      isEnd={isEnd}
-                                      className={cx("text-[10px] px-2 py-px rounded font-semibold text-white shadow-sm leading-5", site.color || "bg-sky-500", extra)}
-                                    />
-                                  );
-                                };
-                                const headerCls = "text-[8px] font-semibold uppercase tracking-wider mt-0.5";
-                                return (
-                                  <>
-                                    <div key="g-starts" className="space-y-1">
-                                      <div className={cx(headerCls, "text-emerald-600")}>Démarrent</div>
-                                      {groups.starts.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-cont" className="space-y-1">
-                                      <div className={cx(headerCls, "text-sky-600")}>Continuent</div>
-                                      {groups.continues.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-ends" className="space-y-1">
-                                      <div className={cx(headerCls, "text-amber-600")}>Terminent</div>
-                                      {groups.ends.map((s) => renderChip(s))}
-                                    </div>
-                                    <div key="g-single" className="space-y-1">
-                                      <div className={cx(headerCls, "text-violet-600")}>Sur la semaine</div>
-                                      {groups.single.map((s) => renderChip(s, "ring-1 ring-black/20"))}
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                              {/* Chantiers à planifier (status = pending) */}
-                              {calFilterPending && (
-                                <div className="space-y-1">
-                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500 mt-0.5">À planifier</div>
+                            {/* Lanes : chaque chantier sur sa ligne fixe, traverse les colonnes */}
+                            <div className="py-1.5 flex-1">
+                              {calFilterPlanned && plannedSitesGlobal.length > 0 && (
+                                <div className="px-0">
+                                  {plannedSitesGlobal.map((site: any) => {
+                                    const pw = Array.isArray(site.planningWeeks) ? [...site.planningWeeks].sort() : [];
+                                    const inWeek = pw.includes(week.weekKey);
+                                    if (!inWeek) {
+                                      return <div key={`slot-${site.id}`} style={{ height: LANE_H }} />;
+                                    }
+                                    const isStart = pw[0] === week.weekKey;
+                                    const isEnd = pw[pw.length - 1] === week.weekKey;
+                                    return (
+                                      <div key={`slot-${site.id}`} className="flex items-center" style={{ height: LANE_H }}>
+                                        <CalendarSiteChip
+                                          site={site}
+                                          weekKey={week.weekKey}
+                                          isStart={isStart}
+                                          isEnd={isEnd}
+                                          className={cx(
+                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-5 truncate",
+                                            getSiteDisplayColor(site, siteColorMode)
+                                          )}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {/* Chantiers à planifier (status = pending) — séparés en bas */}
+                              {calFilterPending && week.pending.length > 0 && (
+                                <div className="px-1.5 space-y-1 mt-2 pt-2 border-t border-dashed border-neutral-200">
+                                  <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500">À planifier</div>
                                   {[...week.pending]
                                     .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
                                     .map((site: any) => (
@@ -5542,15 +5666,13 @@ useEffect(() => {
                                     ))}
                                 </div>
                               )}
-                              {/* Semaine vide */}
-                              {week.planned.length === 0 && week.pending.length === 0 && week.absences.length === 0 && week.events.length === 0 && (
-                                <div className="h-4" />
-                              )}
                             </div>
                           </CalendarWeekDropZone>
                         );
                       })}
                     </div>
+                    );
+                    })()}
                   </div>
                 </div>
 
@@ -5646,7 +5768,7 @@ useEffect(() => {
                       <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
                         <div className="flex flex-col gap-1 px-2 text-sm">
                           <div className="flex items-center gap-2">
-                            <span className={cx("w-3 h-3 rounded-full border", row.site.color || "bg-neutral-300", row.site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className={cx("w-3 h-3 rounded-full border border-black/10", getSiteDisplayColor(row.site, siteColorMode))} />
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
@@ -5663,7 +5785,7 @@ useEffect(() => {
                             className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
                             style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
                           >
-                            <div className={cx("h-full w-full rounded-full opacity-90", row.site.color || "bg-sky-500")}></div>
+                            <div className={cx("h-full w-full rounded-full opacity-90", getSiteDisplayColor(row.site, siteColorMode))}></div>
                           </div>
                         </div>
                       </div>
@@ -6779,6 +6901,12 @@ useEffect(() => {
           tauxMaterielDefault={tauxMaterielDefault}
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
+          customSousCategories={customSousCategories}
+          onAddSousCategorie={(name: string) => {
+            const t = name.trim();
+            if (!t) return;
+            setCustomSousCategories((prev) => prev.includes(t) || DEFAULT_SOUS_CATEGORIES.includes(t) ? prev : [...prev, t]);
+          }}
         />
       )}
 
