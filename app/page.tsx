@@ -480,13 +480,6 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
   const tooltipParts: string[] = [site.name];
   if (isStart) tooltipParts.push("démarre cette semaine");
   if (isEnd) tooltipParts.push("se termine cette semaine");
-  const shape = isStart && isEnd
-    ? "rounded-l-xl rounded-r-xl"
-    : isStart
-      ? "rounded-l-xl"
-      : isEnd
-        ? "rounded-r-xl"
-        : "";
   return (
     <div
       ref={setNodeRef}
@@ -494,14 +487,19 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       {...listeners}
       {...attributes}
       className={cx(
-        className, shape,
-        "cursor-grab active:cursor-grabbing select-none whitespace-nowrap truncate",
+        className,
+        "rounded-full mx-1.5",
+        "cursor-grab active:cursor-grabbing select-none",
         isDragging && "opacity-50",
         isOver && isLaneReorderDrag && "brightness-110 ring-2 ring-white ring-inset"
       )}
       title={tooltipParts.join(" · ")}
     >
-      {site.name}
+      <span className="flex items-center gap-0.5 min-w-0 overflow-hidden">
+        {isStart && <span className="shrink-0 opacity-70 text-[7px] leading-none">▸</span>}
+        <span className="truncate">{site.name}</span>
+        {isEnd && <span className="shrink-0 opacity-50 text-[7px] leading-none">■</span>}
+      </span>
     </div>
   );
 }
@@ -5764,7 +5762,7 @@ useEffect(() => {
                                           isStart={isStart}
                                           isEnd={isEnd}
                                           className={cx(
-                                            "block w-full text-[10px] px-2 py-px font-semibold text-white shadow-sm leading-6 truncate",
+                                            "block w-full text-[10px] px-2 font-semibold text-white shadow-sm leading-6",
                                             getSiteDisplayColor(site, siteColorMode)
                                           )}
                                         />
