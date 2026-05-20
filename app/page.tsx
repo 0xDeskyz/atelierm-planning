@@ -2007,11 +2007,21 @@ export default function Page() {
   const pushUndo = useCallback((snapshot: any) => {
     undoStack.current = [...undoStack.current.slice(-19), snapshot];
   }, []);
-  const clientIdRef = useRef(
-    typeof crypto !== "undefined" && (crypto as any).randomUUID
-      ? (crypto as any).randomUUID()
-      : `client-${Date.now()}`
-  );
+  const clientIdRef = useRef<string>((() => {
+    if (typeof window === "undefined") return `client-${Date.now()}`;
+    try {
+      const KEY = "btp-planner-client-id:v1";
+      const existing = localStorage.getItem(KEY);
+      if (existing) return existing;
+      const fresh = typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(KEY, fresh);
+      return fresh;
+    } catch {
+      return `client-${Date.now()}`;
+    }
+  })());
   const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
@@ -3736,7 +3746,8 @@ export default function Page() {
   }, [sites]);
 
   const firstLoad = useRef(true);
-  const localStateKey = useMemo(() => `btp-planner-state:v1:${currentWeekKey}`, [currentWeekKey]);
+  // Flag pour bloquer l'autosave juste après un load (sinon on écrase le serveur avec le contenu qu'on vient de charger)
+  const justLoadedRef = useRef(false);
 
   const loadWeekState = useCallback(
     async (markLoaded = false) => {
@@ -3747,6 +3758,7 @@ export default function Page() {
       setRefreshing(true);
       try {
         let remoteState: any = null;
+        let networkError = false;
         try {
           const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
             cache: "reload",
@@ -3756,44 +3768,36 @@ export default function Page() {
             },
             next: { revalidate: 0 },
           });
-          const srv = await res.json();
-          if (hasPayload(srv)) {
-            remoteState = srv;
+          if (!res.ok) { networkError = true; }
+          else {
+            const srv = await res.json();
+            if (hasPayload(srv)) remoteState = srv;
           }
-        } catch {}
-
-        let localState: any = null;
-        try {
-          const raw = localStorage.getItem(localStateKey);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (hasPayload(parsed)) {
-              localState = parsed;
-            }
-          }
-        } catch {}
-
-        // Priorité serveur, mais on protège le cas "serveur stale" (ex: PUT échoué localement).
-        // Si le cache local est plus récent, on garde le local pour éviter de perdre les dernières modifs.
-        let chosen: any = null;
-        if (remoteState && localState) {
-          const remoteTs = Number(remoteState.updatedAt || 0);
-          const localTs = Number(localState.updatedAt || 0);
-          chosen = localTs > remoteTs ? localState : remoteState;
-        } else if (remoteState) {
-          chosen = remoteState;
-        } else if (localState) {
-          chosen = localState;
+        } catch {
+          networkError = true;
         }
-        if (chosen || SEED_ASSIGNMENTS_BY_WEEK_V1[wk]) {
-          applyState(augmentStateWithRosterSeed(chosen || {}, wk));
+
+        if (networkError && markLoaded) {
+          // Pas de fallback localStorage : le serveur est la seule source de vérité
+          setSyncStatus("error");
+          setSaveStatusMessage("Impossible de charger les données depuis le serveur. Vérifie ta connexion et recharge.");
+          return;
+        }
+
+        if (remoteState || SEED_ASSIGNMENTS_BY_WEEK_V1[wk]) {
+          // Bloque l'autosave qui se déclencherait juste après applyState
+          justLoadedRef.current = true;
+          applyState(augmentStateWithRosterSeed(remoteState || {}, wk));
+          // Libère le flag après que tous les re-renders soient terminés
+          setTimeout(() => { justLoadedRef.current = false; }, 1500);
+          if (syncStatus === "error") setSyncStatus("synced");
         }
       } finally {
         if (markLoaded) firstLoad.current = false;
         setRefreshing(false);
       }
     },
-    [applyState, currentWeekKey, localStateKey]
+    [applyState, currentWeekKey, syncStatus]
   );
 
   useEffect(() => { loadWeekStateRef.current = loadWeekState; }, [loadWeekState]);
@@ -3949,7 +3953,6 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildSyncPayload(stamp);
-    try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
     setSaving(true);
     setSyncStatus("syncing");
     setSaveStatusMessage("");
@@ -3970,15 +3973,16 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     } catch (err) {
       console.error("Enregistrement distant impossible", err);
       setSyncStatus("error");
-      setSaveStatusMessage("Impossible d'enregistrer sur le serveur.");
+      setSaveStatusMessage("Impossible d'enregistrer sur le serveur — tes dernières modifications ne sont pas sauvegardées.");
     } finally {
       setSaving(false);
     }
-  }, [buildSyncPayload, currentWeekKey, localStateKey]);
+  }, [buildSyncPayload, currentWeekKey]);
 
-// Sauvegarder à chaque modif (sauf si l'état vient d'être reçu d'un autre appareil)
+// Sauvegarder à chaque modif (sauf juste après un load ou la réception d'un état distant)
 useEffect(() => {
   if (firstLoad.current) return;
+  if (justLoadedRef.current) return; // bloque les saves dans la seconde qui suit un applyState
   if (isApplyingRemote.current) {
     isApplyingRemote.current = false;
     return;
@@ -3986,11 +3990,8 @@ useEffect(() => {
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
-  // cache local (backup + rapidité)
-  try { localStorage.setItem(localStateKey, JSON.stringify(payload)); } catch {}
-  // serveur (par semaine)
   saveRemote(currentWeekKey, payload);
-}, [buildSyncPayload, currentWeekKey, localStateKey, saveRemote]);
+}, [buildSyncPayload, currentWeekKey, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
