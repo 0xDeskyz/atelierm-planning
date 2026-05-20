@@ -474,7 +474,9 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
     data: { type: "lane-drop", siteId: site.id },
   });
   const { active } = useDndContext();
-  const isLaneReorderDrag = active?.data?.current?.type === "lane-reorder";
+  // Highlight si un autre chip est en train d'être glissé sur celui-ci → swap visuel
+  const activeData = active?.data?.current;
+  const isSwapTarget = activeData?.type === "calendar-site" && activeData?.siteId && activeData.siteId !== site.id;
   const setNodeRef = (el: HTMLElement | null) => { setDragRef(el); setDropRef(el); };
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
   const tooltipParts: string[] = [site.name];
@@ -491,7 +493,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
         "rounded-full",
         "cursor-grab active:cursor-grabbing select-none",
         isDragging && "opacity-50",
-        isOver && isLaneReorderDrag && "brightness-110 ring-2 ring-white ring-inset"
+        isOver && isSwapTarget && "brightness-110 ring-2 ring-white ring-inset"
       )}
       title={tooltipParts.join(" · ")}
     >
@@ -2017,6 +2019,10 @@ export default function Page() {
   >("accueil");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const calendarSortedSitesRef = useRef<any[]>([]);
+  const calendarSiteLaneRef = useRef<Map<string, number>>(new Map());
+  // Migration : si on charge un ancien état avec calendarLaneOrder, on le convertit en pins
+  // après chargement des sites (besoin des spans).
+  const pendingLaneOrderMigrationRef = useRef<string[] | null>(null);
   const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
@@ -2051,9 +2057,9 @@ export default function Page() {
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
-  // Ordre manuel des chantiers dans le calendrier (drag-and-drop).
-  // Les nouveaux chantiers sont auto-ajoutés en fin de liste.
-  const [calendarLaneOrder, setCalendarLaneOrder] = useState<string[]>([]);
+  // Positions explicites (pins) des chantiers sur le calendrier (swap via drag).
+  // siteId → numéro de lane préféré. Les chantiers sans pin sont placés par greedy.
+  const [siteLanePins, setSiteLanePins] = useState<Record<string, number>>({});
   const [eventCalendars, setEventCalendars] = useState<{ id: string; name: string; color: string; visible: boolean; isDefault?: boolean }[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<
     { id: string; groupId?: string; title: string; dateKey: string; endDateKey?: string; calendarId?: string; color?: string; notes?: string }[]
@@ -3101,21 +3107,17 @@ export default function Page() {
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
 
-    if (data.type === "lane-reorder" && over.data?.current?.type === "lane-drop") {
+    // Swap pur : drop d'un chip sur un autre chip → échange des numéros de lane
+    // L'éventuel conflit avec un 3e chantier est résolu automatiquement au rendu (greedy).
+    if (data.type === "calendar-site" && over.data?.current?.type === "lane-drop") {
       const fromSiteId: string = data.siteId;
       const toSiteId: string | null = over.data.current.siteId;
       if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return;
-      setCalendarLaneOrder(() => {
-        const sorted = calendarSortedSitesRef.current;
-        const base = sorted.map((s: any) => s.id);
-        const fromIdx = base.indexOf(fromSiteId);
-        const toIdx = base.indexOf(toSiteId);
-        if (fromIdx === -1 || toIdx === -1) return calendarLaneOrder;
-        const next = [...base];
-        next.splice(fromIdx, 1);
-        next.splice(toIdx > fromIdx ? toIdx - 1 : toIdx, 0, fromSiteId);
-        return next;
-      });
+      const lanes = calendarSiteLaneRef.current;
+      const fromLane = lanes.get(fromSiteId);
+      const toLane = lanes.get(toSiteId);
+      if (fromLane === undefined || toLane === undefined || fromLane === toLane) return;
+      setSiteLanePins((prev) => ({ ...prev, [fromSiteId]: toLane, [toSiteId]: fromLane }));
       return;
     }
 
@@ -3635,26 +3637,69 @@ export default function Page() {
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
     if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
-    // Supporte l'ancien format siteLaneAssignments (Record) → conversion en ordre simple
-    if (state.siteLaneAssignments && typeof state.siteLaneAssignments === "object" && !Array.isArray(state.siteLaneAssignments)) {
-      const pairs = Object.entries(state.siteLaneAssignments as Record<string, number>)
-        .filter(([id, v]) => typeof id === "string" && Number.isFinite(Number(v)))
-        .sort((a, b) => Number(a[1]) - Number(b[1]));
-      setCalendarLaneOrder(pairs.map(([id]) => id));
+    // siteLanePins : format direct (siteId → lane number)
+    if (state.siteLanePins && typeof state.siteLanePins === "object" && !Array.isArray(state.siteLanePins)) {
+      const pins: Record<string, number> = {};
+      Object.entries(state.siteLanePins as Record<string, unknown>).forEach(([id, v]) => {
+        if (typeof id === "string" && Number.isFinite(Number(v))) pins[id] = Number(v);
+      });
+      setSiteLanePins(pins);
+    } else if (state.siteLaneAssignments && typeof state.siteLaneAssignments === "object" && !Array.isArray(state.siteLaneAssignments)) {
+      // Migration directe : ancien siteLaneAssignments avait déjà la bonne forme
+      const pins: Record<string, number> = {};
+      Object.entries(state.siteLaneAssignments as Record<string, unknown>).forEach(([id, v]) => {
+        if (typeof id === "string" && Number.isFinite(Number(v))) pins[id] = Number(v);
+      });
+      setSiteLanePins(pins);
     } else if (Array.isArray(state.calendarLaneOrder)) {
-      setCalendarLaneOrder(state.calendarLaneOrder.filter((s: any) => typeof s === "string"));
+      // Migration : convertir l'ancien ordre en pins via greedy (après chargement des sites)
+      pendingLaneOrderMigrationRef.current = state.calendarLaneOrder.filter((s: any) => typeof s === "string");
     }
     syncVersionRef.current = Number(state.updatedAt || 0);
   }, []);
 
-  // Auto-ajout des nouveaux chantiers en fin d'ordre (sans modifier l'ordre existant)
+  // Migration différée : si un ancien calendarLaneOrder est en attente, on le convertit
+  // en pins via greedy une fois les sites chargés (besoin des spans pour résoudre).
   useEffect(() => {
-    setCalendarLaneOrder((prev) => {
-      const known = new Set(prev);
-      const newIds = sites.filter((s: any) => !known.has(s.id)).map((s: any) => s.id);
-      if (newIds.length === 0) return prev;
-      return [...prev, ...newIds];
+    if (!pendingLaneOrderMigrationRef.current || sites.length === 0) return;
+    const order = pendingLaneOrderMigrationRef.current;
+    pendingLaneOrderMigrationRef.current = null;
+    const orderIdx = new Map(order.map((id, i) => [id, i]));
+    const spanOf = (s: any): [string, string] | null => {
+      const wks = Array.isArray(s?.planningWeeks) ? [...s.planningWeeks].sort() : [];
+      if (wks.length === 0) return null;
+      return [wks[0], wks[wks.length - 1]];
+    };
+    const spansOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
+    const catIdxOf = (s: any) => {
+      const c = String(s?.categoriePrincipale || "").toLowerCase();
+      return c === "ao" ? 0 : c === "particulier" ? 1 : c === "pro" ? 2 : 99;
+    };
+    const sorted = [...sites].sort((a: any, b: any) => {
+      const ca = catIdxOf(a), cb = catIdxOf(b);
+      if (ca !== cb) return ca - cb;
+      const ia = orderIdx.has(a.id) ? orderIdx.get(a.id)! : Infinity;
+      const ib = orderIdx.has(b.id) ? orderIdx.get(b.id)! : Infinity;
+      return ia - ib;
     });
+    const laneSpans: Array<Array<[string, string]>> = [];
+    const laneCat: number[] = [];
+    const pins: Record<string, number> = {};
+    sorted.forEach((site: any) => {
+      const span = spanOf(site);
+      if (!span) return;
+      const myCat = catIdxOf(site);
+      let assigned = -1;
+      for (let i = 0; i < laneSpans.length; i++) {
+        if (laneCat[i] !== myCat) continue;
+        if (!laneSpans[i].some((s) => spansOverlap(s, span))) {
+          laneSpans[i].push(span); assigned = i; break;
+        }
+      }
+      if (assigned === -1) { laneSpans.push([span]); laneCat.push(myCat); assigned = laneSpans.length - 1; }
+      pins[site.id] = assigned;
+    });
+    setSiteLanePins(pins);
   }, [sites]);
 
   const firstLoad = useRef(true);
@@ -3848,12 +3893,12 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     validatedWeeks,
     customSousCategories,
     siteColorMode,
-    calendarLaneOrder,
+    siteLanePins,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, calendarLaneOrder]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, siteLanePins]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -5570,53 +5615,72 @@ useEffect(() => {
                           (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
                         });
                       }
-                      // 2. Tri : catégorie (AO → Particulier → Pro → autre) puis ordre manuel puis 1re semaine puis nom
+                      // 2. Tri par défaut (non-pinned) : catégorie → 1re semaine → nom
                       const CATEGORY_ORDER: Record<string, number> = { ao: 0, particulier: 1, pro: 2 };
                       const catIdx = (s: any) => {
                         const c = String(s?.categoriePrincipale || "").toLowerCase();
                         return c in CATEGORY_ORDER ? CATEGORY_ORDER[c] : 99;
                       };
-                      const manualOrderIdx = new Map<string, number>();
-                      calendarLaneOrder.forEach((id: string, i: number) => manualOrderIdx.set(id, i));
                       const sortedSites = Array.from(seen.values()).sort((a: any, b: any) => {
                         const ca = catIdx(a), cb = catIdx(b);
                         if (ca !== cb) return ca - cb;
-                        const ma = manualOrderIdx.has(a.id) ? manualOrderIdx.get(a.id)! : Infinity;
-                        const mb = manualOrderIdx.has(b.id) ? manualOrderIdx.get(b.id)! : Infinity;
-                        if (ma !== mb) return ma - mb;
                         const sa = (Array.isArray(a.planningWeeks) ? [...a.planningWeeks].sort()[0] : "") || "9999-W99";
                         const sb = (Array.isArray(b.planningWeeks) ? [...b.planningWeeks].sort()[0] : "") || "9999-W99";
                         if (sa !== sb) return sa.localeCompare(sb);
                         return String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" });
                       });
-                      // 3. Greedy lane packing : chevauchement par span (1re–dernière semaine du chantier)
-                      // → la lane reste réservée pendant toute la durée, même les semaines sans chip
+                      // 3. Spans (pour conflits)
                       const siteSpanMap = new Map<string, [string, string]>();
                       sortedSites.forEach((site: any) => {
                         const wks: string[] = Array.isArray(site.planningWeeks) ? [...site.planningWeeks].sort() : [];
                         if (wks.length > 0) siteSpanMap.set(site.id, [wks[0], wks[wks.length - 1]]);
                       });
                       const spansOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
-                      const laneSpans: Array<Array<[string, string]>> = [];
-                      const laneCat: number[] = []; // catégorie de chaque lane (pour séparateurs)
+                      // 4. Allocation : pins d'abord (respectés si pas de conflit), puis greedy
+                      const laneOccupancy = new Map<number, Array<[string, string]>>();
+                      const laneCatMap = new Map<number, number>();
                       const siteLane = new Map<string, number>();
+                      const tryPlace = (lane: number, span: [string, string], myCat: number): boolean => {
+                        const occ = laneOccupancy.get(lane) || [];
+                        if (occ.some((s) => spansOverlap(s, span))) return false;
+                        if (laneCatMap.has(lane) && laneCatMap.get(lane) !== myCat) return false;
+                        return true;
+                      };
+                      const commit = (lane: number, site: any, span: [string, string], myCat: number) => {
+                        const occ = laneOccupancy.get(lane) || [];
+                        occ.push(span);
+                        laneOccupancy.set(lane, occ);
+                        if (!laneCatMap.has(lane)) laneCatMap.set(lane, myCat);
+                        siteLane.set(site.id, lane);
+                      };
+                      // Pinned d'abord (par numéro de pin croissant pour stabilité)
+                      const pinnedSites = sortedSites.filter((s: any) => siteLanePins[s.id] !== undefined && siteSpanMap.has(s.id));
+                      pinnedSites.sort((a: any, b: any) => siteLanePins[a.id] - siteLanePins[b.id]);
+                      pinnedSites.forEach((site: any) => {
+                        const span = siteSpanMap.get(site.id)!;
+                        const myCat = catIdx(site);
+                        let lane = siteLanePins[site.id];
+                        // Si conflit, on cherche la prochaine lane libre vers le bas
+                        while (!tryPlace(lane, span, myCat)) lane++;
+                        commit(lane, site, span, myCat);
+                      });
+                      // Puis non-pinned : greedy à partir de lane 0
                       sortedSites.forEach((site: any) => {
+                        if (siteLanePins[site.id] !== undefined) return;
                         const span = siteSpanMap.get(site.id);
                         if (!span) return;
                         const myCat = catIdx(site);
-                        let assigned = -1;
-                        for (let i = 0; i < laneSpans.length; i++) {
-                          if (laneCat[i] !== myCat) continue; // pas de mix de catégories dans une lane
-                          if (!laneSpans[i].some((s) => spansOverlap(s, span))) {
-                            laneSpans[i].push(span); assigned = i; break;
-                          }
-                        }
-                        if (assigned === -1) { laneSpans.push([span]); laneCat.push(myCat); assigned = laneSpans.length - 1; }
-                        siteLane.set(site.id, assigned);
+                        let lane = 0;
+                        while (!tryPlace(lane, span, myCat)) lane++;
+                        commit(lane, site, span, myCat);
                       });
                       const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
                       const numLanes = usedLaneIndices.length;
+                      // Tableau indexé par lane pour le séparateur (compatible avec l'ancien code)
+                      const laneCat: number[] = [];
+                      usedLaneIndices.forEach((idx) => { laneCat[idx] = laneCatMap.get(idx) ?? 99; });
                       calendarSortedSitesRef.current = sortedSites;
+                      calendarSiteLaneRef.current = siteLane;
                       const LANE_H = 26; // px par ligne
                     return (
                     <div className="flex" style={{ minWidth: `${projectionWeekSummaries.length * 152}px` }}>
@@ -5779,7 +5843,6 @@ useEffect(() => {
                                       <React.Fragment key={`lane-${actualLane}`}>
                                         {sep}
                                         <div className="relative flex items-center group px-1.5" style={{ height: LANE_H }}>
-                                          <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
                                           <CalendarSiteChip
                                             site={site}
                                             weekKey={week.weekKey}
