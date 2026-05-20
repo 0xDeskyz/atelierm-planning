@@ -5610,6 +5610,17 @@ useEffect(() => {
                       });
                       const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
                       const numLanes = usedLaneIndices.length;
+                      // Plage d'activité globale de chaque lane (min span start → max span end de tous ses chantiers)
+                      // Sert à afficher une ligne vide entre deux chantiers dans la même lane → alignement stable
+                      const laneActiveRange = new Map<number, [string, string]>();
+                      sortedSites.forEach((site: any) => {
+                        const lane = siteLane.get(site.id);
+                        const span = siteSpanMap.get(site.id);
+                        if (lane === undefined || !span) return;
+                        const cur = laneActiveRange.get(lane);
+                        if (!cur) laneActiveRange.set(lane, [span[0], span[1]]);
+                        else laneActiveRange.set(lane, [cur[0] <= span[0] ? cur[0] : span[0], cur[1] >= span[1] ? cur[1] : span[1]]);
+                      });
                       calendarSortedSitesRef.current = sortedSites;
                       const LANE_H = 26; // px par ligne
                     return (
@@ -5738,21 +5749,29 @@ useEffect(() => {
                                 <div className="px-0">
                                   {/* Pour chaque lane : trouver le chantier dont la span couvre
                                       cette semaine. Chip si planningWeeks l'inclut, placeholder sinon.
-                                      null si aucun chantier n'est actif dans cette lane cette semaine. */}
-                                  {usedLaneIndices.map((actualLane) => {
+                                      alignement stable : div vide si aucune span couvre cette semaine dans la lane. */}
+                                  {usedLaneIndices.filter((laneIdx) => {
+                                    const r = laneActiveRange.get(laneIdx);
+                                    return r ? r[0] <= week.weekKey && week.weekKey <= r[1] : false;
+                                  }).map((actualLane) => {
                                     const site = sortedSites.find((s: any) => {
                                       if (siteLane.get(s.id) !== actualLane) return false;
                                       const sp = siteSpanMap.get(s.id);
                                       return sp ? sp[0] <= week.weekKey && week.weekKey <= sp[1] : false;
                                     });
-                                    if (!site) return null;
+                                    // Lane active globalement mais aucun chantier sur cette semaine précise → div vide
+                                    if (!site) return <div key={`lane-${actualLane}`} style={{ height: LANE_H }} />;
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
+                                      // Semaine dans la span mais sans chip → fil coloré + trait pointillé
                                       const chipColor = getSiteDisplayColor(site, siteColorMode);
                                       const hex = COLOR_HEX[chipColor] || "#94a3b8";
                                       return (
                                         <div key={`lane-${actualLane}`} style={{ height: LANE_H }} className="flex items-center px-3">
-                                          <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.35 }} />
+                                          <div className="relative w-full flex items-center">
+                                            <div className="absolute inset-x-0" style={{ height: 1, backgroundColor: hex, opacity: 0.2 }} />
+                                            <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.45 }} />
+                                          </div>
                                         </div>
                                       );
                                     }
