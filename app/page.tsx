@@ -497,7 +497,10 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
   const activeData = active?.data?.current;
   const isSwapTarget = activeData?.type === "calendar-site" && activeData?.siteId && activeData.siteId !== site.id;
   const setNodeRef = (el: HTMLElement | null) => { setDragRef(el); setDropRef(el); };
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined;
+  const style: React.CSSProperties = {
+    touchAction: "none",
+    ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : {}),
+  };
   const tooltipParts: string[] = [site.name];
   if (isStart) tooltipParts.push("démarre cette semaine");
   if (isEnd) tooltipParts.push("se termine cette semaine");
@@ -1963,6 +1966,8 @@ export default function Page() {
   const [newClientForm, setNewClientForm] = useState({ name: "", phone: "", email: "" });
   const [batappliImportOpen, setBatappliImportOpen] = useState(false);
   const [sitesFilter, setSitesFilter] = useState<string>("all");
+  const [sitesCatFilters, setSitesCatFilters] = useState<string[]>([]);
+  const [sitesDiffFilters, setSitesDiffFilters] = useState<string[]>([]);
   const [sitesSort, setSitesSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
   const [sitesSearch, setSitesSearch] = useState("");
   const [aoFormOpen, setAoFormOpen] = useState(false);
@@ -3121,10 +3126,10 @@ export default function Page() {
     openQuoteDetail(normalized);
   };
 
-  // DnD sensors
+  // DnD sensors — delay 250ms on touch so scroll is distinguishable from drag
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   useEffect(() => {
@@ -5932,7 +5937,7 @@ useEffect(() => {
                                     return (
                                       <React.Fragment key={`lane-${actualLane}`}>
                                         {sep}
-                                        <div className="relative flex items-center group px-1.5" style={{ height: LANE_H }}>
+                                        <div className="relative flex items-center group px-1.5" style={{ height: LANE_H, touchAction: "none" }}>
                                           <CalendarSiteChip
                                             site={site}
                                             weekKey={week.weekKey}
@@ -6307,17 +6312,19 @@ useEffect(() => {
               const filteredSites = safeSites
                 .filter((s: any) => {
                   const st = s.status || "planned";
-                  if (sitesFilter === "pending") return st === "pending";
-                  if (sitesFilter === "planned") return st === "planned";
-                  if (sitesFilter === "archived") return st === "archived";
-                  const origineMatch = ORIGINE_OPTIONS.find(o => o.value === sitesFilter);
-                  if (origineMatch) return s.origine === sitesFilter;
+                  if (sitesFilter === "pending" && st !== "pending") return false;
+                  if (sitesFilter === "planned" && st !== "planned") return false;
+                  if (sitesFilter === "archived" && st !== "archived") return false;
+                  if (sitesCatFilters.length > 0 && !sitesCatFilters.includes(s.categoriePrincipale)) return false;
+                  if (sitesDiffFilters.length > 0) {
+                    const lvl = computeDifficulteWithConfig(s.difficulte, difficulteConfig);
+                    if (!sitesDiffFilters.includes(lvl)) return false;
+                  }
+                  if (sitesSearch.trim()) {
+                    const q = sitesSearch.toLowerCase();
+                    if (!(s.name || '').toLowerCase().includes(q) && !(s.clientName || '').toLowerCase().includes(q)) return false;
+                  }
                   return true;
-                })
-                .filter((s: any) => {
-                  if (!sitesSearch.trim()) return true;
-                  const q = sitesSearch.toLowerCase();
-                  return (s.name || '').toLowerCase().includes(q) || (s.clientName || '').toLowerCase().includes(q);
                 })
                 .sort((a: any, b: any) => {
                   const dir = sitesSort.dir === "asc" ? 1 : -1;
@@ -6325,7 +6332,13 @@ useEffect(() => {
                   if (sitesSort.col === "client") return (a.clientName || '').localeCompare(b.clientName || '', 'fr') * dir;
                   if (sitesSort.col === "budget") return (Number(a.quoteSnapshot?.amount ?? 0) - Number(b.quoteSnapshot?.amount ?? 0)) * dir;
                   if (sitesSort.col === "status") return (a.status || 'planned').localeCompare(b.status || 'planned') * dir;
-                  if (sitesSort.col === "origine") return (a.origine || '').localeCompare(b.origine || '', 'fr') * dir;
+                  if (sitesSort.col === "categorie") return (a.categoriePrincipale || '').localeCompare(b.categoriePrincipale || '', 'fr') * dir;
+                  if (sitesSort.col === "difficulte") {
+                    const la = computeDifficulteWithConfig(a.difficulte, difficulteConfig);
+                    const lb = computeDifficulteWithConfig(b.difficulte, difficulteConfig);
+                    const order: Record<string, number> = { jaune: 0, orange: 1, rouge: 2 };
+                    return ((order[la] ?? 0) - (order[lb] ?? 0)) * dir;
+                  }
                   return 0;
                 });
 
@@ -6421,27 +6434,61 @@ useEffect(() => {
                       )}
 
                       {/* Filters + Search */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-0.5 flex-wrap">
-                          {([["all", "Tous"], ["pending", "À planifier"], ["planned", "En cours"], ["archived", "Archivés"]] as [string, string][]).map(([val, label]) => (
-                            <button key={val} onClick={() => setSitesFilter(val)}
-                              className={cx("px-3 py-1 rounded-md text-xs font-medium transition", sitesFilter === val ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}
-                            >{label}</button>
-                          ))}
-                          <div className="w-px h-4 bg-neutral-300 mx-0.5" />
-                          {ORIGINE_OPTIONS.map(o => (
-                            <button key={o.value} onClick={() => setSitesFilter(sitesFilter === o.value ? "all" : o.value)}
-                              className={cx("px-2.5 py-1 rounded-md text-xs font-semibold border transition",
-                                sitesFilter === o.value ? o.badge : "bg-white text-neutral-500 border-neutral-200 hover:text-neutral-800")}
-                            >{o.label}</button>
-                          ))}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Status */}
+                          <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-0.5">
+                            {([["all", "Tous"], ["pending", "À planifier"], ["planned", "En cours"], ["archived", "Archivés"]] as [string, string][]).map(([val, label]) => (
+                              <button key={val} onClick={() => setSitesFilter(val)}
+                                className={cx("px-3 py-1 rounded-md text-xs font-medium transition", sitesFilter === val ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-800")}
+                              >{label}</button>
+                            ))}
+                          </div>
+                          <input
+                            value={sitesSearch}
+                            onChange={(e) => setSitesSearch(e.target.value)}
+                            placeholder="Rechercher…"
+                            className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 w-44"
+                          />
                         </div>
-                        <input
-                          value={sitesSearch}
-                          onChange={(e) => setSitesSearch(e.target.value)}
-                          placeholder="Rechercher…"
-                          className="ml-auto rounded-lg border border-neutral-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 w-44"
-                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Categories */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {CATEGORIE_PRINCIPALE_OPTIONS.map(c => {
+                              const active = sitesCatFilters.includes(c.value);
+                              return (
+                                <button key={c.value}
+                                  onClick={() => setSitesCatFilters(prev => active ? prev.filter(x => x !== c.value) : [...prev, c.value])}
+                                  className={cx("px-2.5 py-1 rounded-full text-xs font-semibold border transition", active ? c.badge : "bg-white text-neutral-400 border-neutral-200 hover:text-neutral-700")}
+                                >{c.label}</button>
+                              );
+                            })}
+                          </div>
+                          <div className="w-px h-4 bg-neutral-200" />
+                          {/* Difficulty */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {(["jaune", "orange", "rouge"] as const).map(lvl => {
+                              const meta = DIFFICULTE_LEVEL_META[lvl];
+                              const active = sitesDiffFilters.includes(lvl);
+                              return (
+                                <button key={lvl}
+                                  onClick={() => setSitesDiffFilters(prev => active ? prev.filter(x => x !== lvl) : [...prev, lvl])}
+                                  className={cx("px-2.5 py-1 rounded-full text-xs font-semibold border transition flex items-center gap-1",
+                                    active ? meta.badge : "bg-white text-neutral-400 border-neutral-200 hover:text-neutral-700")}
+                                >
+                                  <span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />
+                                  {meta.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {(sitesCatFilters.length > 0 || sitesDiffFilters.length > 0) && (
+                            <button
+                              onClick={() => { setSitesCatFilters([]); setSitesDiffFilters([]); }}
+                              className="text-xs text-neutral-400 hover:text-neutral-700 underline ml-1"
+                            >Effacer filtres</button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Table */}
@@ -6454,14 +6501,15 @@ useEffect(() => {
                               <SortTh col="client" label="Client" />
                               <SortTh col="budget" label="Budget" />
                               <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-500 whitespace-nowrap">Planification</th>
-                              <SortTh col="origine" label="Origine" />
+                              <SortTh col="categorie" label="Catégorie" />
+                              <SortTh col="difficulte" label="Difficulté" />
                               <SortTh col="status" label="Statut" />
                               <th className="px-3 py-2" />
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-50">
                             {filteredSites.length === 0 && (
-                              <tr><td colSpan={8} className="px-3 py-6 text-center text-sm text-neutral-400">Aucun chantier trouvé.</td></tr>
+                              <tr><td colSpan={10} className="px-3 py-6 text-center text-sm text-neutral-400">Aucun chantier trouvé.</td></tr>
                             )}
                             {filteredSites.map((site: any) => (
                               <tr
@@ -6491,7 +6539,8 @@ useEffect(() => {
                                     <span>{formatWeeksSummary(site.planningWeeks)}</span>
                                   ) : <span className="text-neutral-300">Non planifié</span>}
                                 </td>
-                                <td className="px-3 py-2.5">{origineBadge(site.origine)}</td>
+                                <td className="px-3 py-2.5">{(() => { const c = CATEGORIE_PRINCIPALE_OPTIONS.find(x => x.value === site.categoriePrincipale); return c ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", c.badge)}>{c.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
+                                <td className="px-3 py-2.5">{(() => { const lvl = computeDifficulteWithConfig(site.difficulte, difficulteConfig); const meta = DIFFICULTE_LEVEL_META[lvl]; const anyFlag = site.difficulte && Object.values(site.difficulte).some(Boolean); return anyFlag ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1 w-fit", meta.badge)}><span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />{meta.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
                                 <td className="px-3 py-2.5">{statusBadge(site.status || "planned")}</td>
                                 <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                                   <div className="flex items-center gap-1">
@@ -6998,7 +7047,7 @@ useEffect(() => {
 
           </div>
         </div>
-        <DragOverlay />
+        <DragOverlay dropAnimation={null} />
         </DndContext>
         </div>
       )}
