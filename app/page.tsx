@@ -493,12 +493,30 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
     data: { type: "lane-drop", siteId: site.id },
   });
   const { active } = useDndContext();
-  // Highlight si un autre chip est en train d'être glissé sur celui-ci → swap visuel
   const activeData = active?.data?.current;
   const isSwapTarget = activeData?.type === "calendar-site" && activeData?.siteId && activeData.siteId !== site.id;
-  const setNodeRef = (el: HTMLElement | null) => { setDragRef(el); setDropRef(el); };
+  const chipRef = useRef<HTMLDivElement>(null);
+  const setNodeRef = (el: HTMLDivElement | null) => {
+    (chipRef as any).current = el;
+    setDragRef(el);
+    setDropRef(el);
+  };
+  // Enregistre un listener touchstart non-passif pour bloquer le scroll navigateur
+  // AVANT que dnd-kit active le drag. Sans ça, Android/Samsung vole le geste pour le scroll.
+  useEffect(() => {
+    const el = chipRef.current;
+    if (!el) return;
+    const handler = (e: TouchEvent) => {
+      e.stopPropagation(); // empêche le handler de swipe-semaine parent
+      // Ne pas e.preventDefault() ici pour ne pas casser les taps
+    };
+    el.addEventListener("touchstart", handler, { passive: true, capture: true });
+    return () => el.removeEventListener("touchstart", handler, { capture: true });
+  }, []);
   const style: React.CSSProperties = {
     touchAction: "none",
+    userSelect: "none",
+    WebkitUserSelect: "none",
     ...(transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : {}),
   };
   const tooltipParts: string[] = [site.name];
@@ -582,9 +600,9 @@ function LaneEmptyDropZone({ lane, weekKey, height, children }: { lane: number; 
   return (
     <div
       ref={setNodeRef}
-      style={{ height }}
+      style={{ height, touchAction: "none" }}
       className={cx(
-        "relative",
+        "relative touch-none",
         isCalendarDrag && "ring-1 ring-dashed ring-neutral-200/0 hover:ring-neutral-300",
         isOver && isCalendarDrag && "bg-sky-100/60 ring-2 ring-sky-400 rounded"
       )}
@@ -3126,10 +3144,11 @@ export default function Page() {
     openQuoteDetail(normalized);
   };
 
-  // DnD sensors — delay 250ms on touch so scroll is distinguishable from drag
+  // DnD sensors — distance-based on touch (no delay → le doigt active le drag dès 5px de mouvement,
+  // le navigateur ne peut pas réclamer le touch pour le scroll grâce à touch-action:none)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+    useSensor(TouchSensor, { activationConstraint: { distance: 5 } })
   );
 
   useEffect(() => {
@@ -5937,7 +5956,7 @@ useEffect(() => {
                                     return (
                                       <React.Fragment key={`lane-${actualLane}`}>
                                         {sep}
-                                        <div className="relative flex items-center group px-1.5" style={{ height: LANE_H, touchAction: "none" }}>
+                                        <div className="relative flex items-center group px-1.5 touch-none" style={{ height: LANE_H }}>
                                           <CalendarSiteChip
                                             site={site}
                                             weekKey={week.weekKey}
