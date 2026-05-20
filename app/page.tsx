@@ -452,15 +452,22 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
+const DEFAULT_DIFFICULTE_FLAGS: { key: string; label: string }[] = [
+  { key: "technique", label: "Technique délicate" },
+  { key: "delai",     label: "Délai serré" },
+  { key: "marge",     label: "Marge incertaine" },
+];
+
 // Calcule le niveau de difficulté avec configuration personnalisée
 function computeDifficulteWithConfig(
-  flags: { technique?: boolean; delai?: boolean; marge?: boolean } | null | undefined,
-  config: { rougeAtCount: number; alwaysRougeFlags: string[] }
+  flags: Record<string, boolean | undefined> | null | undefined,
+  config: { rougeAtCount: number; alwaysRougeFlags: string[]; flags?: { key: string; label: string }[] }
 ): DifficulteLevel {
   if (!flags) return "jaune";
-  const activeFlags = (["technique", "delai", "marge"] as const).filter(k => !!(flags as any)[k]);
-  if (activeFlags.some(k => (config.alwaysRougeFlags || []).includes(k))) return "rouge";
-  const count = activeFlags.length;
+  const configFlags = config.flags?.length ? config.flags : DEFAULT_DIFFICULTE_FLAGS;
+  const activeKeys = configFlags.map(f => f.key).filter(k => !!(flags as any)[k]);
+  if (activeKeys.some(k => (config.alwaysRougeFlags || []).includes(k))) return "rouge";
+  const count = activeKeys.length;
   if (count >= (config.rougeAtCount ?? 2)) return "rouge";
   if (count >= 1) return "orange";
   return "jaune";
@@ -580,6 +587,32 @@ function LaneEmptyDropZone({ lane, weekKey, height, children }: { lane: number; 
       )}
     >
       {children}
+    </div>
+  );
+}
+
+function NewFlagInput({ onAdd }: { onAdd: (label: string) => void }) {
+  const [val, setVal] = React.useState("");
+  const submit = () => {
+    const t = val.trim();
+    if (!t) return;
+    onAdd(t);
+    setVal("");
+  };
+  return (
+    <div className="flex gap-2 mt-1">
+      <input
+        type="text"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        placeholder="Nom du drapeau…"
+        className="flex-1 text-sm border border-neutral-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-black/20"
+      />
+      <button
+        onClick={submit}
+        className="px-3 py-1.5 rounded-md border border-neutral-300 text-sm font-medium hover:bg-neutral-50 transition whitespace-nowrap"
+      >+ Ajouter</button>
     </div>
   );
 }
@@ -894,7 +927,8 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie, difficulteConfig: diffCfg }: any) {
+  const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
@@ -923,9 +957,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [categoriePrincipale, setCategoriePrincipale] = useState<string>("");
   const [sousCategorie, setSousCategorie] = useState<string>("");
   const [newSousCatInput, setNewSousCatInput] = useState<string>("");
-  const [diffTechnique, setDiffTechnique] = useState<boolean>(false);
-  const [diffDelai, setDiffDelai] = useState<boolean>(false);
-  const [diffMarge, setDiffMarge] = useState<boolean>(false);
+  const [diffFlags, setDiffFlags] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setTab("infos");
@@ -957,12 +989,10 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setCategoriePrincipale(site?.categoriePrincipale || "");
     setSousCategorie(site?.sousCategorie || "");
     setNewSousCatInput("");
-    setDiffTechnique(!!site?.difficulte?.technique);
-    setDiffDelai(!!site?.difficulte?.delai);
-    setDiffMarge(!!site?.difficulte?.marge);
+    setDiffFlags(Object.fromEntries(activeDiffFlags.map(f => [f.key, !!(site?.difficulte?.[f.key])])));
     setConfirmArchive(false);
     setConfirmDelete(false);
-  }, [site]);
+  }, [site, diffCfg]);
 
   const handleSave = (nextStatus?: "planned" | "pending") => {
     if (!site?.id) return;
@@ -992,7 +1022,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       origine: origine || null,
       categoriePrincipale: categoriePrincipale || null,
       sousCategorie: sousCategorie || null,
-      difficulte: { technique: diffTechnique, delai: diffDelai, marge: diffMarge },
+      difficulte: diffFlags,
     });
   };
 
@@ -1121,7 +1151,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
                   {(() => {
-                    const lvl = computeDifficulteLevel({ technique: diffTechnique, delai: diffDelai, marge: diffMarge });
+                    const lvl = diffCfg ? computeDifficulteWithConfig(diffFlags, diffCfg) : computeDifficulteLevel(diffFlags as any);
                     const meta = DIFFICULTE_LEVEL_META[lvl];
                     return (
                       <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full border", meta.badge)}>
@@ -1131,26 +1161,25 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   })()}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {([
-                    { key: "technique", val: diffTechnique, set: setDiffTechnique },
-                    { key: "delai",     val: diffDelai,     set: setDiffDelai },
-                    { key: "marge",     val: diffMarge,     set: setDiffMarge },
-                  ] as const).map(({ key, val, set }) => (
-                    <label key={key} className={cx(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
-                      val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
-                    )}>
-                      <input
-                        type="checkbox"
-                        checked={val}
-                        onChange={(e) => set(e.target.checked)}
-                        className="w-3.5 h-3.5"
-                      />
-                      <span>{DIFFICULTE_FLAG_LABELS[key]}</span>
-                    </label>
-                  ))}
+                  {activeDiffFlags.map(({ key, label }) => {
+                    const val = !!diffFlags[key];
+                    return (
+                      <label key={key} className={cx(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
+                        val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                      )}>
+                        <input
+                          type="checkbox"
+                          checked={val}
+                          onChange={(e) => setDiffFlags(prev => ({ ...prev, [key]: e.target.checked }))}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
                 </div>
-                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge (configurable dans Réglages)</p>
+                <p className="text-[10px] text-neutral-400">Configurable dans Réglages → Personnalisation</p>
               </div>
               <label className="space-y-1">
                 <span className="text-[11px] text-neutral-600 flex items-center gap-2">
@@ -2093,7 +2122,7 @@ export default function Page() {
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"difficulte" | "categorie">("categorie");
   // Configuration personnalisable des seuils de difficulté
-  const [difficulteConfig, setDifficulteConfig] = useState<{ rougeAtCount: number; alwaysRougeFlags: string[] }>({ rougeAtCount: 2, alwaysRougeFlags: [] });
+  const [difficulteConfig, setDifficulteConfig] = useState<{ rougeAtCount: number; alwaysRougeFlags: string[]; flags: { key: string; label: string }[] }>({ rougeAtCount: 2, alwaysRougeFlags: [], flags: DEFAULT_DIFFICULTE_FLAGS });
   // Positions explicites (pins) des chantiers sur le calendrier (swap via drag).
   // siteId → numéro de lane préféré. Les chantiers sans pin sont placés par greedy.
   const [siteLanePins, setSiteLanePins] = useState<Record<string, number>>({});
@@ -3693,9 +3722,13 @@ export default function Page() {
     else if (state.siteColorMode === "default") setSiteColorMode("categorie");
     if (state.difficulteConfig && typeof state.difficulteConfig === "object") {
       const dc = state.difficulteConfig as any;
+      const savedFlags = Array.isArray(dc.flags)
+        ? dc.flags.filter((f: any) => f?.key && f?.label)
+        : null;
       setDifficulteConfig({
         rougeAtCount: Number.isFinite(Number(dc.rougeAtCount)) ? Number(dc.rougeAtCount) : 2,
         alwaysRougeFlags: Array.isArray(dc.alwaysRougeFlags) ? dc.alwaysRougeFlags.filter((f: any) => typeof f === "string") : [],
+        flags: savedFlags && savedFlags.length > 0 ? savedFlags : DEFAULT_DIFFICULTE_FLAGS,
       });
     }
     // siteLanePins : format direct (siteId → lane number)
@@ -6879,7 +6912,7 @@ useEffect(() => {
                                   </td>
                                   <td className="px-3 py-2.5">
                                     <button onClick={() => openSiteDetail(s.id)} className="flex items-center gap-2 hover:underline text-left">
-                                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${s.color}`} />
+                                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${getChantierColor(s)}`} />
                                       <span className="font-medium text-neutral-900">{s.name}</span>
                                       {s.status === "archived" && <span className="text-[10px] text-neutral-400 border border-neutral-200 rounded px-1">archivé</span>}
                                     </button>
@@ -7167,6 +7200,7 @@ useEffect(() => {
           tauxMaterielDefault={tauxMaterielDefault}
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
+          difficulteConfig={difficulteConfig}
           customSousCategories={customSousCategories}
           onAddSousCategorie={(name: string) => {
             const t = name.trim();
@@ -7740,6 +7774,34 @@ useEffect(() => {
                         })}
                       </div>
                       <p className="text-[10px] text-neutral-400">Si activé, la présence de ce drapeau seul suffit à afficher rouge, peu importe le seuil.</p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700">Drapeaux de difficulté</label>
+                      <div className="flex flex-col gap-1">
+                        {difficulteConfig.flags.map((f) => (
+                          <div key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 bg-neutral-50 text-sm">
+                            <span className="flex-1 text-neutral-700">{f.label}</span>
+                            {difficulteConfig.flags.length > 1 && (
+                              <button
+                                onClick={() => setDifficulteConfig((prev) => ({
+                                  ...prev,
+                                  flags: prev.flags.filter((x) => x.key !== f.key),
+                                  alwaysRougeFlags: prev.alwaysRougeFlags.filter((k) => k !== f.key),
+                                }))}
+                                className="text-neutral-400 hover:text-red-500 transition text-base leading-none px-1"
+                                title="Supprimer ce drapeau"
+                              >×</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <NewFlagInput onAdd={(label: string) => {
+                        const key = label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+                        if (!key || difficulteConfig.flags.some(f => f.key === key)) return;
+                        setDifficulteConfig((prev) => ({ ...prev, flags: [...prev.flags, { key, label }] }));
+                      }} />
+                      <p className="text-[10px] text-neutral-400">Minimum 1 drapeau. Les drapeaux supprimés ne sont plus affichés dans les formulaires.</p>
                     </div>
                   </div>
                 </div>
