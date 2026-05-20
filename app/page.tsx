@@ -5616,17 +5616,6 @@ useEffect(() => {
                       });
                       const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
                       const numLanes = usedLaneIndices.length;
-                      // Plage d'activité globale de chaque lane (min span start → max span end de tous ses chantiers)
-                      // Sert à afficher une ligne vide entre deux chantiers dans la même lane → alignement stable
-                      const laneActiveRange = new Map<number, [string, string]>();
-                      sortedSites.forEach((site: any) => {
-                        const lane = siteLane.get(site.id);
-                        const span = siteSpanMap.get(site.id);
-                        if (lane === undefined || !span) return;
-                        const cur = laneActiveRange.get(lane);
-                        if (!cur) laneActiveRange.set(lane, [span[0], span[1]]);
-                        else laneActiveRange.set(lane, [cur[0] <= span[0] ? cur[0] : span[0], cur[1] >= span[1] ? cur[1] : span[1]]);
-                      });
                       calendarSortedSitesRef.current = sortedSites;
                       const LANE_H = 26; // px par ligne
                     return (
@@ -5751,17 +5740,12 @@ useEffect(() => {
 
                             {/* Lanes : chaque chantier sur sa ligne fixe (lane packing) */}
                             <div className="py-1.5 flex-1 flex flex-col">
-                              {calFilterPlanned && numLanes > 0 && (() => {
-                                const visibleLanes = usedLaneIndices.filter((laneIdx) => {
-                                  const r = laneActiveRange.get(laneIdx);
-                                  return r ? r[0] <= week.weekKey && week.weekKey <= r[1] : false;
-                                });
-                                return (
+                              {calFilterPlanned && numLanes > 0 && (
                                 <div className="px-0">
-                                  {/* Pour chaque lane visible : chip si planningWeeks inclut la semaine,
-                                      placeholder si span couvre, div vide sinon. Séparateur si changement de catégorie. */}
-                                  {visibleLanes.map((actualLane, idx) => {
-                                    const prevLane = idx > 0 ? visibleLanes[idx - 1] : null;
+                                  {/* Toutes les lanes dans toutes les semaines → position verticale garantie stable.
+                                      Chip si planningWeeks inclut la semaine, pointillé si span couvre, div invisible sinon. */}
+                                  {usedLaneIndices.map((actualLane, idx) => {
+                                    const prevLane = idx > 0 ? usedLaneIndices[idx - 1] : null;
                                     const showSeparator = prevLane !== null && laneCat[prevLane] !== laneCat[actualLane];
                                     const site = sortedSites.find((s: any) => {
                                       if (siteLane.get(s.id) !== actualLane) return false;
@@ -5811,8 +5795,7 @@ useEffect(() => {
                                     );
                                   })}
                                 </div>
-                                );
-                              })()}
+                              )}
                               {/* Chantiers à planifier (status = pending) — collé en bas pour aligner */}
                               {calFilterPending && week.pending.length > 0 && (
                                 <div className="px-1.5 space-y-1 mt-auto pt-2 border-t border-dashed border-neutral-200">
