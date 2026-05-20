@@ -452,16 +452,13 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
 }
 
 // Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
-function getSiteDisplayColor(site: any, mode: "default" | "difficulte" | "categorie"): string {
+function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie"): string {
   if (mode === "difficulte") {
     const lvl = computeDifficulteLevel(site?.difficulte);
     return DIFFICULTE_LEVEL_META[lvl].color;
   }
-  if (mode === "categorie") {
-    const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
-    return cat?.color || "bg-neutral-400";
-  }
-  return site?.color || "bg-sky-500";
+  const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+  return cat?.color || "bg-neutral-400";
 }
 
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
@@ -2079,7 +2076,7 @@ export default function Page() {
   // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
-  const [siteColorMode, setSiteColorMode] = useState<"default" | "difficulte" | "categorie">("default");
+  const [siteColorMode, setSiteColorMode] = useState<"difficulte" | "categorie">("categorie");
   // Positions explicites (pins) des chantiers sur le calendrier (swap via drag).
   // siteId → numéro de lane préféré. Les chantiers sans pin sont placés par greedy.
   const [siteLanePins, setSiteLanePins] = useState<Record<string, number>>({});
@@ -3670,7 +3667,9 @@ export default function Page() {
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
-    if (state.siteColorMode === "default" || state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
+    // Migration : l'ancien "default" (libre) est ramené à "categorie"
+    if (state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
+    else if (state.siteColorMode === "default") setSiteColorMode("categorie");
     // siteLanePins : format direct (siteId → lane number)
     if (state.siteLanePins && typeof state.siteLanePins === "object" && !Array.isArray(state.siteLanePins)) {
       const pins: Record<string, number> = {};
@@ -5612,9 +5611,8 @@ useEffect(() => {
                   <div className="flex items-center gap-1 rounded-full bg-neutral-100 p-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2">Couleur</span>
                     {([
-                      { key: "default",    label: "Libre" },
-                      { key: "difficulte", label: "Difficulté" },
                       { key: "categorie",  label: "Catégorie" },
+                      { key: "difficulte", label: "Difficulté" },
                     ] as const).map(({ key, label }) => (
                       <button
                         key={key}
