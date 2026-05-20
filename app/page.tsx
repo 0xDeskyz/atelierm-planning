@@ -87,6 +87,7 @@ import {
   DEFAULT_SOUS_CATEGORIES,
   DIFFICULTE_FLAG_LABELS,
   DIFFICULTE_LEVEL_META,
+  DifficulteLevel,
   computeDifficulteLevel,
   normalizeQuoteRecord,
   normalizeTenderRecord,
@@ -451,10 +452,24 @@ function CalendarEventChip({ event, weekKey, calHex, onEdit }: { event: any; wee
   );
 }
 
+// Calcule le niveau de difficulté avec configuration personnalisée
+function computeDifficulteWithConfig(
+  flags: { technique?: boolean; delai?: boolean; marge?: boolean } | null | undefined,
+  config: { rougeAtCount: number; alwaysRougeFlags: string[] }
+): DifficulteLevel {
+  if (!flags) return "jaune";
+  const activeFlags = (["technique", "delai", "marge"] as const).filter(k => !!(flags as any)[k]);
+  if (activeFlags.some(k => (config.alwaysRougeFlags || []).includes(k))) return "rouge";
+  const count = activeFlags.length;
+  if (count >= (config.rougeAtCount ?? 2)) return "rouge";
+  if (count >= 1) return "orange";
+  return "jaune";
+}
+
 // Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
-function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie"): string {
+function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): string {
   if (mode === "difficulte") {
-    const lvl = computeDifficulteLevel(site?.difficulte);
+    const lvl = diffConfig ? computeDifficulteWithConfig(site?.difficulte, diffConfig) : computeDifficulteLevel(site?.difficulte);
     return DIFFICULTE_LEVEL_META[lvl].color;
   }
   const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
@@ -705,9 +720,8 @@ function WeekPicker({
   );
 }
 
-function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
+function AddSiteDialog({ open, setOpen, onAdd }: any) {
   const [name, setName] = useState("");
-  const [color, setColor] = useState<string>(SITE_COLORS[6]);
   const [selectedWeeks, setSelectedWeeks] = useState<string[]>([]);
   const [pickerYear, setPickerYear] = useState<number>(() => new Date().getFullYear());
   const [pending, setPending] = useState<boolean>(false);
@@ -721,10 +735,6 @@ function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
         <DialogHeader><DialogTitle>Ajouter un chantier</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Nom du chantier" value={name} onChange={(e: any) => setName(e.target.value)} />
-          <div className="space-y-1">
-            <div className="text-xs text-neutral-600">Couleur</div>
-            <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
-          </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -773,10 +783,9 @@ function AddSiteDialog({ open, setOpen, onAdd, usedColors = [] }: any) {
             onClick={() => {
               const n = name.trim();
               if (!n) return;
-              onAdd(n, selectedWeeks, color, pending ? "pending" : "planned");
+              onAdd(n, selectedWeeks, undefined, pending ? "pending" : "planned");
               setOpen(false);
               setName("");
-              setColor(SITE_COLORS[6]);
               setSelectedWeeks([]);
               setPickerYear(new Date().getFullYear());
               setPending(false);
@@ -1141,12 +1150,8 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                     </label>
                   ))}
                 </div>
-                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge</p>
+                <p className="text-[10px] text-neutral-400">0 case → jaune · 1 case → orange · 2+ cases → rouge (configurable dans Réglages)</p>
               </div>
-              <label className="space-y-1 md:col-span-2">
-                <span className="text-[11px] text-neutral-600">Couleur</span>
-                <ColorPicker value={color} onChange={setColor} usedColors={usedColors} />
-              </label>
               <label className="space-y-1">
                 <span className="text-[11px] text-neutral-600 flex items-center gap-2">
                   Client
@@ -2087,6 +2092,8 @@ export default function Page() {
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"difficulte" | "categorie">("categorie");
+  // Configuration personnalisable des seuils de difficulté
+  const [difficulteConfig, setDifficulteConfig] = useState<{ rougeAtCount: number; alwaysRougeFlags: string[] }>({ rougeAtCount: 2, alwaysRougeFlags: [] });
   // Positions explicites (pins) des chantiers sur le calendrier (swap via drag).
   // siteId → numéro de lane préféré. Les chantiers sans pin sont placés par greedy.
   const [siteLanePins, setSiteLanePins] = useState<Record<string, number>>({});
@@ -2229,6 +2236,10 @@ export default function Page() {
   }, [anchor, timelineScope]);
   const safePeople = useMemo(() => (Array.isArray(people) ? people.map(normalizePersonRecord) : []), [people]);
   const safeSites = Array.isArray(sites) ? sites : [];
+  const getChantierColor = useCallback(
+    (site: any) => getSiteDisplayColor(site, siteColorMode, difficulteConfig),
+    [siteColorMode, difficulteConfig]
+  );
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "pending"), [safeSites]);
@@ -3680,6 +3691,13 @@ export default function Page() {
     // Migration : l'ancien "default" (libre) est ramené à "categorie"
     if (state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
     else if (state.siteColorMode === "default") setSiteColorMode("categorie");
+    if (state.difficulteConfig && typeof state.difficulteConfig === "object") {
+      const dc = state.difficulteConfig as any;
+      setDifficulteConfig({
+        rougeAtCount: Number.isFinite(Number(dc.rougeAtCount)) ? Number(dc.rougeAtCount) : 2,
+        alwaysRougeFlags: Array.isArray(dc.alwaysRougeFlags) ? dc.alwaysRougeFlags.filter((f: any) => typeof f === "string") : [],
+      });
+    }
     // siteLanePins : format direct (siteId → lane number)
     if (state.siteLanePins && typeof state.siteLanePins === "object" && !Array.isArray(state.siteLanePins)) {
       const pins: Record<string, number> = {};
@@ -3930,12 +3948,13 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     validatedWeeks,
     customSousCategories,
     siteColorMode,
+    difficulteConfig,
     siteLanePins,
     chantiersSeeded2026: true,
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, siteLanePins]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, difficulteConfig, siteLanePins]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -4518,7 +4537,7 @@ useEffect(() => {
                     >
                       <span
                         className={cx(
-                          "mt-1 h-3 w-3 rounded-full border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200"
+                          "mt-1 h-3 w-3 rounded-full border border-black/10", getChantierColor(site)
                         )}
                         aria-hidden
                       />
@@ -4562,7 +4581,7 @@ useEffect(() => {
                     <div key={site.id} className="rounded-lg border border-neutral-200 px-3 py-2 bg-white flex items-start gap-3">
                       <span
                         className={cx(
-                          "mt-1 h-3 w-3 rounded-full border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200"
+                          "mt-1 h-3 w-3 rounded-full border border-black/10", getChantierColor(site)
                         )}
                         aria-hidden
                       />
@@ -4961,9 +4980,8 @@ useEffect(() => {
                           <div className="flex items-start gap-2">
                             <span
                               className={cx(
-                                "mt-0.5 w-3 h-3 rounded-full shrink-0 border",
-                                site.color || "bg-neutral-300",
-                                site.color ? "border-black/10" : "border-neutral-200"
+                                "mt-0.5 w-3 h-3 rounded-full shrink-0 border border-black/10",
+                                getChantierColor(site)
                               )}
                               aria-hidden
                             />
@@ -5151,7 +5169,7 @@ useEffect(() => {
                                         }}
                                         className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-neutral-100 transition text-xs"
                                       >
-                                        <span className={`w-2 h-2 rounded-full shrink-0 ${site.color || "bg-neutral-400"}`} />
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${getChantierColor(site)}`} />
                                         <span className="truncate">{site.name}</span>
                                       </button>
                                     ))}
@@ -5357,9 +5375,8 @@ useEffect(() => {
                           </button>
                           <span
                             className={cx(
-                              "w-3 h-3 rounded-full border flex-shrink-0",
-                              site.color || "bg-neutral-300",
-                              site.color ? "border-black/10" : "border-neutral-200"
+                              "w-3 h-3 rounded-full border border-black/10 flex-shrink-0",
+                              getChantierColor(site)
                             )}
                             aria-hidden
                           />
@@ -5465,7 +5482,7 @@ useEffect(() => {
                     <div key={site.id} className="grid grid-cols-6 gap-2 items-stretch">
                       <div className="flex flex-col gap-1 justify-center">
                         <div className="flex items-center gap-1.5">
-                          <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", site.color || "bg-neutral-300")} />
+                          <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", getChantierColor(site))} />
                           <span className="text-sm font-semibold text-neutral-900 truncate">{site.name}</span>
                         </div>
                         <span className="text-[10px] text-neutral-400">Heures & portions</span>
@@ -5546,7 +5563,7 @@ useEffect(() => {
                                 <span
                                   className={cx(
                                     "w-3 h-3 rounded-full border flex-shrink-0",
-                                    getSiteDisplayColor(site, siteColorMode),
+                                    getChantierColor(site),
                                     "border-black/10"
                                   )}
                                   aria-hidden
@@ -5860,7 +5877,7 @@ useEffect(() => {
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
                                       // Semaine dans la span mais sans chip → fil coloré + trait pointillé, droppable aussi
-                                      const chipColor = getSiteDisplayColor(site, siteColorMode);
+                                      const chipColor = getChantierColor(site);
                                       const hex = COLOR_HEX[chipColor] || "#94a3b8";
                                       return (
                                         <React.Fragment key={`lane-${actualLane}`}>
@@ -5890,7 +5907,7 @@ useEffect(() => {
                                             isEnd={isEnd}
                                             className={cx(
                                               "block w-full text-[10px] px-2 font-semibold text-white shadow-sm leading-6",
-                                              getSiteDisplayColor(site, siteColorMode)
+                                              getChantierColor(site)
                                             )}
                                           />
                                         </div>
@@ -6017,7 +6034,7 @@ useEffect(() => {
                       <div key={row.site.id} className="grid items-center gap-2" style={{ gridTemplateColumns: `220px 1fr` }}>
                         <div className="flex flex-col gap-1 px-2 text-sm">
                           <div className="flex items-center gap-2">
-                            <span className={cx("w-3 h-3 rounded-full border border-black/10", getSiteDisplayColor(row.site, siteColorMode))} />
+                            <span className={cx("w-3 h-3 rounded-full border border-black/10", getChantierColor(row.site))} />
                             <span className="font-medium text-neutral-800">{row.site.name}</span>
                           </div>
                           <div className="text-[11px] text-neutral-500">
@@ -6034,7 +6051,7 @@ useEffect(() => {
                             className="absolute inset-y-1 rounded-full shadow-sm flex items-center"
                             style={{ left: `${row.bar.offsetPct}%`, width: `${row.bar.widthPct}%` }}
                           >
-                            <div className={cx("h-full w-full rounded-full opacity-90", getSiteDisplayColor(row.site, siteColorMode))}></div>
+                            <div className={cx("h-full w-full rounded-full opacity-90", getChantierColor(row.site))}></div>
                           </div>
                         </div>
                       </div>
@@ -6054,7 +6071,7 @@ useEffect(() => {
                       {timelinePendingSites.map((site) => (
                         <div key={site.id} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3">
                           <div className="flex items-start gap-2">
-                            <span className={cx("w-3 h-3 rounded-full mt-1 border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} />
+                            <span className={cx("w-3 h-3 rounded-full mt-1 border border-black/10", getChantierColor(site))} />
                             <div className="space-y-0.5">
                               <div className="font-semibold text-neutral-900">{site.name}</div>
                               <div className="text-[11px] text-neutral-600">
@@ -6420,7 +6437,7 @@ useEffect(() => {
                                 onClick={() => openSiteDetail(site.id)}
                               >
                                 <td className="px-3 py-2.5">
-                                  <span className={cx("w-3 h-3 rounded-full inline-block border", site.color || "bg-neutral-300", site.color ? "border-black/10" : "border-neutral-200")} />
+                                  <span className={cx("w-3 h-3 rounded-full inline-block border border-black/10", getChantierColor(site))} />
                                 </td>
                                 <td className="px-3 py-2.5 font-medium text-neutral-900 max-w-[200px] truncate">{site.name}</td>
                                 <td className="px-3 py-2.5 text-neutral-600 max-w-[150px] truncate">
@@ -7372,10 +7389,8 @@ useEffect(() => {
         weekSelection={renameTarget?.type === 'site' ? renameWeeks : undefined}
         onWeekSelectionChange={renameTarget?.type === 'site' ? setRenameWeeks : undefined}
         initialYear={renamePickerYear}
-        color={renameTarget?.type === 'site' ? renameTarget?.color : undefined}
-        usedColors={renameTarget?.type === 'site'
-          ? safeSites.filter((s: any) => s.id !== renameTarget?.id).map((s: any) => s.color)
-          : safePeople.filter((p: any) => p.id !== renameTarget?.id).map((p: any) => p.color)}
+        color={renameTarget?.type === 'person' ? renameTarget?.color : undefined}
+        usedColors={safePeople.filter((p: any) => p.id !== renameTarget?.id).map((p: any) => p.color)}
         onSave={(newName: string, weeks?: string[], colorChoice?: string) => {
           if (!renameTarget) return;
           const n = newName.trim();
@@ -7659,6 +7674,74 @@ useEffect(() => {
                     <p className="text-[11px] text-neutral-400">Inclinaison et ombre portée des épingles au drag, texture liège discrète dans les cellules. Effet purement visuel, n'affecte rien d'autre.</p>
                   </div>
                   <p className="text-xs text-neutral-400">La personnalisation est mémorisée dans votre navigateur (local). Pour la retrouver sur un autre poste, exportez/importez les données.</p>
+
+                  {/* Difficulty config */}
+                  <div className="space-y-3 pt-3 border-t border-neutral-100">
+                    <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Seuils de difficulté</label>
+                    <p className="text-[11px] text-neutral-400">Configure à partir de combien de drapeaux un chantier s'affiche en rouge dans le planning.</p>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700">Rouge à partir de combien de drapeaux</label>
+                      <div className="flex gap-2">
+                        {[1, 2, 3].map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => setDifficulteConfig((prev) => ({ ...prev, rougeAtCount: n }))}
+                            className={cx(
+                              "flex-1 py-2 rounded-md border text-sm font-semibold transition",
+                              difficulteConfig.rougeAtCount === n
+                                ? "bg-red-500 text-white border-red-500"
+                                : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
+                            )}
+                          >
+                            {n} {n === 1 ? "drapeau" : "drapeaux"}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-neutral-400">
+                        {difficulteConfig.rougeAtCount === 1
+                          ? "1 drapeau → rouge directement, 0 → jaune"
+                          : difficulteConfig.rougeAtCount === 2
+                          ? "0 drapeau → jaune · 1 → orange · 2+ → rouge"
+                          : "0 drapeau → jaune · 1-2 → orange · 3 → rouge"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700">Drapeaux forçant rouge directement</label>
+                      <div className="flex flex-col gap-1.5">
+                        {(Object.entries({ technique: "Technique délicate", delai: "Délai serré", marge: "Marge incertaine" }) as [string, string][]).map(([key, label]) => {
+                          const isActive = difficulteConfig.alwaysRougeFlags.includes(key);
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => setDifficulteConfig((prev) => ({
+                                ...prev,
+                                alwaysRougeFlags: isActive
+                                  ? prev.alwaysRougeFlags.filter((f) => f !== key)
+                                  : [...prev.alwaysRougeFlags, key],
+                              }))}
+                              className={cx(
+                                "flex items-center justify-between px-3 py-2 rounded-md border text-sm transition",
+                                isActive
+                                  ? "bg-red-50 border-red-300 text-red-700"
+                                  : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                              )}
+                            >
+                              <span>{label}</span>
+                              <span className={cx(
+                                "text-[10px] px-2 py-0.5 rounded-full font-semibold",
+                                isActive ? "bg-red-500 text-white" : "bg-neutral-100 text-neutral-400"
+                              )}>
+                                {isActive ? "Rouge" : "Inactif"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-neutral-400">Si activé, la présence de ce drapeau seul suffit à afficher rouge, peu importe le seuil.</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
