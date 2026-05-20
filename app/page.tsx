@@ -549,6 +549,29 @@ function CalendarWeekDropZone({ weekKey, children, isCurrentWeek }: { weekKey: s
   );
 }
 
+// Row vide ou placeholder dans le calendrier : permet de drop un chip pour le pinner à cette lane
+function LaneEmptyDropZone({ lane, weekKey, height, children }: { lane: number; weekKey: string; height: number; children?: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `lane-pin-${lane}-${weekKey}`,
+    data: { type: "lane-pin", lane },
+  });
+  const { active } = useDndContext();
+  const isCalendarDrag = active?.data?.current?.type === "calendar-site";
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ height }}
+      className={cx(
+        "relative",
+        isCalendarDrag && "ring-1 ring-dashed ring-neutral-200/0 hover:ring-neutral-300",
+        isOver && isCalendarDrag && "bg-sky-100/60 ring-2 ring-sky-400 rounded"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ==================================
 // Dialogs
 // ==================================
@@ -3118,6 +3141,17 @@ export default function Page() {
       const toLane = lanes.get(toSiteId);
       if (fromLane === undefined || toLane === undefined || fromLane === toLane) return;
       setSiteLanePins((prev) => ({ ...prev, [fromSiteId]: toLane, [toSiteId]: fromLane }));
+      return;
+    }
+
+    // Pin sur une row vide (au-dessus, en-dessous, ou dans un gap) → déplace juste le chantier glissé
+    if (data.type === "calendar-site" && over.data?.current?.type === "lane-pin") {
+      const fromSiteId: string = data.siteId;
+      const targetLane: number = Number(over.data.current.lane);
+      if (!fromSiteId || !Number.isFinite(targetLane)) return;
+      const currentLane = calendarSiteLaneRef.current.get(fromSiteId);
+      if (currentLane === targetLane) return;
+      setSiteLanePins((prev) => ({ ...prev, [fromSiteId]: targetLane }));
       return;
     }
 
@@ -5817,22 +5851,29 @@ useEffect(() => {
                                       return sp ? sp[0] <= week.weekKey && week.weekKey <= sp[1] : false;
                                     });
                                     const sep = showSeparator ? <div key={`sep-${actualLane}`} className="h-1.5 my-0.5 border-t border-neutral-200" /> : null;
-                                    // Lane active globalement mais aucun chantier sur cette semaine précise → div vide
-                                    if (!site) return <React.Fragment key={`lane-${actualLane}`}>{sep}<div style={{ height: LANE_H }} /></React.Fragment>;
+                                    // Lane active globalement mais aucun chantier sur cette semaine précise → row vide DROPPABLE
+                                    if (!site) return (
+                                      <React.Fragment key={`lane-${actualLane}`}>
+                                        {sep}
+                                        <LaneEmptyDropZone lane={actualLane} weekKey={week.weekKey} height={LANE_H} />
+                                      </React.Fragment>
+                                    );
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
-                                      // Semaine dans la span mais sans chip → fil coloré + trait pointillé
+                                      // Semaine dans la span mais sans chip → fil coloré + trait pointillé, droppable aussi
                                       const chipColor = getSiteDisplayColor(site, siteColorMode);
                                       const hex = COLOR_HEX[chipColor] || "#94a3b8";
                                       return (
                                         <React.Fragment key={`lane-${actualLane}`}>
                                           {sep}
-                                          <div style={{ height: LANE_H }} className="flex items-center px-3">
-                                            <div className="relative w-full flex items-center">
-                                              <div className="absolute inset-x-0" style={{ height: 1, backgroundColor: hex, opacity: 0.2 }} />
-                                              <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.45 }} />
+                                          <LaneEmptyDropZone lane={actualLane} weekKey={week.weekKey} height={LANE_H}>
+                                            <div className="h-full flex items-center px-3">
+                                              <div className="relative w-full flex items-center">
+                                                <div className="absolute inset-x-0" style={{ height: 1, backgroundColor: hex, opacity: 0.2 }} />
+                                                <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.45 }} />
+                                              </div>
                                             </div>
-                                          </div>
+                                          </LaneEmptyDropZone>
                                         </React.Fragment>
                                       );
                                     }
