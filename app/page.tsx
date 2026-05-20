@@ -484,7 +484,7 @@ function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffCo
 }
 
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
-  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
   });
@@ -492,14 +492,12 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
     id: `calendar-site-drop-${site.id}-${weekKey}`,
     data: { type: "lane-drop", siteId: site.id },
   });
-  const { active } = useDndContext();
-  const activeData = active?.data?.current;
-  const isSwapTarget = activeData?.type === "calendar-site" && activeData?.siteId && activeData.siteId !== site.id;
   const setNodeRef = (el: HTMLDivElement | null) => { setDragRef(el); setDropRef(el); };
-  // Identique à PersonChip / AssignmentChip : touchAction toujours présent, pas de listener custom
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20, touchAction: "none" as const }
-    : { touchAction: "none" as const };
+  // Pendant le drag : l'original est caché, le DragOverlay flotte à la place.
+  // Pas de transform appliqué ici → zéro re-render per-frame sur cet élément.
+  const style: React.CSSProperties = isDragging
+    ? { touchAction: "none", opacity: 0 }
+    : { touchAction: "none" };
   const tooltipParts: string[] = [site.name];
   if (isStart) tooltipParts.push("démarre cette semaine");
   if (isEnd) tooltipParts.push("se termine cette semaine");
@@ -513,8 +511,8 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
         className,
         "rounded-full",
         "cursor-grab active:cursor-grabbing select-none",
-        isDragging && "opacity-50",
-        isOver && isSwapTarget && "brightness-110 ring-2 ring-white ring-inset"
+        isDragging && "opacity-0",
+        isOver && "brightness-110 ring-2 ring-white ring-inset"
       )}
       title={tooltipParts.join(" · ")}
     >
@@ -2221,6 +2219,7 @@ export default function Page() {
     client: "",
   });
   const [dragging, setDragging] = useState(false);
+  const [dragOverlaySite, setDragOverlaySite] = useState<{ site: any; chipClass: string } | null>(null);
   const [quoteDetail, setQuoteDetail] = useState<any | null>(null);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
   const [quoteWeekPickerYear, setQuoteWeekPickerYear] = useState(() => getISOWeekYear(new Date()));
@@ -5105,12 +5104,20 @@ useEffect(() => {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            onDragStart={() => setDragging(true)}
+            onDragStart={(event) => {
+              setDragging(true);
+              const data = event.active.data.current;
+              if (data?.type === "calendar-site") {
+                const site = safeSites.find((s: any) => s.id === data.siteId);
+                if (site) setDragOverlaySite({ site, chipClass: getChantierColor(site) });
+              }
+            }}
             onDragEnd={(event) => {
               setDragging(false);
+              setDragOverlaySite(null);
               onDragEnd(event);
             }}
-            onDragCancel={() => setDragging(false)}
+            onDragCancel={() => { setDragging(false); setDragOverlaySite(null); }}
           >
             <div className="grid grid-cols-12 gap-4">
               {/* Left column: People & Sites */}
@@ -7046,7 +7053,13 @@ useEffect(() => {
 
           </div>
         </div>
-        <DragOverlay dropAnimation={null} />
+        <DragOverlay dropAnimation={null}>
+          {dragOverlaySite && (
+            <div className={cx("text-[10px] px-2 font-semibold text-white shadow-lg leading-6 rounded-full", dragOverlaySite.chipClass)}>
+              {dragOverlaySite.site.name}
+            </div>
+          )}
+        </DragOverlay>
         </DndContext>
         </div>
       )}
