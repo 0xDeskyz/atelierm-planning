@@ -488,7 +488,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       {...attributes}
       className={cx(
         className,
-        "rounded-full mx-1.5",
+        "rounded-full",
         "cursor-grab active:cursor-grabbing select-none",
         isDragging && "opacity-50",
         isOver && isLaneReorderDrag && "brightness-110 ring-2 ring-white ring-inset"
@@ -5748,13 +5748,19 @@ useEffect(() => {
                                     if (!site) return null;
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
-                                      return <div key={`lane-${actualLane}`} style={{ height: LANE_H }} />;
+                                      const chipColor = getSiteDisplayColor(site, siteColorMode);
+                                      const hex = COLOR_HEX[chipColor] || "#94a3b8";
+                                      return (
+                                        <div key={`lane-${actualLane}`} style={{ height: LANE_H }} className="flex items-center px-3">
+                                          <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.35 }} />
+                                        </div>
+                                      );
                                     }
                                     const pw = [...site.planningWeeks].sort();
                                     const isStart = pw[0] === week.weekKey;
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
                                     return (
-                                      <div key={`lane-${actualLane}`} className="relative flex items-center group" style={{ height: LANE_H }}>
+                                      <div key={`lane-${actualLane}`} className="relative flex items-center group px-1.5" style={{ height: LANE_H }}>
                                         <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
                                         <CalendarSiteChip
                                           site={site}
