@@ -495,11 +495,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       )}
       title={tooltipParts.join(" · ")}
     >
-      <span className="flex items-center gap-0.5 min-w-0 overflow-hidden">
-        {isStart && <span className="shrink-0 opacity-70 text-[7px] leading-none">▸</span>}
-        <span className="truncate">{site.name}</span>
-        {isEnd && <span className="shrink-0 opacity-50 text-[7px] leading-none">■</span>}
-      </span>
+      <span className="block truncate">{site.name}</span>
     </div>
   );
 }
@@ -5574,10 +5570,17 @@ useEffect(() => {
                           (w.planned || []).forEach((s: any) => { if (!seen.has(s.id)) seen.set(s.id, s); });
                         });
                       }
-                      // 2. Tri : ordre manuel (calendarLaneOrder) puis 1re semaine puis nom
+                      // 2. Tri : catégorie (AO → Particulier → Pro → autre) puis ordre manuel puis 1re semaine puis nom
+                      const CATEGORY_ORDER: Record<string, number> = { ao: 0, particulier: 1, pro: 2 };
+                      const catIdx = (s: any) => {
+                        const c = String(s?.categoriePrincipale || "").toLowerCase();
+                        return c in CATEGORY_ORDER ? CATEGORY_ORDER[c] : 99;
+                      };
                       const manualOrderIdx = new Map<string, number>();
                       calendarLaneOrder.forEach((id: string, i: number) => manualOrderIdx.set(id, i));
                       const sortedSites = Array.from(seen.values()).sort((a: any, b: any) => {
+                        const ca = catIdx(a), cb = catIdx(b);
+                        if (ca !== cb) return ca - cb;
                         const ma = manualOrderIdx.has(a.id) ? manualOrderIdx.get(a.id)! : Infinity;
                         const mb = manualOrderIdx.has(b.id) ? manualOrderIdx.get(b.id)! : Infinity;
                         if (ma !== mb) return ma - mb;
@@ -5595,17 +5598,20 @@ useEffect(() => {
                       });
                       const spansOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
                       const laneSpans: Array<Array<[string, string]>> = [];
+                      const laneCat: number[] = []; // catégorie de chaque lane (pour séparateurs)
                       const siteLane = new Map<string, number>();
                       sortedSites.forEach((site: any) => {
                         const span = siteSpanMap.get(site.id);
                         if (!span) return;
+                        const myCat = catIdx(site);
                         let assigned = -1;
                         for (let i = 0; i < laneSpans.length; i++) {
+                          if (laneCat[i] !== myCat) continue; // pas de mix de catégories dans une lane
                           if (!laneSpans[i].some((s) => spansOverlap(s, span))) {
                             laneSpans[i].push(span); assigned = i; break;
                           }
                         }
-                        if (assigned === -1) { laneSpans.push([span]); assigned = laneSpans.length - 1; }
+                        if (assigned === -1) { laneSpans.push([span]); laneCat.push(myCat); assigned = laneSpans.length - 1; }
                         siteLane.set(site.id, assigned);
                       });
                       const usedLaneIndices = Array.from(new Set(siteLane.values())).sort((a, b) => a - b);
@@ -5744,61 +5750,72 @@ useEffect(() => {
                             </div>
 
                             {/* Lanes : chaque chantier sur sa ligne fixe (lane packing) */}
-                            <div className="py-1.5 flex-1">
-                              {calFilterPlanned && numLanes > 0 && (
+                            <div className="py-1.5 flex-1 flex flex-col">
+                              {calFilterPlanned && numLanes > 0 && (() => {
+                                const visibleLanes = usedLaneIndices.filter((laneIdx) => {
+                                  const r = laneActiveRange.get(laneIdx);
+                                  return r ? r[0] <= week.weekKey && week.weekKey <= r[1] : false;
+                                });
+                                return (
                                 <div className="px-0">
-                                  {/* Pour chaque lane : trouver le chantier dont la span couvre
-                                      cette semaine. Chip si planningWeeks l'inclut, placeholder sinon.
-                                      alignement stable : div vide si aucune span couvre cette semaine dans la lane. */}
-                                  {usedLaneIndices.filter((laneIdx) => {
-                                    const r = laneActiveRange.get(laneIdx);
-                                    return r ? r[0] <= week.weekKey && week.weekKey <= r[1] : false;
-                                  }).map((actualLane) => {
+                                  {/* Pour chaque lane visible : chip si planningWeeks inclut la semaine,
+                                      placeholder si span couvre, div vide sinon. Séparateur si changement de catégorie. */}
+                                  {visibleLanes.map((actualLane, idx) => {
+                                    const prevLane = idx > 0 ? visibleLanes[idx - 1] : null;
+                                    const showSeparator = prevLane !== null && laneCat[prevLane] !== laneCat[actualLane];
                                     const site = sortedSites.find((s: any) => {
                                       if (siteLane.get(s.id) !== actualLane) return false;
                                       const sp = siteSpanMap.get(s.id);
                                       return sp ? sp[0] <= week.weekKey && week.weekKey <= sp[1] : false;
                                     });
+                                    const sep = showSeparator ? <div key={`sep-${actualLane}`} className="h-1.5 my-0.5 border-t border-neutral-200" /> : null;
                                     // Lane active globalement mais aucun chantier sur cette semaine précise → div vide
-                                    if (!site) return <div key={`lane-${actualLane}`} style={{ height: LANE_H }} />;
+                                    if (!site) return <React.Fragment key={`lane-${actualLane}`}>{sep}<div style={{ height: LANE_H }} /></React.Fragment>;
                                     const hasChip = Array.isArray(site.planningWeeks) && site.planningWeeks.includes(week.weekKey);
                                     if (!hasChip) {
                                       // Semaine dans la span mais sans chip → fil coloré + trait pointillé
                                       const chipColor = getSiteDisplayColor(site, siteColorMode);
                                       const hex = COLOR_HEX[chipColor] || "#94a3b8";
                                       return (
-                                        <div key={`lane-${actualLane}`} style={{ height: LANE_H }} className="flex items-center px-3">
-                                          <div className="relative w-full flex items-center">
-                                            <div className="absolute inset-x-0" style={{ height: 1, backgroundColor: hex, opacity: 0.2 }} />
-                                            <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.45 }} />
+                                        <React.Fragment key={`lane-${actualLane}`}>
+                                          {sep}
+                                          <div style={{ height: LANE_H }} className="flex items-center px-3">
+                                            <div className="relative w-full flex items-center">
+                                              <div className="absolute inset-x-0" style={{ height: 1, backgroundColor: hex, opacity: 0.2 }} />
+                                              <div className="w-full" style={{ borderTop: `2px dashed ${hex}`, opacity: 0.45 }} />
+                                            </div>
                                           </div>
-                                        </div>
+                                        </React.Fragment>
                                       );
                                     }
                                     const pw = [...site.planningWeeks].sort();
                                     const isStart = pw[0] === week.weekKey;
                                     const isEnd = pw[pw.length - 1] === week.weekKey;
                                     return (
-                                      <div key={`lane-${actualLane}`} className="relative flex items-center group px-1.5" style={{ height: LANE_H }}>
-                                        <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
-                                        <CalendarSiteChip
-                                          site={site}
-                                          weekKey={week.weekKey}
-                                          isStart={isStart}
-                                          isEnd={isEnd}
-                                          className={cx(
-                                            "block w-full text-[10px] px-2 font-semibold text-white shadow-sm leading-6",
-                                            getSiteDisplayColor(site, siteColorMode)
-                                          )}
-                                        />
-                                      </div>
+                                      <React.Fragment key={`lane-${actualLane}`}>
+                                        {sep}
+                                        <div className="relative flex items-center group px-1.5" style={{ height: LANE_H }}>
+                                          <LaneDragHandle siteId={site.id} weekKey={week.weekKey} />
+                                          <CalendarSiteChip
+                                            site={site}
+                                            weekKey={week.weekKey}
+                                            isStart={isStart}
+                                            isEnd={isEnd}
+                                            className={cx(
+                                              "block w-full text-[10px] px-2 font-semibold text-white shadow-sm leading-6",
+                                              getSiteDisplayColor(site, siteColorMode)
+                                            )}
+                                          />
+                                        </div>
+                                      </React.Fragment>
                                     );
                                   })}
                                 </div>
-                              )}
-                              {/* Chantiers à planifier (status = pending) — séparés en bas */}
+                                );
+                              })()}
+                              {/* Chantiers à planifier (status = pending) — collé en bas pour aligner */}
                               {calFilterPending && week.pending.length > 0 && (
-                                <div className="px-1.5 space-y-1 mt-2 pt-2 border-t border-dashed border-neutral-200">
+                                <div className="px-1.5 space-y-1 mt-auto pt-2 border-t border-dashed border-neutral-200">
                                   <div className="text-[8px] font-semibold uppercase tracking-wider text-rose-500">À planifier</div>
                                   {[...week.pending]
                                     .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "fr", { sensitivity: "base" }))
