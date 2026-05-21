@@ -3716,7 +3716,10 @@ export default function Page() {
     } else {
       mergedSites = rawSites;
     }
-    setSites(mergedSites.map(normalizeSiteRecord));
+    const normalizedSites = mergedSites.map(normalizeSiteRecord);
+    const catsAfterNorm = normalizedSites.filter((s: any) => s.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+    console.log('[applyState] siteColorMode:', state.siteColorMode, '| chantiersSeeded2026:', state.chantiersSeeded2026, '| cats après normalisation:', catsAfterNorm.length ? catsAfterNorm : 'aucun');
+    setSites(normalizedSites);
     setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});
     setAbsencesByWeek(state.absencesByWeek || {});
