@@ -4087,17 +4087,18 @@ useEffect(() => { savePlanningRef.current = savePlanning; }, [savePlanning]);
 
 // Sauvegarder à chaque modif (sauf juste après un load ou la réception d'un état distant)
 useEffect(() => {
-  if (firstLoad.current) return;
+  if (firstLoad.current) { console.log('[autosave] SKIP firstLoad'); return; }
   if (justLoadedRef.current) {
-    // Bloqué juste après un chargement — mémoriser qu'un save est en attente
-    // Il sera déclenché quand justLoadedRef expire (dans le setTimeout de loadWeekState)
+    console.log('[autosave] SKIP justLoaded → pendingSave=true');
     pendingSaveRef.current = true;
     return;
   }
   if (isApplyingRemote.current) {
+    console.log('[autosave] SKIP isApplyingRemote');
     isApplyingRemote.current = false;
     return;
   }
+  console.log('[autosave] FIRES — saveImmediately:', saveImmediatelyRef.current);
   pendingSaveRef.current = false;
   const stamp = Date.now();
   syncVersionRef.current = stamp;
