@@ -2007,6 +2007,9 @@ export default function Page() {
   const savePlanningRef = useRef<() => Promise<void>>(async () => {});
   // Tracks whether a save was blocked by justLoadedRef (so we can replay it once unblocked)
   const pendingSaveRef = useRef(false);
+  // Quand true, le prochain autosave bypass le debounce 600ms et envoie le PUT immédiatement.
+  // Set par saveSiteDetail et autres actions explicites pour garantir que le save part avant un reload utilisateur.
+  const saveImmediatelyRef = useRef(false);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
@@ -3654,6 +3657,9 @@ export default function Page() {
     if (!payload?.id) return;
     // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
     justLoadedRef.current = false;
+    // Demande à l'autosave de bypass le debounce 600ms — l'utilisateur a cliqué "Enregistrer" et
+    // pourrait recharger la page tout de suite, le save doit partir immédiatement.
+    saveImmediatelyRef.current = true;
     const weeks = Array.isArray(payload.planningWeeks) ? payload.planningWeeks : [];
     updateSiteMeta(payload.id, { ...payload, planningWeeks: weeks });
     setSiteWeekVisibility((prev) => {
@@ -4086,7 +4092,22 @@ useEffect(() => {
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
-  saveRemote(GLOBAL_STATE_KEY, payload);
+  if (saveImmediatelyRef.current) {
+    // Action explicite utilisateur (ex: clic "Enregistrer" dans dialog) → bypass le debounce
+    saveImmediatelyRef.current = false;
+    fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (res.status === 409) loadWeekStateRef.current(false);
+        else if (!res.ok) console.error("Immediate save failed:", res.status);
+      })
+      .catch((err) => console.error("Immediate save error:", err));
+  } else {
+    saveRemote(GLOBAL_STATE_KEY, payload);
+  }
 }, [buildSyncPayload, saveRemote]);
 
 // ==========================
