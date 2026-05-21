@@ -3655,6 +3655,7 @@ export default function Page() {
   };
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
+    console.log('[saveSiteDetail]', payload.name, '| categoriePrincipale:', JSON.stringify(payload.categoriePrincipale), '| sousCategorie:', JSON.stringify(payload.sousCategorie));
     // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
     justLoadedRef.current = false;
     // Demande à l'autosave de bypass le debounce 600ms — l'utilisateur a cliqué "Enregistrer" et
@@ -3841,7 +3842,11 @@ export default function Page() {
           if (!res.ok) { networkError = true; }
           else {
             const srv = await res.json();
-            if (hasPayload(srv)) remoteState = srv;
+            if (hasPayload(srv)) {
+              remoteState = srv;
+              const catSample = (srv.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+              console.log('[loadWeekState] data fetched, sites avec catégorie:', catSample?.length ? catSample : 'aucun');
+            }
           }
         } catch {
           networkError = true;
@@ -3992,7 +3997,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       body: JSON.stringify(payload),
     });
     if (res.status === 409) {
-      // Server has a newer version — reload silently instead of overwriting
+      console.warn('[saveRemote] 409 conflict — rechargement depuis Supabase');
       loadWeekStateRef.current(false);
       return;
     }
@@ -4092,19 +4097,28 @@ useEffect(() => {
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
+  const catSample = (payload.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+  if (catSample?.length) console.log('[autosave] categoriePrincipale dans payload:', catSample);
   if (saveImmediatelyRef.current) {
     // Action explicite utilisateur (ex: clic "Enregistrer" dans dialog) → bypass le debounce
     saveImmediatelyRef.current = false;
+    console.log('[autosave] immediate save triggered, sites avec catégorie:', catSample);
     fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
       .then((res) => {
-        if (res.status === 409) loadWeekStateRef.current(false);
-        else if (!res.ok) console.error("Immediate save failed:", res.status);
+        if (res.status === 409) {
+          console.warn('[autosave] 409 conflict — rechargement depuis Supabase');
+          loadWeekStateRef.current(false);
+        } else if (!res.ok) {
+          console.error('[autosave] immediate save failed:', res.status);
+        } else {
+          console.log('[autosave] immediate save OK');
+        }
       })
-      .catch((err) => console.error("Immediate save error:", err));
+      .catch((err) => console.error('[autosave] immediate save error:', err));
   } else {
     saveRemote(GLOBAL_STATE_KEY, payload);
   }

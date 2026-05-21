@@ -295,7 +295,11 @@ export const normalizeSiteRecord = (site: any) => {
   const validOrigines = ORIGINE_OPTIONS.map(o => o.value) as string[];
   const origine = validOrigines.includes((base as any)?.origine) ? (base as any).origine : null;
   const validCategories = CATEGORIE_PRINCIPALE_OPTIONS.map(c => c.value) as string[];
-  const categoriePrincipale = validCategories.includes((base as any)?.categoriePrincipale) ? (base as any).categoriePrincipale : null;
+  const rawCat = (base as any)?.categoriePrincipale;
+  const categoriePrincipale = validCategories.includes(rawCat) ? rawCat : null;
+  if (rawCat && !categoriePrincipale) {
+    console.warn('[normalizeSiteRecord] categoriePrincipale stripped — raw value:', JSON.stringify(rawCat), '| type:', typeof rawCat, '| valid:', validCategories);
+  }
   const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
   const sousCategorie = sousCategorieRaw || null;
   // Préserver TOUS les flags de difficulté (y compris les flags personnalisés ajoutés dans les réglages)
