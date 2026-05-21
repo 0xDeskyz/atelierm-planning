@@ -4122,6 +4122,13 @@ useEffect(() => {
           console.error('[autosave] immediate save failed:', res.status);
         } else {
           console.log('[autosave] immediate save OK');
+          // Vérifier immédiatement ce que Supabase contient après la sauvegarde
+          fetch(`/api/state/${GLOBAL_STATE_KEY}?verify=${Date.now()}`, { cache: "reload", headers: { "Cache-Control": "no-store" } })
+            .then(r => r.json())
+            .then(data => {
+              const cats = (data?.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+              console.log('[autosave] VERIFY Supabase après save:', cats?.length ? cats : 'aucun — PAS DE CATEGORIE EN BASE');
+            });
         }
       })
       .catch((err) => console.error('[autosave] immediate save error:', err));
