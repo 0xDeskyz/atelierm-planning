@@ -4054,6 +4054,8 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildSyncPayload(stamp);
+    const catSample = (payload.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+    console.log('[savePlanning] saving cats:', catSample?.length ? catSample : 'aucun');
     setSaving(true);
     setSyncStatus("syncing");
     setSaveStatusMessage("");
