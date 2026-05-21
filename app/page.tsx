@@ -2004,12 +2004,14 @@ export default function Page() {
   // Stable ref to loadWeekState for use inside useMemo callbacks
   const loadWeekStateRef = useRef<(markLoaded: boolean) => void>(() => {});
   // Stable ref to savePlanning — needed to call it from setTimeout callbacks after justLoadedRef expires
-  const savePlanningRef = useRef<() => Promise<void>>(async () => {});
+  const savePlanningRef = useRef<(signal?: AbortSignal) => Promise<void>>(async () => {});
   // Tracks whether a save was blocked by justLoadedRef (so we can replay it once unblocked)
   const pendingSaveRef = useRef(false);
   // Quand true, le prochain autosave bypass le debounce 600ms et envoie le PUT immédiatement.
   // Set par saveSiteDetail et autres actions explicites pour garantir que le save part avant un reload utilisateur.
   const saveImmediatelyRef = useRef(false);
+  // AbortController pour annuler un savePlanning en vol quand l'utilisateur sauvegarde explicitement
+  const inFlightAbortRef = useRef<AbortController | null>(null);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
@@ -3655,8 +3657,11 @@ export default function Page() {
   };
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
-    console.log('[saveSiteDetail]', payload.name, '| categoriePrincipale:', JSON.stringify(payload.categoriePrincipale), '| sousCategorie:', JSON.stringify(payload.sousCategorie));
     // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
+    // Annuler tout savePlanning en vol ou en attente pour éviter la race condition
+    inFlightAbortRef.current?.abort();
+    inFlightAbortRef.current = null;
+    pendingSaveRef.current = false;
     justLoadedRef.current = false;
     // Demande à l'autosave de bypass le debounce 600ms — l'utilisateur a cliqué "Enregistrer" et
     // pourrait recharger la page tout de suite, le save doit partir immédiatement.
@@ -3717,8 +3722,6 @@ export default function Page() {
       mergedSites = rawSites;
     }
     const normalizedSites = mergedSites.map(normalizeSiteRecord);
-    const catsAfterNorm = normalizedSites.filter((s: any) => s.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-    console.log('[applyState] siteColorMode:', state.siteColorMode, '| chantiersSeeded2026:', state.chantiersSeeded2026, '| cats après normalisation:', catsAfterNorm.length ? catsAfterNorm : 'aucun');
     setSites(normalizedSites);
     setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});
@@ -3847,8 +3850,6 @@ export default function Page() {
             const srv = await res.json();
             if (hasPayload(srv)) {
               remoteState = srv;
-              const catSample = (srv.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-              console.log('[loadWeekState] data fetched, sites avec catégorie:', catSample?.length ? catSample : 'aucun');
             }
           }
         } catch {
@@ -3887,7 +3888,11 @@ export default function Page() {
             justLoadedRef.current = false;
             if (pendingSaveRef.current) {
               pendingSaveRef.current = false;
-              savePlanningRef.current();
+              const ac = new AbortController();
+              inFlightAbortRef.current = ac;
+              savePlanningRef.current(ac.signal).finally(() => {
+                if (inFlightAbortRef.current === ac) inFlightAbortRef.current = null;
+              });
             }
           }, 500);
           if (syncStatus === "error") setSyncStatus("synced");
@@ -4050,12 +4055,10 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     showToast("Action annulée");
   }, [applyState]);
 
-  const savePlanning = useCallback(async () => {
+  const savePlanning = useCallback(async (signal?: AbortSignal) => {
     const stamp = Date.now();
     syncVersionRef.current = stamp;
     const payload = buildSyncPayload(stamp);
-    const catSample = (payload.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-    console.log('[savePlanning] saving cats:', catSample?.length ? catSample : 'aucun');
     setSaving(true);
     setSyncStatus("syncing");
     setSaveStatusMessage("");
@@ -4064,6 +4067,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal,
       });
       if (res.status === 409) {
         setSyncStatus("error");
@@ -4073,7 +4077,8 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
       }
       if (!res.ok) throw new Error(`savePlanning failed: ${res.status}`);
       setSyncStatus("synced");
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
       console.error("Enregistrement distant impossible", err);
       setSyncStatus("error");
       setSaveStatusMessage("Impossible d'enregistrer sur le serveur — tes dernières modifications ne sont pas sauvegardées.");
@@ -4087,62 +4092,35 @@ useEffect(() => { savePlanningRef.current = savePlanning; }, [savePlanning]);
 
 // Sauvegarder à chaque modif (sauf juste après un load ou la réception d'un état distant)
 useEffect(() => {
-  if (firstLoad.current) { console.log('[autosave] SKIP firstLoad'); return; }
+  if (firstLoad.current) return;
   if (justLoadedRef.current) {
-    console.log('[autosave] SKIP justLoaded → pendingSave=true');
     pendingSaveRef.current = true;
     return;
   }
   if (isApplyingRemote.current) {
-    console.log('[autosave] SKIP isApplyingRemote');
     isApplyingRemote.current = false;
     return;
   }
-  console.log('[autosave] FIRES — saveImmediately:', saveImmediatelyRef.current);
   pendingSaveRef.current = false;
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
-  const catSample = (payload.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-  if (catSample?.length) console.log('[autosave] categoriePrincipale dans payload:', catSample);
   if (saveImmediatelyRef.current) {
     // Action explicite utilisateur (ex: clic "Enregistrer" dans dialog) → bypass le debounce
     saveImmediatelyRef.current = false;
-    console.log('[autosave] immediate save triggered, sites avec catégorie:', catSample);
     fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
       .then((res) => {
-        if (res.status === 409) {
-          console.warn('[autosave] 409 conflict — rechargement depuis Supabase');
-          loadWeekStateRef.current(false);
-        } else if (!res.ok) {
-          console.error('[autosave] immediate save failed:', res.status);
-        } else {
-          console.log('[autosave] immediate save OK');
-          // Vérifier immédiatement ce que Supabase contient après la sauvegarde
-          fetch(`/api/state/${GLOBAL_STATE_KEY}?verify=${Date.now()}`, { cache: "reload", headers: { "Cache-Control": "no-store" } })
-            .then(r => r.json())
-            .then(data => {
-              const cats = (data?.sites as any[])?.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-              console.log('[autosave] VERIFY Supabase après save:', cats?.length ? cats : 'aucun — PAS DE CATEGORIE EN BASE');
-            });
-        }
+        if (res.status === 409) loadWeekStateRef.current(false);
       })
-      .catch((err) => console.error('[autosave] immediate save error:', err));
+      .catch(() => {});
   } else {
     saveRemote(GLOBAL_STATE_KEY, payload);
   }
 }, [buildSyncPayload, saveRemote]);
-
-// Tracker: log chaque fois que sites change — montre si categoriePrincipale disparaît après applyState
-useEffect(() => {
-  if (firstLoad.current) return;
-  const withCat = sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
-  console.log('[sites changed] cats:', withCat.length ? withCat : 'aucun', '| total sites:', sites.length);
-}, [sites]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
@@ -4438,7 +4416,7 @@ useEffect(() => {
               )}
               <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="hidden" />
               <button
-                onClick={savePlanning}
+                onClick={() => savePlanning()}
                 disabled={saving}
                 title={saving ? "Enregistrement…" : "Enregistrer"}
                 className={cx(
