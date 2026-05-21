@@ -298,11 +298,12 @@ export const normalizeSiteRecord = (site: any) => {
   const categoriePrincipale = validCategories.includes((base as any)?.categoriePrincipale) ? (base as any).categoriePrincipale : null;
   const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
   const sousCategorie = sousCategorieRaw || null;
-  const difficulte = {
-    technique: !!(base as any)?.difficulte?.technique,
-    delai:     !!(base as any)?.difficulte?.delai,
-    marge:     !!(base as any)?.difficulte?.marge,
-  };
+  // Préserver TOUS les flags de difficulté (y compris les flags personnalisés ajoutés dans les réglages)
+  const difficulteRaw = (base as any)?.difficulte;
+  const difficulte: Record<string, boolean> =
+    difficulteRaw && typeof difficulteRaw === "object"
+      ? Object.fromEntries(Object.entries(difficulteRaw).map(([k, v]) => [k, !!v]))
+      : { technique: false, delai: false, marge: false };
   return {
     ...base,
     id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),

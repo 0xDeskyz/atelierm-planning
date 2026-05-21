@@ -3835,10 +3835,10 @@ export default function Page() {
           networkError = true;
         }
 
-        // Migration : si planner-main est vide, essaie la clé semaine courante (ancien format)
+        // Migration : si planner-main est vide, récupère l'état le plus récent toutes clés confondues
         if (!remoteState && !networkError && markLoaded) {
           try {
-            const legacyRes = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+            const legacyRes = await fetch(`/api/state/latest?ts=${Date.now()}`, {
               cache: "reload",
               headers: { "Cache-Control": "no-store, no-cache, must-revalidate", Pragma: "no-cache" },
               next: { revalidate: 0 },
