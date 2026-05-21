@@ -4127,6 +4127,13 @@ useEffect(() => {
   }
 }, [buildSyncPayload, saveRemote]);
 
+// Tracker: log chaque fois que sites change — montre si categoriePrincipale disparaît après applyState
+useEffect(() => {
+  if (firstLoad.current) return;
+  const withCat = sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.name}:${s.categoriePrincipale}`);
+  console.log('[sites changed] cats:', withCat.length ? withCat : 'aucun', '| total sites:', sites.length);
+}, [sites]);
+
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
   // ==========================
