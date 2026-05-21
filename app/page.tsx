@@ -3803,9 +3803,13 @@ export default function Page() {
   // Flag pour bloquer l'autosave juste après un load (sinon on écrase le serveur avec le contenu qu'on vient de charger)
   const justLoadedRef = useRef(false);
 
+  // Clé globale unique — toutes les semaines partagent le même store.
+  // Plus de snapshot par semaine : naviguer ne recharge plus rien.
+  const GLOBAL_STATE_KEY = "planner-main";
+
   const loadWeekState = useCallback(
     async (markLoaded = false) => {
-      const wk = currentWeekKey;
+      const wk = currentWeekKey; // gardé uniquement pour le seed par semaine
       const hasPayload = (s: any) =>
         s && typeof s === "object" && (Array.isArray(s.people) || Array.isArray(s.sites) || Array.isArray(s.assignments));
 
@@ -3814,7 +3818,7 @@ export default function Page() {
         let remoteState: any = null;
         let networkError = false;
         try {
-          const res = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+          const res = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`, {
             cache: "reload",
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -3831,8 +3835,22 @@ export default function Page() {
           networkError = true;
         }
 
+        // Migration : si planner-main est vide, essaie la clé semaine courante (ancien format)
+        if (!remoteState && !networkError && markLoaded) {
+          try {
+            const legacyRes = await fetch(`/api/state/${wk}?ts=${Date.now()}`, {
+              cache: "reload",
+              headers: { "Cache-Control": "no-store, no-cache, must-revalidate", Pragma: "no-cache" },
+              next: { revalidate: 0 },
+            });
+            if (legacyRes.ok) {
+              const legacySrv = await legacyRes.json();
+              if (hasPayload(legacySrv)) remoteState = legacySrv;
+            }
+          } catch {}
+        }
+
         if (networkError && markLoaded) {
-          // Pas de fallback localStorage : le serveur est la seule source de vérité
           setSyncStatus("error");
           setSaveStatusMessage("Impossible de charger les données depuis le serveur. Vérifie ta connexion et recharge.");
           return;
@@ -3869,7 +3887,7 @@ useEffect(() => {
     if (polling) return;
     polling = true;
     try {
-      const res = await fetch(`/api/state/${currentWeekKey}?ts=${Date.now()}`, {
+      const res = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`, {
         cache: "reload",
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -3910,24 +3928,24 @@ useEffect(() => {
       document.removeEventListener("visibilitychange", onFocus);
     }
   };
-}, [currentWeekKey, applyState]);
+}, [applyState]);
 
-// Charger depuis le serveur pour la semaine affichée (fallback localStorage + arbitrage versions)
+// Charger une seule fois au montage (la navigation entre semaines ne recharge pas)
 useEffect(() => {
-  loadWeekState(true);
-}, [currentWeekKey, loadWeekState]);
+  loadWeekStateRef.current(true);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-// Supabase Realtime — sync multi-client
+// Supabase Realtime — sync multi-client sur la clé globale
 useEffect(() => {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
   const channel = supabase
-    .channel(`planner:${currentWeekKey}`)
+    .channel("planner:main")
     .on(
       "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "planner_state", filter: `key=eq.${currentWeekKey}` },
+      { event: "UPDATE", schema: "public", table: "planner_state", filter: `key=eq.${GLOBAL_STATE_KEY}` },
       (payload: any) => {
         const remote = payload.new?.data;
         if (!remote) return;
@@ -3944,7 +3962,7 @@ useEffect(() => {
     .subscribe();
 
   return () => { supabase.removeChannel(channel); };
-}, [currentWeekKey, applyState]);
+}, [applyState]);
 
 const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
   try {
@@ -4012,7 +4030,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     setSyncStatus("syncing");
     setSaveStatusMessage("");
     try {
-      const res = await fetch(`/api/state/${currentWeekKey}`, {
+      const res = await fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -4032,7 +4050,7 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     } finally {
       setSaving(false);
     }
-  }, [buildSyncPayload, currentWeekKey]);
+  }, [buildSyncPayload]);
 
 // Sauvegarder à chaque modif (sauf juste après un load ou la réception d'un état distant)
 useEffect(() => {
@@ -4045,8 +4063,8 @@ useEffect(() => {
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
-  saveRemote(currentWeekKey, payload);
-}, [buildSyncPayload, currentWeekKey, saveRemote]);
+  saveRemote(GLOBAL_STATE_KEY, payload);
+}, [buildSyncPayload, saveRemote]);
 
 // ==========================
 // Dev Self-Tests (NE PAS modifier les existants ; on ajoute des tests)
