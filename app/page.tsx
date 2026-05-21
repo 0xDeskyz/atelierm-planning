@@ -2003,6 +2003,10 @@ export default function Page() {
   const isApplyingRemote = useRef(false);
   // Stable ref to loadWeekState for use inside useMemo callbacks
   const loadWeekStateRef = useRef<(markLoaded: boolean) => void>(() => {});
+  // Stable ref to savePlanning — needed to call it from setTimeout callbacks after justLoadedRef expires
+  const savePlanningRef = useRef<() => Promise<void>>(async () => {});
+  // Tracks whether a save was blocked by justLoadedRef (so we can replay it once unblocked)
+  const pendingSaveRef = useRef(false);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"exports" | "perso" | "maintenance">("exports");
@@ -3648,6 +3652,8 @@ export default function Page() {
   };
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
+    // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
+    justLoadedRef.current = false;
     const weeks = Array.isArray(payload.planningWeeks) ? payload.planningWeeks : [];
     updateSiteMeta(payload.id, { ...payload, planningWeeks: weeks });
     setSiteWeekVisibility((prev) => {
@@ -3859,9 +3865,17 @@ export default function Page() {
         if (remoteState || SEED_ASSIGNMENTS_BY_WEEK_V1[wk]) {
           // Bloque l'autosave qui se déclencherait juste après applyState
           justLoadedRef.current = true;
+          pendingSaveRef.current = false;
           applyState(augmentStateWithRosterSeed(remoteState || {}, wk));
-          // Libère le flag après que tous les re-renders soient terminés
-          setTimeout(() => { justLoadedRef.current = false; }, 1500);
+          // Libère le flag après que React a committé tous les setState d'applyState (~1 frame)
+          // Si l'utilisateur a modifié quelque chose pendant la fenêtre bloquée, rejouer le save
+          setTimeout(() => {
+            justLoadedRef.current = false;
+            if (pendingSaveRef.current) {
+              pendingSaveRef.current = false;
+              savePlanningRef.current();
+            }
+          }, 500);
           if (syncStatus === "error") setSyncStatus("synced");
         }
       } finally {
@@ -4052,14 +4066,23 @@ const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
     }
   }, [buildSyncPayload]);
 
+// Garder savePlanningRef synchronisé avec la version courante de savePlanning
+useEffect(() => { savePlanningRef.current = savePlanning; }, [savePlanning]);
+
 // Sauvegarder à chaque modif (sauf juste après un load ou la réception d'un état distant)
 useEffect(() => {
   if (firstLoad.current) return;
-  if (justLoadedRef.current) return; // bloque les saves dans la seconde qui suit un applyState
+  if (justLoadedRef.current) {
+    // Bloqué juste après un chargement — mémoriser qu'un save est en attente
+    // Il sera déclenché quand justLoadedRef expire (dans le setTimeout de loadWeekState)
+    pendingSaveRef.current = true;
+    return;
+  }
   if (isApplyingRemote.current) {
     isApplyingRemote.current = false;
     return;
   }
+  pendingSaveRef.current = false;
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
