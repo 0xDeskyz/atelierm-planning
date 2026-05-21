@@ -491,5 +491,7 @@ export const getPortion = (val: any) => {
 };
 export function debounce<T extends (...args: any[]) => void>(fn: T, ms = 600) {
   let t: any;
-  return (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  const d = (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  d.cancel = () => clearTimeout(t);
+  return d;
 }

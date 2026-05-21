@@ -3658,7 +3658,8 @@ export default function Page() {
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
     // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
-    // Annuler tout savePlanning en vol ou en attente pour éviter la race condition
+    // Annuler tout savePlanning en vol ou en attente + debounce saveRemote pour éviter la race condition
+    saveRemote.cancel();
     inFlightAbortRef.current?.abort();
     inFlightAbortRef.current = null;
     pendingSaveRef.current = false;
