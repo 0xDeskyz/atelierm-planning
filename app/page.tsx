@@ -3660,6 +3660,7 @@ export default function Page() {
     // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
     // Annuler tout savePlanning en vol ou en attente + debounce saveRemote pour éviter la race condition
     saveRemote.cancel();
+    (saveRemote as any).abort();
     inFlightAbortRef.current?.abort();
     inFlightAbortRef.current = null;
     pendingSaveRef.current = false;
@@ -3998,23 +3999,34 @@ useEffect(() => {
   return () => { supabase.removeChannel(channel); };
 }, [applyState]);
 
-const saveRemote = useMemo(() => debounce(async (wk: string, payload: any) => {
-  try {
-    const res = await fetch(`/api/state/${wk}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.status === 409) {
-      console.warn('[saveRemote] 409 conflict — rechargement depuis Supabase');
-      loadWeekStateRef.current(false);
-      return;
+const saveRemoteAbortRef = useRef<AbortController | null>(null);
+const saveRemote = useMemo(() => {
+  const d = debounce(async (wk: string, payload: any) => {
+    const ac = new AbortController();
+    saveRemoteAbortRef.current = ac;
+    try {
+      const res = await fetch(`/api/state/${wk}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: ac.signal,
+      });
+      if (res.status === 409) {
+        console.warn('[saveRemote] 409 conflict — rechargement depuis Supabase');
+        loadWeekStateRef.current(false);
+        return;
+      }
+      if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      console.error("Autosave distant impossible", err);
+    } finally {
+      if (saveRemoteAbortRef.current === ac) saveRemoteAbortRef.current = null;
     }
-    if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
-  } catch (err) {
-    console.error("Autosave distant impossible", err);
-  }
-}, 600), []);
+  }, 600);
+  (d as any).abort = () => { saveRemoteAbortRef.current?.abort(); saveRemoteAbortRef.current = null; };
+  return d;
+}, []);
 
   const buildSyncPayload = useCallback((stamp: number) => ({
     people,
@@ -4113,11 +4125,14 @@ useEffect(() => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      keepalive: true,
     })
       .then((res) => {
-        if (res.status === 409) loadWeekStateRef.current(false);
+        if (res.ok) { setSyncStatus("synced"); }
+        else if (res.status === 409) loadWeekStateRef.current(false);
+        else { setSyncStatus("error"); }
       })
-      .catch(() => {});
+      .catch(() => { setSyncStatus("error"); });
   } else {
     saveRemote(GLOBAL_STATE_KEY, payload);
   }
