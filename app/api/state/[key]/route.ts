@@ -28,10 +28,15 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       .single();
 
     if (error || !data) {
+      console.log(`[GET ${params.key}] no data — error:`, error?.message);
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
 
-    return Response.json(data.data, { headers: { "x-state-storage": "supabase" } });
+    const payload = data.data;
+    const siteSample = Array.isArray(payload?.sites) ? payload.sites.slice(0, 3).map((s: any) => ({ id: s?.id, cat: s?.categoriePrincipale })) : "no sites";
+    console.log(`[GET ${params.key}] sites:${Array.isArray(payload?.sites) ? payload.sites.length : '?'} updatedAt:${payload?.updatedAt} sample:`, JSON.stringify(siteSample));
+
+    return Response.json(payload, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
   }
@@ -93,14 +98,19 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
+    const siteSample = Array.isArray(body?.sites) ? body.sites.slice(0, 3).map((s: any) => ({ id: s?.id, cat: s?.categoriePrincipale })) : "no sites";
+    console.log(`[PUT ${params.key}] sites:${Array.isArray(body?.sites) ? body.sites.length : '?'} updatedAt:${body?.updatedAt} sample:`, JSON.stringify(siteSample));
+
     const { error } = await supabase
       .from("planner_state")
       .upsert({ key: params.key, data: body, updated_at: new Date().toISOString() });
 
     if (error) {
+      console.error(`[PUT ${params.key}] upsert error:`, error.message);
       return Response.json({ ok: false, error: error.message }, { status: 500 });
     }
 
+    console.log(`[PUT ${params.key}] upsert ok — backup:${backupStatus}`);
     return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
