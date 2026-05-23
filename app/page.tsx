@@ -3694,9 +3694,18 @@ export default function Page() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(savePayload),
     })
-      .then((res) => {
+      .then(async (res) => {
         console.log("[saveSiteDetail] fetch response:", res.status, res.ok ? "ok" : "error");
-        if (res.ok) { setSyncStatus("synced"); }
+        if (res.ok) {
+          setSyncStatus("synced");
+          // Vérification immédiate : relire le state depuis le serveur
+          try {
+            const vRes = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`);
+            const vData = await vRes.json();
+            const savedSite = Array.isArray(vData?.sites) ? vData.sites.find((s: any) => s.id === payload.id) : null;
+            console.log("[saveSiteDetail VERIFY] cat in DB:", savedSite?.categoriePrincipale, "| expected:", updatedSite.categoriePrincipale, "| updatedAt in DB:", vData?.updatedAt, "| sent:", stamp);
+          } catch (e) { console.warn("[saveSiteDetail VERIFY] failed:", e); }
+        }
         else if (res.status === 409) { console.warn("[saveSiteDetail] 409 conflict, reloading"); loadWeekStateRef.current(false); }
         else { setSyncStatus("error"); }
       })
