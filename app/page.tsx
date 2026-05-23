@@ -3657,26 +3657,52 @@ export default function Page() {
   };
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
-    // Action explicite utilisateur → débloquer l'autosave immédiatement (même dans les 500ms post-load)
-    // Annuler tout savePlanning en vol ou en attente + debounce saveRemote pour éviter la race condition
+    // Annuler tout save en cours pour éviter les race conditions
     saveRemote.cancel();
     (saveRemote as any).abort();
     inFlightAbortRef.current?.abort();
     inFlightAbortRef.current = null;
     pendingSaveRef.current = false;
     justLoadedRef.current = false;
-    // Demande à l'autosave de bypass le debounce 600ms — l'utilisateur a cliqué "Enregistrer" et
-    // pourrait recharger la page tout de suite, le save doit partir immédiatement.
-    saveImmediatelyRef.current = true;
+
     const weeks = Array.isArray(payload.planningWeeks) ? payload.planningWeeks : [];
-    updateSiteMeta(payload.id, { ...payload, planningWeeks: weeks });
-    setSiteWeekVisibility((prev) => {
-      if (!weeks.length) {
-        const { [payload.id]: _omit, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [payload.id]: weeks };
-    });
+
+    // Calculer les nouvelles valeurs AVANT setSites (state pas encore mis à jour)
+    const existingSite = safeSites.find((x: any) => x.id === payload.id) || {};
+    const updatedSite = normalizeSiteRecord({ ...existingSite, ...payload, planningWeeks: weeks });
+    const updatedSites = safeSites.map((x: any) => x.id === payload.id ? updatedSite : x);
+    const updatedVisibility: Record<string, string[]> = !weeks.length
+      ? (({ [payload.id]: _omit, ...rest }) => rest)(siteWeekVisibility)
+      : { ...siteWeekVisibility, [payload.id]: weeks };
+
+    // Envoyer le save IMMÉDIATEMENT avec le payload déjà construit (pas de dépendance au cycle de rendu)
+    const stamp = Date.now();
+    syncVersionRef.current = stamp;
+    const savePayload = {
+      people, sites: updatedSites, assignments, notes, absencesByWeek, absencesByDay,
+      siteWeekVisibility: updatedVisibility, hoursPerDay, quotes, tenders, clients,
+      tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault,
+      eventCalendars, calendarEvents, validatedWeeks, customSousCategories,
+      siteColorMode, difficulteConfig, siteLanePins,
+      chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
+      updatedAt: stamp, clientId: clientIdRef.current,
+    };
+    setSyncStatus("syncing");
+    fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(savePayload),
+    })
+      .then((res) => {
+        if (res.ok) { setSyncStatus("synced"); }
+        else if (res.status === 409) loadWeekStateRef.current(false);
+        else { setSyncStatus("error"); }
+      })
+      .catch(() => { setSyncStatus("error"); });
+
+    // Mettre à jour le state React (pour l'UI) — l'autosave effect qui suivra est ignoré (justLoadedRef = false, saveImmediate = false → debounce, même data)
+    setSites(updatedSites);
+    setSiteWeekVisibility(updatedVisibility);
     setSiteDetailOpen(false);
     setSiteDetail(null);
   };
@@ -4118,24 +4144,7 @@ useEffect(() => {
   const stamp = Date.now();
   syncVersionRef.current = stamp;
   const payload = buildSyncPayload(stamp);
-  if (saveImmediatelyRef.current) {
-    // Action explicite utilisateur (ex: clic "Enregistrer" dans dialog) → bypass le debounce
-    saveImmediatelyRef.current = false;
-    fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: true,
-    })
-      .then((res) => {
-        if (res.ok) { setSyncStatus("synced"); }
-        else if (res.status === 409) loadWeekStateRef.current(false);
-        else { setSyncStatus("error"); }
-      })
-      .catch(() => { setSyncStatus("error"); });
-  } else {
-    saveRemote(GLOBAL_STATE_KEY, payload);
-  }
+  saveRemote(GLOBAL_STATE_KEY, payload);
 }, [buildSyncPayload, saveRemote]);
 
 // ==========================
