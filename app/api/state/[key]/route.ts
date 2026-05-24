@@ -89,39 +89,31 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     let writeMethod: string;
 
     if (prev !== null) {
-      // ATOMIC UPDATE: version check is inside the WHERE clause — no race condition possible.
-      // If stored version > incomingVersion, the WHERE won't match → 0 rows → 409.
-      writeMethod = "update-atomic";
-      let query = supabase
-        .from("planner_state")
-        .update({ data: body, updated_at: ts })
-        .eq("key", params.key);
+      writeMethod = "update";
 
+      // Version check in JS — prev was already read above, no extra round-trip needed.
       if (body?.force !== true && incomingVersion > 0) {
-        // Only update if the row's stored version <= incoming version (atomic optimistic lock)
-        query = query.or(`data->>updatedAt.is.null,data->>updatedAt.lte.${incomingVersion}`);
+        const storedVersion = Number(prev?.updatedAt || 0);
+        if (storedVersion > incomingVersion) {
+          return Response.json(
+            { ok: false, conflict: true, storedVersion, incomingVersion },
+            { status: 409 }
+          );
+        }
       }
 
-      const { data: updated, error: updateErr } = await query.select("key");
+      // Plain UPDATE — no JSONB filter in the WHERE clause.
+      const { data: updated, error: updateErr } = await supabase
+        .from("planner_state")
+        .update({ data: body, updated_at: ts })
+        .eq("key", params.key)
+        .select("key");
+
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
 
-      if (!writeError && writeRows === 0) {
-        // Another concurrent write beat us with a newer version — tell client to reload
-        const { data: cur } = await supabase
-          .from("planner_state")
-          .select("data")
-          .eq("key", params.key)
-          .maybeSingle();
-        const storedVersion = Number(cur?.data?.updatedAt || 0);
-        return Response.json(
-          { ok: false, conflict: true, storedVersion, incomingVersion },
-          { status: 409 }
-        );
-      }
-
-      // Verify the write actually committed — SDK can return writeRows:1 even when
-      // RLS silently blocks the UPDATE (anon key without UPDATE permission).
+      // Verify the write actually committed — the SDK can return writeRows:1 even when
+      // a trigger or RLS silently reverts the change.
       if (!writeError && writeRows > 0 && incomingVersion > 0) {
         const { data: verify } = await supabase
           .from("planner_state")
@@ -133,9 +125,10 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
           return Response.json(
             {
               ok: false,
-              error: "Write silently rejected by DB — SUPABASE_SERVICE_ROLE_KEY may be missing in Vercel env",
+              error: "Write silently rejected by DB",
               actualUpdatedAt,
               incomingVersion,
+              usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
             },
             { status: 500 }
           );
@@ -169,7 +162,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
