@@ -3687,29 +3687,18 @@ export default function Page() {
       chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
       updatedAt: stamp, clientId: clientIdRef.current,
     };
-    console.log("[saveSiteDetail] saving site", payload.id, "cat:", updatedSite.categoriePrincipale, "total sites:", updatedSites.length);
     setSyncStatus("syncing");
     fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(savePayload),
     })
-      .then(async (res) => {
-        console.log("[saveSiteDetail] fetch response:", res.status, res.ok ? "ok" : "error");
-        if (res.ok) {
-          setSyncStatus("synced");
-          // Vérification immédiate : relire le state depuis le serveur
-          try {
-            const vRes = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`);
-            const vData = await vRes.json();
-            const savedSite = Array.isArray(vData?.sites) ? vData.sites.find((s: any) => s.id === payload.id) : null;
-            console.log("[saveSiteDetail VERIFY] cat in DB:", savedSite?.categoriePrincipale, "| expected:", updatedSite.categoriePrincipale, "| updatedAt in DB:", vData?.updatedAt, "| sent:", stamp);
-          } catch (e) { console.warn("[saveSiteDetail VERIFY] failed:", e); }
-        }
-        else if (res.status === 409) { console.warn("[saveSiteDetail] 409 conflict, reloading"); loadWeekStateRef.current(false); }
+      .then((res) => {
+        if (res.ok) { setSyncStatus("synced"); }
+        else if (res.status === 409) loadWeekStateRef.current(false);
         else { setSyncStatus("error"); }
       })
-      .catch((err) => { console.error("[saveSiteDetail] fetch error:", err); setSyncStatus("error"); });
+      .catch(() => { setSyncStatus("error"); });
 
     // Mettre à jour le state React (pour l'UI) — l'autosave effect qui suivra est ignoré (justLoadedRef = false, saveImmediate = false → debounce, même data)
     setSites(updatedSites);
@@ -3761,7 +3750,6 @@ export default function Page() {
       mergedSites = rawSites;
     }
     const normalizedSites = mergedSites.map(normalizeSiteRecord);
-    console.log("[applyState] sites:", normalizedSites.length, "seeded2026:", alreadySeeded2026, "cats:", JSON.stringify(normalizedSites.slice(0, 3).map((s: any) => ({ id: s.id, cat: s.categoriePrincipale }))));
     setSites(normalizedSites);
     setAssignments(toArray(state.assignments).map((a: any) => ({ ...a, confirmed: a.confirmed ?? false })));
     setNotes(state.notes || {});

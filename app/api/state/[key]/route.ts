@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 
 function getSupabase() {
-  // Utiliser la service role key pour bypasser RLS si disponible
+  // Service role key bypasse RLS — nécessaire pour les écritures côté serveur
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,15 +30,10 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       .single();
 
     if (error || !data) {
-      console.log(`[GET ${params.key}] no data — error:`, error?.message);
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
 
-    const payload = data.data;
-    const siteSample = Array.isArray(payload?.sites) ? payload.sites.slice(0, 3).map((s: any) => ({ id: s?.id, cat: s?.categoriePrincipale })) : "no sites";
-    console.log(`[GET ${params.key}] sites:${Array.isArray(payload?.sites) ? payload.sites.length : '?'} updatedAt:${payload?.updatedAt} sample:`, JSON.stringify(siteSample));
-
-    return Response.json(payload, { headers: { "x-state-storage": "supabase" } });
+    return Response.json(data.data, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
   }
@@ -66,7 +61,6 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     }
 
     // Reject stale writes: if the server already has a newer version, return 409
-    // force:true bypasses this check (used by the restore tool)
     if (body?.force !== true && incomingVersion > 0 && prev) {
       const storedVersion = Number(prev?.updatedAt || 0);
       if (storedVersion > 0 && incomingVersion < storedVersion) {
@@ -99,57 +93,16 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
-    const siteSample = Array.isArray(body?.sites) ? body.sites.slice(0, 3).map((s: any) => ({ id: s?.id, cat: s?.categoriePrincipale })) : "no sites";
-    console.log(`[PUT ${params.key}] sites:${Array.isArray(body?.sites) ? body.sites.length : '?'} updatedAt:${body?.updatedAt} sample:`, JSON.stringify(siteSample));
+    const { error } = await supabase
+      .from("planner_state")
+      .upsert({ key: params.key, data: body, updated_at: new Date().toISOString() }, { onConflict: "key" });
 
-    // Utiliser update + insert au lieu d'upsert pour éviter les échecs silencieux
-    // L'upsert Supabase peut échouer silencieusement si le conflit est détecté sur
-    // le mauvais champ (primary key id vs key) ou si RLS bloque l'UPDATE sans erreur
-    const rowPayload = { key: params.key, data: body, updated_at: new Date().toISOString() };
-    let writeError: any = null;
-    let writeMethod = "update";
-
-    if (prev) {
-      const { data: updated, error: updateErr } = await supabase
-        .from("planner_state")
-        .update({ data: body, updated_at: rowPayload.updated_at })
-        .eq("key", params.key)
-        .select("key")
-        .single();
-
-      if (updateErr || !updated) {
-        console.warn(`[PUT ${params.key}] update failed (${updateErr?.message || 'no rows returned'}), trying upsert with onConflict`);
-        writeMethod = "upsert-fallback";
-        const { error: upsertErr } = await supabase
-          .from("planner_state")
-          .upsert(rowPayload, { onConflict: "key" });
-        writeError = upsertErr;
-      }
-    } else {
-      writeMethod = "insert";
-      const { data: inserted, error: insertErr } = await supabase
-        .from("planner_state")
-        .insert(rowPayload)
-        .select("key")
-        .single();
-
-      if (insertErr || !inserted) {
-        console.warn(`[PUT ${params.key}] insert failed (${insertErr?.message || 'no rows returned'}), trying upsert with onConflict`);
-        writeMethod = "upsert-fallback";
-        const { error: upsertErr } = await supabase
-          .from("planner_state")
-          .upsert(rowPayload, { onConflict: "key" });
-        writeError = upsertErr;
-      }
+    if (error) {
+      console.error(`[PUT ${params.key}] upsert error:`, error.message);
+      return Response.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    if (writeError) {
-      console.error(`[PUT ${params.key}] ${writeMethod} error:`, writeError.message);
-      return Response.json({ ok: false, error: writeError.message }, { status: 500 });
-    }
-
-    console.log(`[PUT ${params.key}] ${writeMethod} ok — backup:${backupStatus}`);
-    return Response.json({ ok: true, storage: "supabase", writeMethod, backupStatus }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
