@@ -3897,6 +3897,8 @@ export default function Page() {
             const srv = await res.json();
             if (hasPayload(srv)) {
               remoteState = srv;
+              const cats = Array.isArray(srv.sites) ? srv.sites.map((s: any) => `${s.id}=${s.categoriePrincipale ?? 'null'}`).join(', ') : '—';
+              console.log('[load] DB→client updatedAt:', srv.updatedAt, '| cats:', cats);
             }
           }
         } catch {
@@ -4054,6 +4056,8 @@ const saveRemote = useMemo(() => {
   const d = debounce(async (wk: string, payload: any) => {
     const ac = new AbortController();
     saveRemoteAbortRef.current = ac;
+    const cats = Array.isArray(payload?.sites) ? payload.sites.map((s: any) => `${s.id}=${s.categoriePrincipale ?? 'null'}`).join(', ') : '—';
+    console.log('[saveRemote] firing updatedAt:', payload?.updatedAt, '| cats:', cats);
     try {
       const res = await fetch(`/api/state/${wk}`, {
         method: 'PUT',
