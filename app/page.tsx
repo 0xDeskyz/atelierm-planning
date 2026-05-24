@@ -2010,6 +2010,8 @@ export default function Page() {
   // Quand true, le prochain autosave bypass le debounce 600ms et envoie le PUT immédiatement.
   // Set par saveSiteDetail et autres actions explicites pour garantir que le save part avant un reload utilisateur.
   const saveImmediatelyRef = useRef(false);
+  // Timestamp du dernier saveSiteDetail pour éviter les doubles déclenchements (double-clic, etc.)
+  const lastSiteDetailSaveRef = useRef(0);
   // AbortController pour annuler un savePlanning en vol quand l'utilisateur sauvegarde explicitement
   const inFlightAbortRef = useRef<AbortController | null>(null);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
@@ -3657,6 +3659,10 @@ export default function Page() {
   };
   const saveSiteDetail = (payload: any) => {
     if (!payload?.id) return;
+    // Déduplique les appels rapides (double-clic, double event handler, etc.)
+    const now = Date.now();
+    if (now - lastSiteDetailSaveRef.current < 500) return;
+    lastSiteDetailSaveRef.current = now;
     // Annuler tout save en cours pour éviter les race conditions
     saveRemote.cancel();
     (saveRemote as any).abort();

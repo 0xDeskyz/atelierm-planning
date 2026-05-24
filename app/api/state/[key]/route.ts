@@ -4,7 +4,6 @@ export const runtime = "nodejs";
 
 function getSupabase() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  console.log("[getSupabase] using key:", serviceKey ? `service_role (${serviceKey.slice(0, 20)}...)` : "anon");
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -23,11 +22,6 @@ function looksEmpty(payload: any) {
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
     const supabase = getSupabase();
-
-    // Compter les lignes pour détecter les doublons
-    const { count } = await supabase.from("planner_state").select("*", { count: "exact", head: true }).eq("key", params.key);
-    console.log(`[GET ${params.key}] row count: ${count}`);
-
     const { data, error } = await supabase
       .from("planner_state")
       .select("data, updated_at")
@@ -37,12 +31,9 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       .maybeSingle();
 
     if (error || !data) {
-      console.log(`[GET ${params.key}] no data — error:`, error?.message);
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
-
-    console.log(`[GET ${params.key}] db updated_at: ${data.updated_at} | data.updatedAt: ${data.data?.updatedAt} | sites: ${data.data?.sites?.length ?? '?'}`);
-    return Response.json(data.data, { headers: { "x-state-storage": "supabase" } });
+    return Response.json(data.data, { headers: { "x-state-storage": "supabase", "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
   }
@@ -54,40 +45,30 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     const incomingVersion = Number(body?.updatedAt || 0);
     const supabase = getSupabase();
 
+    // Read prev for: empty-payload guard, backup, and INSERT-vs-UPDATE decision
     const { data: prevRow } = await supabase
       .from("planner_state")
       .select("data")
       .eq("key", params.key)
-      .single();
-    const prev = prevRow?.data;
+      .maybeSingle();
+    const prev = prevRow?.data ?? null;
 
     // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
       return Response.json(
-        { ok: false, error: "Refused: incoming payload is empty while existing state has data. Pass force:true to override." },
+        { ok: false, error: "Refused: incoming payload is empty while existing state has data." },
         { status: 409, headers: { "x-state-storage": "refused-empty" } }
       );
     }
 
-    // Reject stale writes: if the server already has a newer version, return 409
-    if (body?.force !== true && incomingVersion > 0 && prev) {
-      const storedVersion = Number(prev?.updatedAt || 0);
-      if (storedVersion > 0 && incomingVersion < storedVersion) {
-        return Response.json(
-          { ok: false, conflict: true, storedVersion, incomingVersion },
-          { status: 409 }
-        );
-      }
-    }
-
-    let backupStatus: string = "skipped (no prev)";
+    // Backup previous state (non-blocking — errors don't abort the write)
+    let backupStatus = "skipped (no prev)";
     if (prev) {
       const { error: backupErr } = await supabase
         .from("planner_state_backup")
         .insert({ key: params.key, data: prev });
       if (backupErr) {
         backupStatus = `error: ${backupErr.message}`;
-        console.warn("Snapshot backup failed (non-blocking):", backupErr.message);
       } else {
         backupStatus = "ok";
         const { data: ids } = await supabase
@@ -105,65 +86,68 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     const ts = new Date().toISOString();
     let writeRows = 0;
     let writeError: string | null = null;
-    let writeMethod = prev ? "update" : "insert";
+    let writeMethod: string;
 
-    if (prev) {
-      const { data: updated, error: updateErr } = await supabase
+    if (prev !== null) {
+      // ATOMIC UPDATE: version check is inside the WHERE clause — no race condition possible.
+      // If stored version > incomingVersion, the WHERE won't match → 0 rows → 409.
+      writeMethod = "update-atomic";
+      let query = supabase
         .from("planner_state")
         .update({ data: body, updated_at: ts })
-        .eq("key", params.key)
-        .select("key");
+        .eq("key", params.key);
+
+      if (body?.force !== true && incomingVersion > 0) {
+        // Only update if the row's stored version <= incoming version (atomic optimistic lock)
+        query = query.or(`data->>updatedAt.is.null,data->>updatedAt.lte.${incomingVersion}`);
+      }
+
+      const { data: updated, error: updateErr } = await query.select("key");
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
+
+      if (!writeError && writeRows === 0) {
+        // Another concurrent write beat us with a newer version — tell client to reload
+        const { data: cur } = await supabase
+          .from("planner_state")
+          .select("data")
+          .eq("key", params.key)
+          .maybeSingle();
+        const storedVersion = Number(cur?.data?.updatedAt || 0);
+        return Response.json(
+          { ok: false, conflict: true, storedVersion, incomingVersion },
+          { status: 409 }
+        );
+      }
     } else {
+      // INSERT for new keys
+      writeMethod = "insert";
       const { data: inserted, error: insertErr } = await supabase
         .from("planner_state")
         .insert({ key: params.key, data: body, updated_at: ts })
         .select("key");
       writeRows = inserted?.length ?? 0;
       writeError = insertErr?.message ?? null;
+
+      if (!writeError && writeRows === 0) {
+        writeMethod = "upsert-onconflict";
+        const { data: ups, error: upsErr } = await supabase
+          .from("planner_state")
+          .upsert({ key: params.key, data: body, updated_at: ts }, { onConflict: "key" })
+          .select("key");
+        writeRows = ups?.length ?? 0;
+        writeError = upsErr?.message ?? null;
+      }
     }
 
     if (writeError) {
       return Response.json({ ok: false, error: writeError, writeMethod, writeRows }, { status: 500 });
     }
     if (writeRows === 0) {
-      writeMethod = "upsert-onconflict";
-      const { data: ups, error: upsErr } = await supabase
-        .from("planner_state")
-        .upsert({ key: params.key, data: body, updated_at: ts }, { onConflict: "key" })
-        .select("key");
-      writeRows = ups?.length ?? 0;
-      if (upsErr) return Response.json({ ok: false, error: upsErr.message, writeMethod, writeRows }, { status: 500 });
-      if (writeRows === 0) return Response.json({ ok: false, error: "Write affected 0 rows — RLS ou contrainte manquante sur key", writeMethod, writeRows }, { status: 500 });
+      return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    // Relire immédiatement après l'écriture
-    const { data: postWrite } = await supabase
-      .from("planner_state")
-      .select("data, updated_at")
-      .eq("key", params.key)
-      .single();
-    const postWriteUpdatedAt = postWrite?.data?.updatedAt ?? null;
-    const postWriteDbTs = postWrite?.updated_at ?? null;
-    const postWriteSitesCount = Array.isArray(postWrite?.data?.sites) ? postWrite.data.sites.length : -1;
-    const incomingSitesCount = Array.isArray(body?.sites) ? body.sites.length : -1;
-    const writtenCorrectly = postWriteUpdatedAt === body?.updatedAt;
-
-    // Relire 200ms après pour détecter un trigger ou write concurrent qui annulerait le write
-    await new Promise(resolve => setTimeout(resolve, 200));
-    const { data: postWrite200 } = await supabase
-      .from("planner_state")
-      .select("data, updated_at")
-      .eq("key", params.key)
-      .single();
-    const postWrite200UpdatedAt = postWrite200?.data?.updatedAt ?? null;
-    const stillCorrectAfter200ms = postWrite200UpdatedAt === body?.updatedAt;
-
-    // Vérifier le count de lignes (détecter les doublons)
-    const { count: rowCount } = await supabase.from("planner_state").select("*", { count: "exact", head: true }).eq("key", params.key);
-
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, rowCount, postWriteUpdatedAt, postWriteDbTs, postWriteSitesCount, incomingSitesCount, writtenCorrectly, stillCorrectAfter200ms, postWrite200UpdatedAt, sentUpdatedAt: body?.updatedAt }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
