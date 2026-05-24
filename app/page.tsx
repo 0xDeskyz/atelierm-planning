@@ -3709,13 +3709,27 @@ export default function Page() {
         console.log(`[saveSiteDetail] PUT response: ${res.status}`, body);
         if (res.ok) {
           setSyncStatus("synced");
+          // Round-trip verification: read back from DB immediately
+          try {
+            const v = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`, {
+              cache: "no-store",
+              headers: { "Cache-Control": "no-store, no-cache", Pragma: "no-cache" },
+            });
+            const vd = await v.json();
+            const vs = Array.isArray(vd?.sites) ? vd.sites.find((x: any) => x.id === updatedSite.id) : null;
+            console.log(`[saveSiteDetail] VERIFY GET: updatedAt=${vd?.updatedAt} ${updatedSite.id}.cat=${vs?.categoriePrincipale ?? 'MISSING'} sentStamp=${stamp}`);
+            if (Number(vd?.updatedAt || 0) < stamp) {
+              console.error(`[saveSiteDetail] DATA NOT PERSISTED — DB has older updatedAt (${vd?.updatedAt}) than what we sent (${stamp})`);
+              showToast("⚠️ Données non persistées en base — voir console");
+            }
+          } catch (ve) { console.warn("[saveSiteDetail] verify GET failed:", ve); }
         }
         else if (res.status === 409) loadWeekStateRef.current(false);
         else {
           console.error("[save] error:", body);
           setSyncStatus("error");
           if (body?.error?.includes("silently rejected")) {
-            showToast("⚠️ Sauvegarde rejetée par la base de données — vérifiez SUPABASE_SERVICE_ROLE_KEY dans Vercel");
+            showToast("⚠️ Sauvegarde rejetée par la base de données");
           }
         }
       })
@@ -3944,6 +3958,7 @@ export default function Page() {
             justLoadedRef.current = false;
             if (pendingSaveRef.current && syncVersionRef.current === epochAtLoad) {
               pendingSaveRef.current = false;
+              console.log('[pendingSave] timer firing — replaying blocked autosave');
               const ac = new AbortController();
               inFlightAbortRef.current = ac;
               savePlanningRef.current(ac.signal).finally(() => {
@@ -4058,6 +4073,8 @@ useEffect(() => {
 const saveRemoteAbortRef = useRef<AbortController | null>(null);
 const saveRemote = useMemo(() => {
   const d = debounce(async (wk: string, payload: any) => {
+    const bel = Array.isArray(payload?.sites) ? payload.sites.find((s: any) => s.id === 's-belmonte') : null;
+    console.log(`[saveRemote] firing updatedAt=${payload?.updatedAt} s-belmonte.cat=${bel?.categoriePrincipale ?? 'MISSING'}`);
     const ac = new AbortController();
     saveRemoteAbortRef.current = ac;
     try {
