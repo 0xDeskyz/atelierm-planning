@@ -64,26 +64,20 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       );
     }
 
-    // Backup previous state (non-blocking — errors don't abort the write)
-    let backupStatus = "skipped (no prev)";
+    // Backup previous state — fire-and-forget so it never blocks the main write path.
     if (prev) {
-      const { error: backupErr } = await supabase
-        .from("planner_state_backup")
-        .insert({ key: params.key, data: prev });
-      if (backupErr) {
-        backupStatus = `error: ${backupErr.message}`;
-      } else {
-        backupStatus = "ok";
-        const { data: ids } = await supabase
-          .from("planner_state_backup")
-          .select("id")
-          .eq("key", params.key)
-          .order("created_at", { ascending: false });
-        if (ids && ids.length > 20) {
-          const toDelete = ids.slice(20).map((r: any) => r.id);
-          await supabase.from("planner_state_backup").delete().in("id", toDelete);
-        }
-      }
+      supabase.from("planner_state_backup").insert({ key: params.key, data: prev }).then(({ error: backupErr }) => {
+        if (backupErr) return;
+        // Keep only the 20 most-recent backups
+        supabase.from("planner_state_backup").select("id").eq("key", params.key)
+          .order("created_at", { ascending: false })
+          .then(({ data: ids }) => {
+            if (ids && ids.length > 20) {
+              const toDelete = ids.slice(20).map((r: any) => r.id);
+              supabase.from("planner_state_backup").delete().in("id", toDelete);
+            }
+          });
+      });
     }
 
     const ts = new Date().toISOString();
@@ -96,10 +90,9 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
       // Version check in JS — prev was already read above, no extra round-trip needed.
       if (body?.force !== true && incomingVersion > 0) {
-        const storedVersion = Number(prev?.updatedAt || 0);
-        if (storedVersion > incomingVersion) {
+        if (storedVer > incomingVersion) {
           return Response.json(
-            { ok: false, conflict: true, storedVersion, incomingVersion },
+            { ok: false, conflict: true, storedVersion: storedVer, incomingVersion },
             { status: 409 }
           );
         }
@@ -115,8 +108,10 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
 
-      // Verify the write actually committed — the SDK can return writeRows:1 even when
-      // a trigger or RLS silently reverts the change.
+      // Verify the write actually committed. Only fail if the DB has an OLDER version
+      // than we sent — that means our write was silently reverted. If it has a NEWER
+      // version (concurrent write from the autosave debounce with correct data), that
+      // is fine: the latest state is still correct.
       if (!writeError && writeRows > 0 && incomingVersion > 0) {
         const { data: verify } = await supabase
           .from("planner_state")
@@ -124,15 +119,15 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
           .eq("key", params.key)
           .maybeSingle();
         const actualUpdatedAt = Number(verify?.data?.updatedAt || 0);
-        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} match=${actualUpdatedAt === incomingVersion}`);
-        if (actualUpdatedAt !== incomingVersion) {
+        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} ok=${actualUpdatedAt >= incomingVersion}`);
+        if (actualUpdatedAt < incomingVersion) {
           return Response.json(
             {
               ok: false,
               error: "Write silently rejected by DB",
               actualUpdatedAt,
               incomingVersion,
-              usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+              usingServiceRole: hasServiceRole,
             },
             { status: 500 }
           );
@@ -166,7 +161,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
