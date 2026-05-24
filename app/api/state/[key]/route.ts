@@ -138,10 +138,20 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       if (writeRows === 0) return Response.json({ ok: false, error: "Write affected 0 rows — RLS ou contrainte manquante sur key", writeMethod, writeRows }, { status: 500 });
     }
 
+    // Relire immédiatement après l'écriture pour détecter un trigger qui annulerait le write
+    const { data: postWrite } = await supabase
+      .from("planner_state")
+      .select("data, updated_at")
+      .eq("key", params.key)
+      .single();
+    const postWriteUpdatedAt = postWrite?.data?.updatedAt ?? null;
+    const postWriteDbTs = postWrite?.updated_at ?? null;
+    const writtenCorrectly = postWriteUpdatedAt === body?.updatedAt;
+
     // Vérifier le count de lignes (détecter les doublons)
     const { count: rowCount } = await supabase.from("planner_state").select("*", { count: "exact", head: true }).eq("key", params.key);
 
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, rowCount }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, rowCount, postWriteUpdatedAt, postWriteDbTs, writtenCorrectly, sentUpdatedAt: body?.updatedAt }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
