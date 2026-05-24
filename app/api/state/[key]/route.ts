@@ -23,16 +23,25 @@ function looksEmpty(payload: any) {
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
     const supabase = getSupabase();
+
+    // Compter les lignes pour détecter les doublons
+    const { count } = await supabase.from("planner_state").select("*", { count: "exact", head: true }).eq("key", params.key);
+    console.log(`[GET ${params.key}] row count: ${count}`);
+
     const { data, error } = await supabase
       .from("planner_state")
-      .select("data")
+      .select("data, updated_at")
       .eq("key", params.key)
-      .single();
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error || !data) {
+      console.log(`[GET ${params.key}] no data — error:`, error?.message);
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
 
+    console.log(`[GET ${params.key}] db updated_at: ${data.updated_at} | data.updatedAt: ${data.data?.updatedAt} | sites: ${data.data?.sites?.length ?? '?'}`);
     return Response.json(data.data, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
@@ -116,7 +125,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       writeError = insertErr?.message ?? null;
     }
 
-    console.log(`[PUT ${params.key}] ${prev ? "update" : "insert"} — rows:${writeRows} error:${writeError ?? "none"} updatedAt_sent:${body?.updatedAt}`);
+    console.log(`[PUT ${params.key}] ${prev ? "update" : "insert"} — rows:${writeRows} error:${writeError ?? "none"} updatedAt_sent:${body?.updatedAt} sites_sent:${body?.sites?.length ?? '?'}`);
 
     if (writeError) {
       return Response.json({ ok: false, error: writeError }, { status: 500 });
