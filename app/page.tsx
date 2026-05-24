@@ -1994,6 +1994,8 @@ export default function Page() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;;
   const [exportType, setExportType] = useState<"planning" | "hours">("planning");
   const [exportPreset, setExportPreset] = useState<"week" | "month" | "year" | "custom">("month");
   const [exportStartDate, setExportStartDate] = useState<string>(toLocalKey(startOfMonthLocal(new Date())));
@@ -3701,21 +3703,17 @@ export default function Page() {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        console.log("[save] PUT response:", res.status, JSON.stringify(body));
         if (res.ok) {
           setSyncStatus("synced");
-          // Vérif immédiate : relire ce qui est stocké
-          setTimeout(async () => {
-            try {
-              const v = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`);
-              const d = await v.json();
-              const s = Array.isArray(d?.sites) ? d.sites.find((x: any) => x.id === updatedSite.id) : null;
-              console.log("[save VERIFY]", updatedSite.id, "cat in DB:", s?.categoriePrincipale ?? "NOT FOUND", "| DB updatedAt:", d?.updatedAt, "| sent:", stamp);
-            } catch (e) { console.warn("[save VERIFY] failed:", e); }
-          }, 300);
         }
         else if (res.status === 409) loadWeekStateRef.current(false);
-        else { console.error("[save] error:", body); setSyncStatus("error"); }
+        else {
+          console.error("[save] error:", body);
+          setSyncStatus("error");
+          if (body?.error?.includes("silently rejected")) {
+            showToast("⚠️ Sauvegarde rejetée par la base de données — vérifiez SUPABASE_SERVICE_ROLE_KEY dans Vercel");
+          }
+        }
       })
       .catch((err) => { console.error("[save] fetch error:", err); setSyncStatus("error"); });
 
@@ -3897,8 +3895,6 @@ export default function Page() {
             const srv = await res.json();
             if (hasPayload(srv)) {
               remoteState = srv;
-              const cats = Array.isArray(srv.sites) ? srv.sites.map((s: any) => `${s.id}=${s.categoriePrincipale ?? 'null'}`).join(', ') : '—';
-              console.log('[load] DB→client updatedAt:', srv.updatedAt, '| cats:', cats);
             }
           }
         } catch {
@@ -4056,8 +4052,6 @@ const saveRemote = useMemo(() => {
   const d = debounce(async (wk: string, payload: any) => {
     const ac = new AbortController();
     saveRemoteAbortRef.current = ac;
-    const cats = Array.isArray(payload?.sites) ? payload.sites.map((s: any) => `${s.id}=${s.categoriePrincipale ?? 'null'}`).join(', ') : '—';
-    console.log('[saveRemote] firing updatedAt:', payload?.updatedAt, '| cats:', cats);
     try {
       const res = await fetch(`/api/state/${wk}`, {
         method: 'PUT',
@@ -4070,7 +4064,13 @@ const saveRemote = useMemo(() => {
         loadWeekStateRef.current(false);
         return;
       }
-      if (!res.ok) throw new Error(`saveRemote failed: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        if (errBody?.error?.includes("silently rejected")) {
+          showToastRef.current("⚠️ Sauvegarde rejetée par la base de données — vérifiez SUPABASE_SERVICE_ROLE_KEY dans Vercel");
+        }
+        throw new Error(`saveRemote failed: ${res.status}`);
+      }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       console.error("Autosave distant impossible", err);

@@ -119,6 +119,28 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
           { status: 409 }
         );
       }
+
+      // Verify the write actually committed — SDK can return writeRows:1 even when
+      // RLS silently blocks the UPDATE (anon key without UPDATE permission).
+      if (!writeError && writeRows > 0 && incomingVersion > 0) {
+        const { data: verify } = await supabase
+          .from("planner_state")
+          .select("data")
+          .eq("key", params.key)
+          .maybeSingle();
+        const actualUpdatedAt = Number(verify?.data?.updatedAt || 0);
+        if (actualUpdatedAt !== incomingVersion) {
+          return Response.json(
+            {
+              ok: false,
+              error: "Write silently rejected by DB — SUPABASE_SERVICE_ROLE_KEY may be missing in Vercel env",
+              actualUpdatedAt,
+              incomingVersion,
+            },
+            { status: 500 }
+          );
+        }
+      }
     } else {
       // INSERT for new keys
       writeMethod = "insert";
