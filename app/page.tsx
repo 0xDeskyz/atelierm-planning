@@ -2014,6 +2014,7 @@ export default function Page() {
   const saveImmediatelyRef = useRef(false);
   // Timestamp du dernier saveSiteDetail pour éviter les doubles déclenchements (double-clic, etc.)
   const lastSiteDetailSaveRef = useRef(0);
+  const directSaveInFlightRef = useRef(false);
   // AbortController pour annuler un savePlanning en vol quand l'utilisateur sauvegarde explicitement
   const inFlightAbortRef = useRef<AbortController | null>(null);
   const maintenanceRef = useRef<HTMLDivElement | null>(null);
@@ -3695,6 +3696,8 @@ export default function Page() {
       chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
       updatedAt: stamp, clientId: clientIdRef.current,
     };
+    const targetSite = savePayload.sites.find((s: any) => s.id === payload.id);
+    console.log(`[saveSiteDetail] ${payload.id} cat=${targetSite?.categoriePrincipale ?? 'null'} stamp=${stamp}`);
     setSyncStatus("syncing");
     fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
       method: "PUT",
@@ -3717,7 +3720,9 @@ export default function Page() {
       })
       .catch((err) => { console.error("[save] fetch error:", err); setSyncStatus("error"); });
 
-    // Mettre à jour le state React (pour l'UI) — l'autosave effect qui suivra est ignoré (justLoadedRef = false, saveImmediate = false → debounce, même data)
+    // Suppress the autosave effect that will fire after setSites — we already sent
+    // the PUT above, so a second concurrent write creates a needless race condition.
+    directSaveInFlightRef.current = true;
     setSites(updatedSites);
     setSiteWeekVisibility(updatedVisibility);
     setSiteDetailOpen(false);
@@ -4166,6 +4171,10 @@ useEffect(() => {
   }
   if (isApplyingRemote.current) {
     isApplyingRemote.current = false;
+    return;
+  }
+  if (directSaveInFlightRef.current) {
+    directSaveInFlightRef.current = false;
     return;
   }
   pendingSaveRef.current = false;
