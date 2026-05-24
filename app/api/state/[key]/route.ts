@@ -33,6 +33,8 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
     if (error || !data) {
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
+    const getSite = Array.isArray(data.data?.sites) ? data.data.sites.find((s: any) => s.id === 's-belmonte') : null;
+    console.log(`[GET] key=${params.key} updatedAt=${data.data?.updatedAt} s-belmonte.cat=${getSite?.categoriePrincipale ?? 'MISSING'}`);
     return Response.json(data.data, { headers: { "x-state-storage": "supabase", "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
@@ -54,7 +56,8 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .maybeSingle();
     const prev = prevRow?.data ?? null;
     const storedVer = Number(prev?.updatedAt || 0);
-    console.log(`[PUT] key=${params.key} serviceRole=${hasServiceRole} stored=${storedVer} incoming=${incomingVersion}`);
+    const incomingSite = Array.isArray(body?.sites) ? body.sites.find((s: any) => s.id === 's-belmonte') : null;
+    console.log(`[PUT] key=${params.key} serviceRole=${hasServiceRole} stored=${storedVer} incoming=${incomingVersion} s-belmonte.cat=${incomingSite?.categoriePrincipale ?? 'MISSING'}`);
 
     // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {

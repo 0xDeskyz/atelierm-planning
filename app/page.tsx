@@ -3706,6 +3706,7 @@ export default function Page() {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
+        console.log(`[saveSiteDetail] PUT response: ${res.status}`, body);
         if (res.ok) {
           setSyncStatus("synced");
         }
@@ -3900,6 +3901,8 @@ export default function Page() {
             const srv = await res.json();
             if (hasPayload(srv)) {
               remoteState = srv;
+              const bel = Array.isArray(srv.sites) ? srv.sites.find((s: any) => s.id === 's-belmonte') : null;
+              console.log(`[load] DB→client updatedAt=${srv.updatedAt} s-belmonte.cat=${bel?.categoriePrincipale ?? 'MISSING'}`);
             }
           }
         } catch {
