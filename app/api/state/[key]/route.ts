@@ -3,8 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 
 function getSupabase() {
-  // Service role key bypasse RLS — nécessaire pour les écritures côté serveur
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  console.log("[getSupabase] using key:", serviceKey ? `service_role (${serviceKey.slice(0, 20)}...)` : "anon");
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -93,13 +93,20 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
-    const { error } = await supabase
+    const { data: upserted, error } = await supabase
       .from("planner_state")
-      .upsert({ key: params.key, data: body, updated_at: new Date().toISOString() }, { onConflict: "key" });
+      .upsert({ key: params.key, data: body, updated_at: new Date().toISOString() }, { onConflict: "key" })
+      .select("key, updated_at");
+
+    console.log(`[PUT ${params.key}] upsert result — rows:${upserted?.length ?? 0} error:${error?.message ?? "none"} updatedAt_sent:${body?.updatedAt}`);
 
     if (error) {
-      console.error(`[PUT ${params.key}] upsert error:`, error.message);
       return Response.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    if (!upserted || upserted.length === 0) {
+      console.error(`[PUT ${params.key}] upsert returned 0 rows — RLS still blocking?`);
+      return Response.json({ ok: false, error: "Write affected 0 rows — check RLS or key conflict" }, { status: 500 });
     }
 
     return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
