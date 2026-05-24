@@ -43,6 +43,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
   try {
     const body = await req.json();
     const incomingVersion = Number(body?.updatedAt || 0);
+    const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabase = getSupabase();
 
     // Read prev for: empty-payload guard, backup, and INSERT-vs-UPDATE decision
@@ -52,6 +53,8 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .eq("key", params.key)
       .maybeSingle();
     const prev = prevRow?.data ?? null;
+    const storedVer = Number(prev?.updatedAt || 0);
+    console.log(`[PUT] key=${params.key} serviceRole=${hasServiceRole} stored=${storedVer} incoming=${incomingVersion}`);
 
     // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
@@ -121,6 +124,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
           .eq("key", params.key)
           .maybeSingle();
         const actualUpdatedAt = Number(verify?.data?.updatedAt || 0);
+        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} match=${actualUpdatedAt === incomingVersion}`);
         if (actualUpdatedAt !== incomingVersion) {
           return Response.json(
             {
