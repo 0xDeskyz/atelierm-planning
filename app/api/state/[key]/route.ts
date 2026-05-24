@@ -138,7 +138,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       if (writeRows === 0) return Response.json({ ok: false, error: "Write affected 0 rows — RLS ou contrainte manquante sur key", writeMethod, writeRows }, { status: 500 });
     }
 
-    // Relire immédiatement après l'écriture pour détecter un trigger qui annulerait le write
+    // Relire immédiatement après l'écriture
     const { data: postWrite } = await supabase
       .from("planner_state")
       .select("data, updated_at")
@@ -146,12 +146,24 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .single();
     const postWriteUpdatedAt = postWrite?.data?.updatedAt ?? null;
     const postWriteDbTs = postWrite?.updated_at ?? null;
+    const postWriteSitesCount = Array.isArray(postWrite?.data?.sites) ? postWrite.data.sites.length : -1;
+    const incomingSitesCount = Array.isArray(body?.sites) ? body.sites.length : -1;
     const writtenCorrectly = postWriteUpdatedAt === body?.updatedAt;
+
+    // Relire 200ms après pour détecter un trigger ou write concurrent qui annulerait le write
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const { data: postWrite200 } = await supabase
+      .from("planner_state")
+      .select("data, updated_at")
+      .eq("key", params.key)
+      .single();
+    const postWrite200UpdatedAt = postWrite200?.data?.updatedAt ?? null;
+    const stillCorrectAfter200ms = postWrite200UpdatedAt === body?.updatedAt;
 
     // Vérifier le count de lignes (détecter les doublons)
     const { count: rowCount } = await supabase.from("planner_state").select("*", { count: "exact", head: true }).eq("key", params.key);
 
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, rowCount, postWriteUpdatedAt, postWriteDbTs, writtenCorrectly, sentUpdatedAt: body?.updatedAt }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, rowCount, postWriteUpdatedAt, postWriteDbTs, postWriteSitesCount, incomingSitesCount, writtenCorrectly, stillCorrectAfter200ms, postWrite200UpdatedAt, sentUpdatedAt: body?.updatedAt }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
