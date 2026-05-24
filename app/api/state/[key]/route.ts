@@ -102,12 +102,9 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
         query = query.or(`data->>updatedAt.is.null,data->>updatedAt.lte.${incomingVersion}`);
       }
 
-      const { data: updated, error: updateErr } = await query.select("key, data");
+      const { data: updated, error: updateErr } = await query.select("key");
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
-      // Verify the write actually committed the correct data (catches silent filter bypass)
-      const returnedUpdatedAt = updated?.[0]?.data?.updatedAt ?? null;
-      const writeMatchesSent = returnedUpdatedAt === body?.updatedAt;
 
       if (!writeError && writeRows === 0) {
         // Another concurrent write beat us with a newer version — tell client to reload
@@ -150,7 +147,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows, writeMatchesSent, returnedUpdatedAt, sentUpdatedAt: body?.updatedAt }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", backupStatus, writeMethod, writeRows }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }

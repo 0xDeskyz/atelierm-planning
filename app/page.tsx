@@ -3929,17 +3929,22 @@ export default function Page() {
           justLoadedRef.current = true;
           pendingSaveRef.current = false;
           applyState(augmentStateWithRosterSeed(remoteState || {}, wk));
+          // Capture version AFTER applyState sets syncVersionRef — any user-initiated save in
+          // the window will bump syncVersionRef, letting the timer detect it and skip.
+          const epochAtLoad = syncVersionRef.current;
           // Libère le flag après que React a committé tous les setState d'applyState (~1 frame)
           // Si l'utilisateur a modifié quelque chose pendant la fenêtre bloquée, rejouer le save
           setTimeout(() => {
             justLoadedRef.current = false;
-            if (pendingSaveRef.current) {
+            if (pendingSaveRef.current && syncVersionRef.current === epochAtLoad) {
               pendingSaveRef.current = false;
               const ac = new AbortController();
               inFlightAbortRef.current = ac;
               savePlanningRef.current(ac.signal).finally(() => {
                 if (inFlightAbortRef.current === ac) inFlightAbortRef.current = null;
               });
+            } else {
+              pendingSaveRef.current = false;
             }
           }, 500);
           if (syncStatus === "error") setSyncStatus("synced");
