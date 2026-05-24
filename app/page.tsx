@@ -3693,12 +3693,25 @@ export default function Page() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(savePayload),
     })
-      .then((res) => {
-        if (res.ok) { setSyncStatus("synced"); }
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        console.log("[save] PUT response:", res.status, JSON.stringify(body));
+        if (res.ok) {
+          setSyncStatus("synced");
+          // Vérif immédiate : relire ce qui est stocké
+          setTimeout(async () => {
+            try {
+              const v = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`);
+              const d = await v.json();
+              const s = Array.isArray(d?.sites) ? d.sites.find((x: any) => x.id === updatedSite.id) : null;
+              console.log("[save VERIFY]", updatedSite.id, "cat in DB:", s?.categoriePrincipale ?? "NOT FOUND", "| DB updatedAt:", d?.updatedAt, "| sent:", stamp);
+            } catch (e) { console.warn("[save VERIFY] failed:", e); }
+          }, 300);
+        }
         else if (res.status === 409) loadWeekStateRef.current(false);
-        else { setSyncStatus("error"); }
+        else { console.error("[save] error:", body); setSyncStatus("error"); }
       })
-      .catch(() => { setSyncStatus("error"); });
+      .catch((err) => { console.error("[save] fetch error:", err); setSyncStatus("error"); });
 
     // Mettre à jour le state React (pour l'UI) — l'autosave effect qui suivra est ignoré (justLoadedRef = false, saveImmediate = false → debounce, même data)
     setSites(updatedSites);

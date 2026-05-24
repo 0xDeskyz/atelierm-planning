@@ -93,20 +93,43 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       }
     }
 
-    const { data: upserted, error } = await supabase
-      .from("planner_state")
-      .upsert({ key: params.key, data: body, updated_at: new Date().toISOString() }, { onConflict: "key" })
-      .select("key, updated_at");
+    const ts = new Date().toISOString();
+    let writeRows = 0;
+    let writeError: string | null = null;
 
-    console.log(`[PUT ${params.key}] upsert result — rows:${upserted?.length ?? 0} error:${error?.message ?? "none"} updatedAt_sent:${body?.updatedAt}`);
-
-    if (error) {
-      return Response.json({ ok: false, error: error.message }, { status: 500 });
+    if (prev) {
+      // UPDATE explicite (plus fiable que upsert quand key n'est pas le PK)
+      const { data: updated, error: updateErr } = await supabase
+        .from("planner_state")
+        .update({ data: body, updated_at: ts })
+        .eq("key", params.key)
+        .select("key");
+      writeRows = updated?.length ?? 0;
+      writeError = updateErr?.message ?? null;
+    } else {
+      // INSERT pour les nouvelles clés
+      const { data: inserted, error: insertErr } = await supabase
+        .from("planner_state")
+        .insert({ key: params.key, data: body, updated_at: ts })
+        .select("key");
+      writeRows = inserted?.length ?? 0;
+      writeError = insertErr?.message ?? null;
     }
 
-    if (!upserted || upserted.length === 0) {
-      console.error(`[PUT ${params.key}] upsert returned 0 rows — RLS still blocking?`);
-      return Response.json({ ok: false, error: "Write affected 0 rows — check RLS or key conflict" }, { status: 500 });
+    console.log(`[PUT ${params.key}] ${prev ? "update" : "insert"} — rows:${writeRows} error:${writeError ?? "none"} updatedAt_sent:${body?.updatedAt}`);
+
+    if (writeError) {
+      return Response.json({ ok: false, error: writeError }, { status: 500 });
+    }
+    if (writeRows === 0) {
+      // Fallback : upsert avec onConflict si l'update retourne 0 lignes
+      const { data: ups, error: upsErr } = await supabase
+        .from("planner_state")
+        .upsert({ key: params.key, data: body, updated_at: ts }, { onConflict: "key" })
+        .select("key");
+      console.log(`[PUT ${params.key}] upsert fallback — rows:${ups?.length ?? 0} error:${upsErr?.message ?? "none"}`);
+      if (upsErr) return Response.json({ ok: false, error: upsErr.message }, { status: 500 });
+      if (!ups || ups.length === 0) return Response.json({ ok: false, error: "Write affected 0 rows" }, { status: 500 });
     }
 
     return Response.json({ ok: true, storage: "supabase", backupStatus }, { headers: { "x-state-storage": "supabase" } });
