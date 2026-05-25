@@ -122,7 +122,14 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
           .eq("key", params.key)
           .maybeSingle();
         const actualUpdatedAt = Number(verify?.data?.updatedAt || 0);
-        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} ok=${actualUpdatedAt >= incomingVersion}`);
+        // Log categoriePrincipale for every site that had one in the incoming body — definitive DB evidence
+        const incomingSitesWithCat = Array.isArray(body?.sites)
+          ? body.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
+          : [];
+        const verifiedSitesWithCat = Array.isArray(verify?.data?.sites)
+          ? verify.data.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
+          : [];
+        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} ok=${actualUpdatedAt >= incomingVersion} sent=[${incomingSitesWithCat.join(',')}] stored=[${verifiedSitesWithCat.join(',')}]`);
         if (actualUpdatedAt < incomingVersion) {
           return Response.json(
             {

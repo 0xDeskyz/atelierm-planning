@@ -3709,7 +3709,7 @@ export default function Page() {
         console.log(`[saveSiteDetail] PUT response: ${res.status}`, body);
         if (res.ok) {
           setSyncStatus("synced");
-          // Round-trip verification: read back from DB immediately
+          // Round-trip verification: read back from DB and check both timestamp AND categoriePrincipale
           try {
             const v = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`, {
               cache: "no-store",
@@ -3717,10 +3717,29 @@ export default function Page() {
             });
             const vd = await v.json();
             const vs = Array.isArray(vd?.sites) ? vd.sites.find((x: any) => x.id === updatedSite.id) : null;
-            console.log(`[saveSiteDetail] VERIFY GET: updatedAt=${vd?.updatedAt} ${updatedSite.id}.cat=${vs?.categoriePrincipale ?? 'MISSING'} sentStamp=${stamp}`);
-            if (Number(vd?.updatedAt || 0) < stamp) {
-              console.error(`[saveSiteDetail] DATA NOT PERSISTED — DB has older updatedAt (${vd?.updatedAt}) than what we sent (${stamp})`);
-              showToast("⚠️ Données non persistées en base — voir console");
+            const verifiedCat = vs?.categoriePrincipale ?? null;
+            const expectedCat = updatedSite.categoriePrincipale ?? null;
+            const stampOk = Number(vd?.updatedAt || 0) >= stamp;
+            const catOk = verifiedCat === expectedCat;
+            console.log(`[saveSiteDetail] VERIFY GET: updatedAt=${vd?.updatedAt} ${updatedSite.id}.cat=${verifiedCat ?? 'MISSING'} expected=${expectedCat ?? 'null'} stampOk=${stampOk} catOk=${catOk}`);
+            if (!stampOk || !catOk) {
+              console.error(`[saveSiteDetail] ROUND-TRIP MISMATCH — retrying with force. stampOk=${stampOk} catOk=${catOk} (sent=${expectedCat}, got=${verifiedCat})`);
+              // Retry the PUT with a fresh timestamp and force flag to bypass version check
+              const retryStamp = Date.now();
+              const retryPayload = { ...savePayload, updatedAt: retryStamp, force: true };
+              const retry = await fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(retryPayload),
+              });
+              const retryBody = await retry.json().catch(() => ({}));
+              console.log(`[saveSiteDetail] RETRY PUT: ${retry.status}`, retryBody);
+              if (!retry.ok) {
+                setSyncStatus("error");
+                showToast("⚠️ Impossible de sauvegarder — voir console");
+              } else {
+                syncVersionRef.current = retryStamp;
+              }
             }
           } catch (ve) { console.warn("[saveSiteDetail] verify GET failed:", ve); }
         }
