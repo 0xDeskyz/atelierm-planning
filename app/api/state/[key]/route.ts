@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function getSupabase() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -35,7 +36,16 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
     }
     const getSite = Array.isArray(data.data?.sites) ? data.data.sites.find((s: any) => s.id === 's-belmonte') : null;
     console.log(`[GET] key=${params.key} updatedAt=${data.data?.updatedAt} s-belmonte.cat=${getSite?.categoriePrincipale ?? 'MISSING'}`);
-    return Response.json(data.data, { headers: { "x-state-storage": "supabase", "Cache-Control": "no-store" } });
+    return Response.json(data.data, {
+      headers: {
+        "x-state-storage": "supabase",
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Surrogate-Control": "no-store",
+        "CDN-Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store",
+      },
+    });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
   }
