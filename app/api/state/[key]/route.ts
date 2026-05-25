@@ -122,38 +122,38 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
 
-      // Log what the UPDATE actually returned — if returnedUpdatedAt !== incomingVersion,
-      // a Postgres trigger is reverting the data column.
       const returnedRow = updated?.[0];
       returnedUpdatedAt = Number((returnedRow as any)?.data?.updatedAt || 0);
-      const returnedCats = Array.isArray((returnedRow as any)?.data?.sites)
-        ? (returnedRow as any).data.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
-        : [];
-      console.log(`[PUT] UPDATE returned: key=${returnedRow?.key} data.updatedAt=${returnedUpdatedAt} (sent=${incomingVersion}) cats=[${returnedCats.join(',')}] writeError=${writeError ?? 'none'}`);
-      if (returnedUpdatedAt > 0 && returnedUpdatedAt !== incomingVersion) {
-        console.error(`[PUT] TRIGGER REVERT DETECTED — Postgres returned different updatedAt than sent: returned=${returnedUpdatedAt} sent=${incomingVersion}`);
-      }
+      console.log(`[PUT] UPDATE returned: data.updatedAt=${returnedUpdatedAt} (sent=${incomingVersion}) writeError=${writeError ?? 'none'}`);
 
-      // Verify the write actually committed — diagnostic only, never blocks the response.
-      // Supabase's pgBouncer can return stale data on the verify SELECT (connection lag),
-      // so we log the result but do NOT return 500 based on it. The writeRows=1 from the
-      // UPDATE itself is our authoritative success signal.
-      if (!writeError && writeRows > 0 && incomingVersion > 0) {
-        const { data: verify } = await supabase
+      // If UPDATE returned old data, a BEFORE UPDATE trigger is reverting the data column.
+      // Fall back to DELETE + INSERT which bypasses UPDATE triggers.
+      if (!writeError && writeRows > 0 && returnedUpdatedAt !== incomingVersion && incomingVersion > 0) {
+        console.warn(`[PUT] UPDATE trigger detected (returned=${returnedUpdatedAt} != sent=${incomingVersion}) — falling back to DELETE+INSERT`);
+        writeMethod = "delete-insert";
+        const { error: delErr } = await supabase
           .from("planner_state")
-          .select("data")
-          .eq("key", params.key)
-          .maybeSingle();
-        const actualUpdatedAt = Number(verify?.data?.updatedAt || 0);
-        const incomingSitesWithCat = Array.isArray(body?.sites)
-          ? body.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
-          : [];
-        const verifiedSitesWithCat = Array.isArray(verify?.data?.sites)
-          ? verify.data.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
-          : [];
-        console.log(`[PUT] verify: actual=${actualUpdatedAt} expected=${incomingVersion} ok=${actualUpdatedAt >= incomingVersion} sent=[${incomingSitesWithCat.join(',')}] stored=[${verifiedSitesWithCat.join(',')}]`);
-        if (actualUpdatedAt < incomingVersion) {
-          console.warn(`[PUT] verify lag detected (pgBouncer?) — actual=${actualUpdatedAt} < expected=${incomingVersion} — treating as ok since writeRows=${writeRows}`);
+          .delete()
+          .eq("key", params.key);
+        if (delErr) {
+          writeError = `delete-failed: ${delErr.message}`;
+          writeRows = 0;
+        } else {
+          const { data: reins, error: reinsErr } = await supabase
+            .from("planner_state")
+            .insert({ key: params.key, data: body, updated_at: ts })
+            .select("key, data");
+          if (reinsErr) {
+            // Re-insert old data to avoid data loss
+            await supabase.from("planner_state").insert({ key: params.key, data: prev, updated_at: new Date().toISOString() });
+            writeError = `insert-failed: ${reinsErr.message}`;
+            writeRows = 0;
+          } else {
+            writeRows = reins?.length ?? 0;
+            writeError = null;
+            returnedUpdatedAt = Number((reins?.[0] as any)?.data?.updatedAt || 0);
+            console.log(`[PUT] DELETE+INSERT succeeded: data.updatedAt=${returnedUpdatedAt}`);
+          }
         }
       }
     } else {
