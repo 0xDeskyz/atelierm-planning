@@ -111,15 +111,27 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
         }
       }
 
-      // Plain UPDATE — no JSONB filter in the WHERE clause.
+      // Plain UPDATE — select data back immediately to see what Supabase actually stored.
       const { data: updated, error: updateErr } = await supabase
         .from("planner_state")
         .update({ data: body, updated_at: ts })
         .eq("key", params.key)
-        .select("key");
+        .select("key, data");
 
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
+
+      // Log what the UPDATE actually returned — if returnedUpdatedAt !== incomingVersion,
+      // a Postgres trigger is reverting the data column.
+      const returnedRow = updated?.[0];
+      const returnedUpdatedAt = Number((returnedRow as any)?.data?.updatedAt || 0);
+      const returnedCats = Array.isArray((returnedRow as any)?.data?.sites)
+        ? (returnedRow as any).data.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
+        : [];
+      console.log(`[PUT] UPDATE returned: key=${returnedRow?.key} data.updatedAt=${returnedUpdatedAt} (sent=${incomingVersion}) cats=[${returnedCats.join(',')}] writeError=${writeError ?? 'none'}`);
+      if (returnedUpdatedAt > 0 && returnedUpdatedAt !== incomingVersion) {
+        console.error(`[PUT] TRIGGER REVERT DETECTED — Postgres returned different updatedAt than sent: returned=${returnedUpdatedAt} sent=${incomingVersion}`);
+      }
 
       // Verify the write actually committed — diagnostic only, never blocks the response.
       // Supabase's pgBouncer can return stale data on the verify SELECT (connection lag),
