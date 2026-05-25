@@ -97,6 +97,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     let writeRows = 0;
     let writeError: string | null = null;
     let writeMethod: string;
+    let returnedUpdatedAt: number = 0;
 
     if (prev !== null) {
       writeMethod = "update";
@@ -124,7 +125,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       // Log what the UPDATE actually returned — if returnedUpdatedAt !== incomingVersion,
       // a Postgres trigger is reverting the data column.
       const returnedRow = updated?.[0];
-      const returnedUpdatedAt = Number((returnedRow as any)?.data?.updatedAt || 0);
+      returnedUpdatedAt = Number((returnedRow as any)?.data?.updatedAt || 0);
       const returnedCats = Array.isArray((returnedRow as any)?.data?.sites)
         ? (returnedRow as any).data.sites.filter((s: any) => s?.categoriePrincipale).map((s: any) => `${s.id}=${s.categoriePrincipale}`)
         : [];
@@ -183,7 +184,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json({ ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole, returnedUpdatedAt }, { headers: { "x-state-storage": "supabase" } });
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }
