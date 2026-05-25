@@ -2,12 +2,23 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
+// Next.js 14 patches the global `fetch` and adds its own data cache.
+// Supabase JS SDK uses `fetch` internally, so its reads get cached by
+// Next.js even with `force-dynamic`. We pass a custom fetch with
+// `cache: "no-store"` to opt every Supabase call out of that cache.
 function getSupabase() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        fetch: (url: RequestInfo | URL, options: RequestInit = {}) =>
+          fetch(url, { ...options, cache: "no-store" }),
+      },
+    }
   );
 }
 
