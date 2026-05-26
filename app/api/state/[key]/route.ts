@@ -5,9 +5,9 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 // Next.js 14 patches the global `fetch` and adds its own data cache.
-// Supabase JS SDK uses `fetch` internally, so its reads get cached by
-// Next.js even with `force-dynamic`. We pass a custom fetch with
-// `cache: "no-store"` to opt every Supabase call out of that cache.
+// Supabase JS SDK uses `fetch` internally — its responses get cached by
+// Next.js even with `force-dynamic`. Pass `cache: "no-store"` so every
+// Supabase call goes directly to the database without being intercepted.
 function getSupabase() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return createClient(
@@ -36,17 +36,13 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from("planner_state")
-      .select("data, updated_at")
+      .select("data")
       .eq("key", params.key)
-      .order("updated_at", { ascending: false })
-      .limit(1)
       .maybeSingle();
 
     if (error || !data) {
       return Response.json(null, { headers: { "x-state-storage": "none" } });
     }
-    const getSite = Array.isArray(data.data?.sites) ? data.data.sites.find((s: any) => s.id === 's-belmonte') : null;
-    console.log(`[GET] key=${params.key} updatedAt=${data.data?.updatedAt} s-belmonte.cat=${getSite?.categoriePrincipale ?? 'MISSING'}`);
     return Response.json(data.data, {
       headers: {
         "x-state-storage": "supabase",
@@ -77,8 +73,6 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       .maybeSingle();
     const prev = prevRow?.data ?? null;
     const storedVer = Number(prev?.updatedAt || 0);
-    const incomingSite = Array.isArray(body?.sites) ? body.sites.find((s: any) => s.id === 's-belmonte') : null;
-    console.log(`[PUT] key=${params.key} serviceRole=${hasServiceRole} stored=${storedVer} incoming=${incomingVersion} s-belmonte.cat=${incomingSite?.categoriePrincipale ?? 'MISSING'}`);
 
     // Refuse empty payloads overwriting real data
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
@@ -92,7 +86,6 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     if (prev) {
       supabase.from("planner_state_backup").insert({ key: params.key, data: prev }).then(({ error: backupErr }) => {
         if (backupErr) return;
-        // Keep only the 20 most-recent backups
         supabase.from("planner_state_backup").select("id").eq("key", params.key)
           .order("created_at", { ascending: false })
           .then(({ data: ids }) => {
@@ -108,12 +101,10 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     let writeRows = 0;
     let writeError: string | null = null;
     let writeMethod: string;
-    let returnedUpdatedAt: number = 0;
 
     if (prev !== null) {
       writeMethod = "update";
 
-      // Version check in JS — prev was already read above, no extra round-trip needed.
       if (body?.force !== true && incomingVersion > 0) {
         if (storedVer > incomingVersion) {
           return Response.json(
@@ -123,52 +114,15 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
         }
       }
 
-      // Plain UPDATE — select data back immediately to see what Supabase actually stored.
       const { data: updated, error: updateErr } = await supabase
         .from("planner_state")
         .update({ data: body, updated_at: ts })
         .eq("key", params.key)
-        .select("key, data");
+        .select("key");
 
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
-
-      const returnedRow = updated?.[0];
-      returnedUpdatedAt = Number((returnedRow as any)?.data?.updatedAt || 0);
-      console.log(`[PUT] UPDATE returned: data.updatedAt=${returnedUpdatedAt} (sent=${incomingVersion}) writeError=${writeError ?? 'none'}`);
-
-      // If UPDATE returned old data, a BEFORE UPDATE trigger is reverting the data column.
-      // Fall back to DELETE + INSERT which bypasses UPDATE triggers.
-      if (!writeError && writeRows > 0 && returnedUpdatedAt !== incomingVersion && incomingVersion > 0) {
-        console.warn(`[PUT] UPDATE trigger detected (returned=${returnedUpdatedAt} != sent=${incomingVersion}) — falling back to DELETE+INSERT`);
-        writeMethod = "delete-insert";
-        const { error: delErr } = await supabase
-          .from("planner_state")
-          .delete()
-          .eq("key", params.key);
-        if (delErr) {
-          writeError = `delete-failed: ${delErr.message}`;
-          writeRows = 0;
-        } else {
-          const { data: reins, error: reinsErr } = await supabase
-            .from("planner_state")
-            .insert({ key: params.key, data: body, updated_at: ts })
-            .select("key, data");
-          if (reinsErr) {
-            // Re-insert old data to avoid data loss
-            await supabase.from("planner_state").insert({ key: params.key, data: prev, updated_at: new Date().toISOString() });
-            writeError = `insert-failed: ${reinsErr.message}`;
-            writeRows = 0;
-          } else {
-            writeRows = reins?.length ?? 0;
-            writeError = null;
-            returnedUpdatedAt = Number((reins?.[0] as any)?.data?.updatedAt || 0);
-            console.log(`[PUT] DELETE+INSERT succeeded: data.updatedAt=${returnedUpdatedAt}`);
-          }
-        }
-      }
     } else {
-      // INSERT for new keys
       writeMethod = "insert";
       const { data: inserted, error: insertErr } = await supabase
         .from("planner_state")
@@ -195,7 +149,10 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
     }
 
-    return Response.json({ ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole, returnedUpdatedAt }, { headers: { "x-state-storage": "supabase" } });
+    return Response.json(
+      { ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole },
+      { headers: { "x-state-storage": "supabase" } }
+    );
   } catch {
     return Response.json({ ok: false, error: "State PUT failed" }, { status: 500 });
   }

@@ -3696,8 +3696,6 @@ export default function Page() {
       chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
       updatedAt: stamp, clientId: clientIdRef.current,
     };
-    const targetSite = savePayload.sites.find((s: any) => s.id === payload.id);
-    console.log(`[saveSiteDetail] ${payload.id} cat=${targetSite?.categoriePrincipale ?? 'null'} stamp=${stamp}`);
     setSyncStatus("syncing");
     fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
       method: "PUT",
@@ -3706,53 +3704,16 @@ export default function Page() {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        console.log(`[saveSiteDetail] PUT response: ${res.status}`, body);
         if (res.ok) {
           setSyncStatus("synced");
-          // Round-trip verification: read back from DB and check both timestamp AND categoriePrincipale
-          try {
-            const v = await fetch(`/api/state/${GLOBAL_STATE_KEY}?ts=${Date.now()}`, {
-              cache: "no-store",
-              headers: { "Cache-Control": "no-store, no-cache", Pragma: "no-cache" },
-            });
-            const vd = await v.json();
-            const vs = Array.isArray(vd?.sites) ? vd.sites.find((x: any) => x.id === updatedSite.id) : null;
-            const verifiedCat = vs?.categoriePrincipale ?? null;
-            const expectedCat = updatedSite.categoriePrincipale ?? null;
-            const stampOk = Number(vd?.updatedAt || 0) >= stamp;
-            const catOk = verifiedCat === expectedCat;
-            console.log(`[saveSiteDetail] VERIFY GET: updatedAt=${vd?.updatedAt} ${updatedSite.id}.cat=${verifiedCat ?? 'MISSING'} expected=${expectedCat ?? 'null'} stampOk=${stampOk} catOk=${catOk}`);
-            if (!stampOk || !catOk) {
-              console.error(`[saveSiteDetail] ROUND-TRIP MISMATCH — retrying with force. stampOk=${stampOk} catOk=${catOk} (sent=${expectedCat}, got=${verifiedCat})`);
-              // Retry the PUT with a fresh timestamp and force flag to bypass version check
-              const retryStamp = Date.now();
-              const retryPayload = { ...savePayload, updatedAt: retryStamp, force: true };
-              const retry = await fetch(`/api/state/${GLOBAL_STATE_KEY}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(retryPayload),
-              });
-              const retryBody = await retry.json().catch(() => ({}));
-              console.log(`[saveSiteDetail] RETRY PUT: ${retry.status}`, retryBody);
-              if (!retry.ok) {
-                setSyncStatus("error");
-                showToast("⚠️ Impossible de sauvegarder — voir console");
-              } else {
-                syncVersionRef.current = retryStamp;
-              }
-            }
-          } catch (ve) { console.warn("[saveSiteDetail] verify GET failed:", ve); }
-        }
-        else if (res.status === 409) loadWeekStateRef.current(false);
-        else {
-          console.error("[save] error:", body);
+        } else if (res.status === 409) {
+          loadWeekStateRef.current(false);
+        } else {
+          console.error("[saveSiteDetail] error:", body);
           setSyncStatus("error");
-          if (body?.error?.includes("silently rejected")) {
-            showToast("⚠️ Sauvegarde rejetée par la base de données");
-          }
         }
       })
-      .catch((err) => { console.error("[save] fetch error:", err); setSyncStatus("error"); });
+      .catch((err) => { console.error("[saveSiteDetail] fetch error:", err); setSyncStatus("error"); });
 
     // Suppress the autosave effect that will fire after setSites — we already sent
     // the PUT above, so a second concurrent write creates a needless race condition.
@@ -3934,8 +3895,6 @@ export default function Page() {
             const srv = await res.json();
             if (hasPayload(srv)) {
               remoteState = srv;
-              const bel = Array.isArray(srv.sites) ? srv.sites.find((s: any) => s.id === 's-belmonte') : null;
-              console.log(`[load] DB→client updatedAt=${srv.updatedAt} s-belmonte.cat=${bel?.categoriePrincipale ?? 'MISSING'}`);
             }
           }
         } catch {
@@ -3977,7 +3936,6 @@ export default function Page() {
             justLoadedRef.current = false;
             if (pendingSaveRef.current && syncVersionRef.current === epochAtLoad) {
               pendingSaveRef.current = false;
-              console.log('[pendingSave] timer firing — replaying blocked autosave');
               const ac = new AbortController();
               inFlightAbortRef.current = ac;
               savePlanningRef.current(ac.signal).finally(() => {
@@ -4092,8 +4050,6 @@ useEffect(() => {
 const saveRemoteAbortRef = useRef<AbortController | null>(null);
 const saveRemote = useMemo(() => {
   const d = debounce(async (wk: string, payload: any) => {
-    const bel = Array.isArray(payload?.sites) ? payload.sites.find((s: any) => s.id === 's-belmonte') : null;
-    console.log(`[saveRemote] firing updatedAt=${payload?.updatedAt} s-belmonte.cat=${bel?.categoriePrincipale ?? 'MISSING'}`);
     const ac = new AbortController();
     saveRemoteAbortRef.current = ac;
     try {
