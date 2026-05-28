@@ -2057,21 +2057,17 @@ export default function Page() {
   const pushUndo = useCallback((snapshot: any) => {
     undoStack.current = [...undoStack.current.slice(-19), snapshot];
   }, []);
-  const clientIdRef = useRef<string>((() => {
-    if (typeof window === "undefined") return `client-${Date.now()}`;
+  const clientIdRef = useRef<string>("client-init");
+  useEffect(() => {
+    const KEY = "btp-planner-client-id:v1";
     try {
-      const KEY = "btp-planner-client-id:v1";
       const existing = localStorage.getItem(KEY);
-      if (existing) return existing;
-      const fresh = typeof crypto !== "undefined" && (crypto as any).randomUUID
-        ? (crypto as any).randomUUID()
-        : `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      if (existing) { clientIdRef.current = existing; return; }
+      const fresh = (crypto as any).randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       localStorage.setItem(KEY, fresh);
-      return fresh;
-    } catch {
-      return `client-${Date.now()}`;
-    }
-  })());
+      clientIdRef.current = fresh;
+    } catch { clientIdRef.current = `client-${Date.now()}`; }
+  }, []);
   const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
@@ -3733,6 +3729,7 @@ export default function Page() {
 
   const savePersonDetail = (payload: any) => {
     if (!payload?.id) return;
+    directSaveInFlightRef.current = true;
     setPeople((prev) => prev.map((p) => (p.id === payload.id ? normalizePersonRecord(payload) : p)));
     setPersonDetail(null);
     setPersonDetailOpen(false);
@@ -3994,7 +3991,7 @@ useEffect(() => {
     } catch {}
     finally {
       polling = false;
-      if (!cancelled) timer = setTimeout(poll, 1000);
+      if (!cancelled) timer = setTimeout(poll, 5000);
     }
   };
   poll();
@@ -4862,7 +4859,7 @@ useEffect(() => {
       )}
 
       {view === "accueil" && (() => {
-        const now = new Date();
+        const now = today;
         const accueilWeekNum = getISOWeek(now);
         const accueilWeekYear = getISOWeekYear(now);
         const accueilWeekKey = todayWeekKey;
@@ -4999,12 +4996,12 @@ useEffect(() => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border bg-white px-5 py-4 shadow-sm">
               <div>
-                <div className="text-xl font-bold text-neutral-900">
+                <div className="text-xl font-bold text-neutral-900" suppressHydrationWarning>
                   Bonjour — Semaine S{pad2(accueilWeekNum)}, {formatFR(now, true)}
                 </div>
                 <div className="text-sm text-neutral-500 mt-0.5">
                   Clé de semaine :{" "}
-                  <span className="font-mono text-neutral-700">{accueilWeekKey}</span>
+                  <span className="font-mono text-neutral-700" suppressHydrationWarning>{accueilWeekKey}</span>
                 </div>
               </div>
               <span className="shrink-0 text-xs font-semibold text-sky-700 bg-sky-100 px-3 py-1.5 rounded-full">
