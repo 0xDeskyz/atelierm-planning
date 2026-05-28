@@ -2068,7 +2068,13 @@ export default function Page() {
       clientIdRef.current = fresh;
     } catch { clientIdRef.current = `client-${Date.now()}`; }
   }, []);
-  const today = useMemo(() => new Date(), []);
+  const [today, setToday] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const refresh = () => setToday(new Date());
+    const id = setInterval(refresh, 60 * 60 * 1000); // re-sync toutes les heures
+    window.addEventListener("focus", refresh);
+    return () => { clearInterval(id); window.removeEventListener("focus", refresh); };
+  }, []);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -4034,7 +4040,7 @@ useEffect(() => {
         if (remoteClient === clientIdRef.current) return; // c'est notre propre update
         if (remoteVersion <= syncVersionRef.current) return; // on a déjà plus récent
         isApplyingRemote.current = true;
-        applyState(remote, false);
+        applyState(remote);
         syncVersionRef.current = remoteVersion;
         setSyncStatus("synced");
       }
@@ -4062,15 +4068,12 @@ const saveRemote = useMemo(() => {
         return;
       }
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        if (errBody?.error?.includes("silently rejected")) {
-          showToastRef.current("⚠️ Sauvegarde rejetée par la base de données — vérifiez SUPABASE_SERVICE_ROLE_KEY dans Vercel");
-        }
         throw new Error(`saveRemote failed: ${res.status}`);
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       console.error("Autosave distant impossible", err);
+      setSyncStatus("error");
     } finally {
       if (saveRemoteAbortRef.current === ac) saveRemoteAbortRef.current = null;
     }
