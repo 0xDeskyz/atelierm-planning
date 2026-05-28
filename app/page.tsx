@@ -2057,17 +2057,13 @@ export default function Page() {
   const pushUndo = useCallback((snapshot: any) => {
     undoStack.current = [...undoStack.current.slice(-19), snapshot];
   }, []);
-  const clientIdRef = useRef<string>("client-init");
-  useEffect(() => {
-    const KEY = "btp-planner-client-id:v1";
-    try {
-      const existing = localStorage.getItem(KEY);
-      if (existing) { clientIdRef.current = existing; return; }
-      const fresh = (crypto as any).randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(KEY, fresh);
-      clientIdRef.current = fresh;
-    } catch { clientIdRef.current = `client-${Date.now()}`; }
-  }, []);
+  // UUID unique par onglet (pas par navigateur) — chaque tab identifie ses propres saves
+  // et laisse passer les saves des autres tabs/appareils lors du polling et Realtime.
+  const clientIdRef = useRef<string>(
+    typeof crypto !== "undefined" && (crypto as any).randomUUID
+      ? (crypto as any).randomUUID()
+      : `client-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
   const [today, setToday] = useState<Date>(() => new Date());
   useEffect(() => {
     const refresh = () => setToday(new Date());
@@ -4002,16 +3998,30 @@ useEffect(() => {
   };
   poll();
   const onFocus = () => poll();
+  let hiddenAt = 0;
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      hiddenAt = Date.now();
+    } else {
+      // Retour sur l'onglet : rechargement complet si absent > 30s
+      // (justLoadedRef bloquera les autosaves pendant la resynchronisation)
+      if (hiddenAt > 0 && Date.now() - hiddenAt > 30000) {
+        loadWeekStateRef.current(false);
+      }
+      hiddenAt = 0;
+      poll();
+    }
+  };
   if (typeof window !== "undefined") {
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
   }
   return () => {
     cancelled = true;
     if (timer) clearTimeout(timer);
     if (typeof window !== "undefined") {
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     }
   };
 }, [applyState]);
