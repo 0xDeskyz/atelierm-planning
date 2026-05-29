@@ -35,6 +35,14 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));
 
+  // Non connecté + route API → 401 JSON (pas une redirection HTML)
+  if (!user && path.startsWith("/api/")) {
+    return new NextResponse(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // Non connecté + route privée → /login
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
