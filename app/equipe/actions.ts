@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrg } from "@/lib/auth/org";
+import { sendInvitationEmail } from "@/lib/email";
 
 // Garde-fou : seul owner/admin peut gérer l'équipe.
 async function requireEditor() {
@@ -29,6 +30,11 @@ export async function inviteMember(formData: FormData) {
     role: role === "admin" ? "admin" : "member",
     token,
   });
+
+  // Email envoyé en best-effort : l'invitation reste valide même si l'envoi échoue.
+  try {
+    await sendInvitationEmail({ to: email, orgName: org.orgName, role, token });
+  } catch {}
 
   revalidatePath("/equipe");
 }

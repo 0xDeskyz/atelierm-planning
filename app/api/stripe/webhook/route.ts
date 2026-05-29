@@ -1,5 +1,6 @@
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendSubscriptionConfirmationEmail } from "@/lib/email";
 import type Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -29,15 +30,32 @@ export async function POST(req: Request) {
       case "checkout.session.completed": {
         const s = event.data.object as Stripe.Checkout.Session;
         const orgId = s.metadata?.org_id;
+        const plan = s.metadata?.plan || "starter";
         if (orgId) {
           await admin
             .from("organizations")
             .update({
-              plan: s.metadata?.plan || "starter",
+              plan,
               stripe_customer_id: String(s.customer || ""),
               stripe_subscription_id: String(s.subscription || ""),
             })
             .eq("id", orgId);
+
+          const customerEmail = s.customer_details?.email;
+          if (customerEmail) {
+            const { data: org } = await admin
+              .from("organizations")
+              .select("name")
+              .eq("id", orgId)
+              .single();
+            try {
+              await sendSubscriptionConfirmationEmail({
+                to: customerEmail,
+                orgName: org?.name || "votre organisation",
+                plan,
+              });
+            } catch {}
+          }
         }
         break;
       }
