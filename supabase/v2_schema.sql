@@ -153,6 +153,60 @@ end;
 $$;
 
 -- ============================================================
+-- Gestion d'équipe — SECURITY DEFINER
+-- ============================================================
+
+-- Liste les membres d'une org (avec leur email depuis auth.users).
+-- Sécurité : ne renvoie rien si l'appelant n'est pas membre de l'org.
+create or replace function public.org_members(p_org_id uuid)
+returns table(user_id uuid, email text, role text, created_at timestamptz)
+language sql security definer set search_path = public stable
+as $$
+  select m.user_id, u.email::text, m.role, m.created_at
+  from memberships m
+  join auth.users u on u.id = m.user_id
+  where m.org_id = p_org_id
+    and p_org_id in (select org_id from memberships where user_id = auth.uid())
+  order by m.created_at asc
+$$;
+
+-- Infos publiques d'une invitation (pour l'écran d'acceptation). Le token = secret.
+create or replace function public.invitation_info(p_token text)
+returns table(org_name text, role text, expired boolean)
+language sql security definer set search_path = public stable
+as $$
+  select o.name::text, i.role, (i.expires_at < now()) as expired
+  from invitations i
+  join organizations o on o.id = i.org_id
+  where i.token = p_token
+$$;
+
+-- Accepte une invitation : crée le membership de l'utilisateur courant.
+create or replace function public.accept_invitation(p_token text)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  inv record;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+
+  select * into inv from invitations where token = p_token;
+  if inv is null then raise exception 'invitation introuvable'; end if;
+  if inv.expires_at < now() then raise exception 'invitation expirée'; end if;
+
+  insert into memberships (org_id, user_id, role)
+  values (inv.org_id, auth.uid(), inv.role)
+  on conflict (org_id, user_id) do nothing;
+
+  update invitations set accepted_at = now()
+  where token = p_token and accepted_at is null;
+
+  return inv.org_id;
+end;
+$$;
+
+-- ============================================================
 -- RLS — cloisonnement réel par organisation
 -- (drop policy if exists → re-jouable sans "policy already exists")
 -- ============================================================
