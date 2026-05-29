@@ -11,6 +11,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "allowJs": true,
     "incremental": true,
     "module": "esnext",
@@ -25,6 +28,8 @@
   },
   "include": [
     "app/**/*",
+    "lib/**/*",
+    "middleware.ts",
     "next-env.d.ts",
     ".next/types/**/*.ts"
   ],
