@@ -119,6 +119,40 @@ as $$
 $$;
 
 -- ============================================================
+-- Création d'organisation (onboarding) — SECURITY DEFINER
+-- Crée l'org + le membership owner atomiquement (contourne le chicken-and-egg
+-- RLS : au moment de la création, l'utilisateur n'est encore membre de rien).
+-- ============================================================
+create or replace function public.create_organization(org_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_org_id uuid;
+  new_slug   text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  new_slug := lower(regexp_replace(coalesce(nullif(trim(org_name), ''), 'societe'),
+                                   '[^a-zA-Z0-9]+', '-', 'g'))
+              || '-' || substr(gen_random_uuid()::text, 1, 6);
+
+  insert into organizations (name, slug)
+    values (trim(org_name), new_slug)
+    returning id into new_org_id;
+
+  insert into memberships (org_id, user_id, role)
+    values (new_org_id, auth.uid(), 'owner');
+
+  return new_org_id;
+end;
+$$;
+
+-- ============================================================
 -- RLS — cloisonnement réel par organisation
 -- (drop policy if exists → re-jouable sans "policy already exists")
 -- ============================================================
@@ -162,6 +196,20 @@ create policy "members read own org state"
 drop policy if exists "editors write own org state" on planner_state;
 create policy "editors write own org state"
   on planner_state for all
+  using  (org_id in (select user_editor_org_ids()))
+  with check (org_id in (select user_editor_org_ids()));
+
+-- ---- planner_state_backup ----
+alter table planner_state_backup enable row level security;
+
+drop policy if exists "members read own org backups" on planner_state_backup;
+create policy "members read own org backups"
+  on planner_state_backup for select
+  using (org_id in (select user_org_ids()));
+
+drop policy if exists "editors write own org backups" on planner_state_backup;
+create policy "editors write own org backups"
+  on planner_state_backup for all
   using  (org_id in (select user_editor_org_ids()))
   with check (org_id in (select user_editor_org_ids()));
 

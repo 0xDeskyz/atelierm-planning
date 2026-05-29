@@ -1,25 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// Next.js 14 patches the global `fetch` and adds its own data cache.
-// Supabase JS SDK uses `fetch` internally — its responses get cached by
-// Next.js even with `force-dynamic`. Pass `cache: "no-store"` so every
-// Supabase call goes directly to the database without being intercepted.
-function getSupabase() {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: {
-        fetch: (url: RequestInfo | URL, options: RequestInit = {}) =>
-          fetch(url, { ...options, cache: "no-store" }),
-      },
-    }
-  );
+// La clé est `org-{uuid}`. On en extrait l'org_id pour le poser sur les écritures.
+// La RLS (policies par org) garantit qu'un utilisateur ne peut lire/écrire que
+// les données des organisations dont il est membre (et écrire que s'il est owner/admin).
+function orgIdFromKey(key: string): string | null {
+  return key.startsWith("org-") ? key.slice(4) : null;
 }
 
 function looksEmpty(payload: any) {
@@ -31,9 +20,23 @@ function looksEmpty(payload: any) {
   return people.length === 0 && sites.length === 0 && assignments.length === 0 && quotes.length === 0;
 }
 
+const NO_CACHE = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  "Surrogate-Control": "no-store",
+  "CDN-Cache-Control": "no-store",
+  "Vercel-CDN-Cache-Control": "no-store",
+};
+
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
-    const supabase = getSupabase();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return Response.json(null, { status: 401 });
+
+    // RLS filtre : si l'utilisateur n'est pas membre de l'org, data = null.
     const { data, error } = await supabase
       .from("planner_state")
       .select("data")
@@ -41,18 +44,9 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       .maybeSingle();
 
     if (error || !data) {
-      return Response.json(null, { headers: { "x-state-storage": "none" } });
+      return Response.json(null, { headers: { "x-state-storage": "none", ...NO_CACHE } });
     }
-    return Response.json(data.data, {
-      headers: {
-        "x-state-storage": "supabase",
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Surrogate-Control": "no-store",
-        "CDN-Cache-Control": "no-store",
-        "Vercel-CDN-Cache-Control": "no-store",
-      },
-    });
+    return Response.json(data.data, { headers: { "x-state-storage": "supabase", ...NO_CACHE } });
   } catch {
     return Response.json({ ok: false, error: "State GET failed" }, { status: 500 });
   }
@@ -60,12 +54,19 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
   try {
+    const orgId = orgIdFromKey(params.key);
+    if (!orgId) return Response.json({ ok: false, error: "Invalid key" }, { status: 400 });
+
     const body = await req.json();
     const incomingVersion = Number(body?.updatedAt || 0);
-    const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const supabase = getSupabase();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-    // Read prev for: empty-payload guard, backup, and INSERT-vs-UPDATE decision
+    // prev : empty-guard, backup, et décision INSERT vs UPDATE.
+    // RLS : null si l'utilisateur n'a pas accès à cette org.
     const { data: prevRow } = await supabase
       .from("planner_state")
       .select("data")
@@ -74,7 +75,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     const prev = prevRow?.data ?? null;
     const storedVer = Number(prev?.updatedAt || 0);
 
-    // Refuse empty payloads overwriting real data
+    // Refuse un payload vide qui écraserait de vraies données
     if (body?.force !== true && looksEmpty(body) && prev && !looksEmpty(prev)) {
       return Response.json(
         { ok: false, error: "Refused: incoming payload is empty while existing state has data." },
@@ -82,19 +83,33 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       );
     }
 
-    // Backup previous state — fire-and-forget so it never blocks the main write path.
+    // Conflit de version
+    if (prev !== null && body?.force !== true && incomingVersion > 0 && storedVer > incomingVersion) {
+      return Response.json(
+        { ok: false, conflict: true, storedVersion: storedVer, incomingVersion },
+        { status: 409 }
+      );
+    }
+
+    // Backup du précédent — fire-and-forget (RLS editor policy s'applique)
     if (prev) {
-      supabase.from("planner_state_backup").insert({ key: params.key, data: prev }).then(({ error: backupErr }) => {
-        if (backupErr) return;
-        supabase.from("planner_state_backup").select("id").eq("key", params.key)
-          .order("created_at", { ascending: false })
-          .then(({ data: ids }) => {
-            if (ids && ids.length > 20) {
-              const toDelete = ids.slice(20).map((r: any) => r.id);
-              supabase.from("planner_state_backup").delete().in("id", toDelete);
-            }
-          });
-      });
+      supabase
+        .from("planner_state_backup")
+        .insert({ key: params.key, org_id: orgId, data: prev })
+        .then(({ error: backupErr }) => {
+          if (backupErr) return;
+          supabase
+            .from("planner_state_backup")
+            .select("id")
+            .eq("key", params.key)
+            .order("created_at", { ascending: false })
+            .then(({ data: ids }) => {
+              if (ids && ids.length > 20) {
+                const toDelete = ids.slice(20).map((r: any) => r.id);
+                supabase.from("planner_state_backup").delete().in("id", toDelete);
+              }
+            });
+        });
     }
 
     const ts = new Date().toISOString();
@@ -104,53 +119,33 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
     if (prev !== null) {
       writeMethod = "update";
-
-      if (body?.force !== true && incomingVersion > 0) {
-        if (storedVer > incomingVersion) {
-          return Response.json(
-            { ok: false, conflict: true, storedVersion: storedVer, incomingVersion },
-            { status: 409 }
-          );
-        }
-      }
-
       const { data: updated, error: updateErr } = await supabase
         .from("planner_state")
         .update({ data: body, updated_at: ts })
         .eq("key", params.key)
         .select("key");
-
       writeRows = updated?.length ?? 0;
       writeError = updateErr?.message ?? null;
     } else {
       writeMethod = "insert";
       const { data: inserted, error: insertErr } = await supabase
         .from("planner_state")
-        .insert({ key: params.key, data: body, updated_at: ts })
+        .insert({ key: params.key, org_id: orgId, data: body, updated_at: ts })
         .select("key");
       writeRows = inserted?.length ?? 0;
       writeError = insertErr?.message ?? null;
-
-      if (!writeError && writeRows === 0) {
-        writeMethod = "upsert-onconflict";
-        const { data: ups, error: upsErr } = await supabase
-          .from("planner_state")
-          .upsert({ key: params.key, data: body, updated_at: ts }, { onConflict: "key" })
-          .select("key");
-        writeRows = ups?.length ?? 0;
-        writeError = upsErr?.message ?? null;
-      }
     }
 
     if (writeError) {
-      return Response.json({ ok: false, error: writeError, writeMethod, writeRows }, { status: 500 });
+      // RLS qui bloque une écriture (member en lecture seule, ou mauvaise org)
+      return Response.json({ ok: false, error: writeError, writeMethod }, { status: 403 });
     }
     if (writeRows === 0) {
-      return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod, writeRows }, { status: 500 });
+      return Response.json({ ok: false, error: "Write affected 0 rows (permission?)", writeMethod }, { status: 403 });
     }
 
     return Response.json(
-      { ok: true, storage: "supabase", writeMethod, writeRows, usingServiceRole: hasServiceRole },
+      { ok: true, storage: "supabase", writeMethod, writeRows },
       { headers: { "x-state-storage": "supabase" } }
     );
   } catch {

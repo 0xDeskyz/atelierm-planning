@@ -1,18 +1,17 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
-
-// GET /api/restore/all — liste tous les backups disponibles, groupés par semaine
+// GET /api/restore/all — liste les backups de l'org de l'utilisateur (RLS), groupés par clé.
 export async function GET() {
   try {
-    const supabase = getSupabase();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
     const { data, error } = await supabase
       .from("planner_state_backup")
       .select("id, key, created_at, data")
