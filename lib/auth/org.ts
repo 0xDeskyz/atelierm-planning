@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type CurrentOrg = {
   orgId: string;
+  orgName: string;
   role: "owner" | "admin" | "member";
   stateKey: string; // clé planner_state pour cette org
 };
@@ -23,7 +24,7 @@ export async function getCurrentOrg(): Promise<CurrentOrg | null> {
 
   const { data, error } = await supabase
     .from("memberships")
-    .select("org_id, role")
+    .select("org_id, role, organizations(name)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -31,8 +32,12 @@ export async function getCurrentOrg(): Promise<CurrentOrg | null> {
 
   if (error || !data) return null;
 
+  const orgRel: any = (data as any).organizations;
+  const orgName = Array.isArray(orgRel) ? orgRel[0]?.name : orgRel?.name;
+
   return {
     orgId: data.org_id,
+    orgName: orgName || "Ma société",
     role: data.role,
     stateKey: stateKeyForOrg(data.org_id),
   };

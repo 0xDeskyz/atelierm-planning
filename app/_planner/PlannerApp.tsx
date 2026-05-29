@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
+import AccountMenu from "./AccountMenu";
 import {
   DndContext,
   DragOverlay,
@@ -1941,7 +1942,19 @@ function AddSite({ onAdd, usedColors = [] }: { onAdd: (name: string, planningWee
 // ==================================
 // Main Component (Page) – Semaine / Mois / Heures
 // ==================================
-export default function PlannerApp({ stateKey, canEdit = true }: { stateKey: string; canEdit?: boolean }) {
+export default function PlannerApp({
+  stateKey,
+  canEdit = true,
+  userEmail = "",
+  orgName = "",
+  role = "member",
+}: {
+  stateKey: string;
+  canEdit?: boolean;
+  userEmail?: string;
+  orgName?: string;
+  role?: string;
+}) {
   // Core state
   const [people, setPeople] = useState(DEMO_PEOPLE);
   const [sites, setSites] = useState(() => DEMO_SITES.map(normalizeSiteRecord));
@@ -4489,6 +4502,7 @@ useEffect(() => {
               >
                 <Settings className="w-4 h-4" />
               </button>
+              <AccountMenu email={userEmail} orgName={orgName} role={role} />
             </div>
           </div>
         </Tabs>
