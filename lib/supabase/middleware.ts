@@ -35,6 +35,11 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));
 
+  // Le webhook Stripe est appelé sans session utilisateur → toujours autorisé
+  if (path.startsWith("/api/stripe/webhook")) {
+    return response;
+  }
+
   // Non connecté + route API → 401 JSON (pas une redirection HTML)
   if (!user && path.startsWith("/api/")) {
     return new NextResponse(JSON.stringify({ ok: false, error: "Unauthorized" }), {

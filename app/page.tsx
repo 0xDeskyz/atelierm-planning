@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentOrg } from "@/lib/auth/org";
+import { getCurrentOrg, hasAccess } from "@/lib/auth/org";
 import PlannerApp from "./_planner/PlannerApp";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,11 @@ export default async function Page() {
   // Connecté mais sans organisation → onboarding (création de société)
   if (!org) {
     redirect("/onboarding");
+  }
+
+  // Essai terminé et pas d'abonnement → page de facturation
+  if (!hasAccess(org)) {
+    redirect("/facturation?expired=1");
   }
 
   return (
