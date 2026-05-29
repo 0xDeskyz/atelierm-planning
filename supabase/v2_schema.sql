@@ -157,67 +157,53 @@ $$;
 -- (drop policy if exists → re-jouable sans "policy already exists")
 -- ============================================================
 
+-- Reset propre : efface TOUTES les policies existantes sur ces tables (y compris
+-- d'éventuelles vieilles versions récursives héritées de runs partiels) avant de
+-- recréer les bonnes. Garantit un état cohérent quel que soit l'historique.
+do $$
+declare r record;
+begin
+  for r in select policyname, tablename from pg_policies
+           where schemaname = 'public'
+           and tablename in ('organizations','memberships','invitations','planner_state','planner_state_backup')
+  loop
+    execute format('drop policy if exists %I on public.%I', r.policyname, r.tablename);
+  end loop;
+end $$;
+
 -- ---- organizations ----
 alter table organizations enable row level security;
-
-drop policy if exists "members read their orgs" on organizations;
-create policy "members read their orgs"
-  on organizations for select
+create policy "members read their orgs" on organizations for select
   using (id in (select user_org_ids()));
-
-drop policy if exists "owners update their org" on organizations;
-create policy "owners update their org"
-  on organizations for update
+create policy "owners update their org" on organizations for update
   using (id in (select user_owner_org_ids()));
 
 -- ---- memberships ----
 alter table memberships enable row level security;
-
-drop policy if exists "members read memberships of their orgs" on memberships;
-create policy "members read memberships of their orgs"
-  on memberships for select
+create policy "members read memberships" on memberships for select
   using (org_id in (select user_org_ids()));
-
-drop policy if exists "admins manage memberships" on memberships;
-create policy "admins manage memberships"
-  on memberships for all
+create policy "admins manage memberships" on memberships for all
   using (org_id in (select user_editor_org_ids()))
   with check (org_id in (select user_editor_org_ids()));
 
--- ---- planner_state ----
+-- ---- planner_state (members = lecture seule ; owner/admin écrivent) ----
 alter table planner_state enable row level security;
-
-drop policy if exists "members read own org state" on planner_state;
-create policy "members read own org state"
-  on planner_state for select
+create policy "members read state" on planner_state for select
   using (org_id in (select user_org_ids()));
-
--- members = lecture seule ; owner/admin écrivent
-drop policy if exists "editors write own org state" on planner_state;
-create policy "editors write own org state"
-  on planner_state for all
-  using  (org_id in (select user_editor_org_ids()))
+create policy "editors write state" on planner_state for all
+  using (org_id in (select user_editor_org_ids()))
   with check (org_id in (select user_editor_org_ids()));
 
 -- ---- planner_state_backup ----
 alter table planner_state_backup enable row level security;
-
-drop policy if exists "members read own org backups" on planner_state_backup;
-create policy "members read own org backups"
-  on planner_state_backup for select
+create policy "members read backups" on planner_state_backup for select
   using (org_id in (select user_org_ids()));
-
-drop policy if exists "editors write own org backups" on planner_state_backup;
-create policy "editors write own org backups"
-  on planner_state_backup for all
-  using  (org_id in (select user_editor_org_ids()))
+create policy "editors write backups" on planner_state_backup for all
+  using (org_id in (select user_editor_org_ids()))
   with check (org_id in (select user_editor_org_ids()));
 
 -- ---- invitations ----
 alter table invitations enable row level security;
-
-drop policy if exists "admins manage invitations" on invitations;
-create policy "admins manage invitations"
-  on invitations for all
+create policy "admins manage invitations" on invitations for all
   using (org_id in (select user_editor_org_ids()))
   with check (org_id in (select user_editor_org_ids()));
