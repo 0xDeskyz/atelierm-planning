@@ -1,6 +1,6 @@
 -- ============================================================
--- SCHÉMA V2 — SaaS multi-tenant
--- À appliquer dans le NOUVEAU projet Supabase B (jamais sur la prod Atelier M).
+-- SCHÉMA V2 — SaaS multi-tenant  (IDEMPOTENT : re-jouable sans erreur)
+-- À appliquer dans le projet Supabase B (jamais sur la prod Atelier M).
 -- SQL Editor → coller → Run.
 -- ============================================================
 
@@ -41,13 +41,29 @@ create table if not exists invitations (
 );
 
 -- ---------- État du planning (1 ligne par org) ----------
--- Même structure qu'aujourd'hui, mais clé = 'org-{orgId}' et colonne org_id.
+-- create if not exists NE modifie PAS une table déjà présente : on patche
+-- ensuite avec ALTER ADD COLUMN IF NOT EXISTS pour les bases déjà créées.
 create table if not exists planner_state (
   key        text primary key,
-  org_id     uuid references organizations(id) on delete cascade,
+  org_id     uuid,
   data       jsonb not null,
   updated_at timestamptz default now()
 );
+
+alter table planner_state
+  add column if not exists org_id uuid;
+
+-- FK ajoutée séparément (idempotente via DO block)
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'planner_state_org_fk'
+  ) then
+    alter table planner_state
+      add constraint planner_state_org_fk
+      foreign key (org_id) references organizations(id) on delete cascade;
+  end if;
+end $$;
 
 create index if not exists planner_state_org_idx on planner_state (org_id);
 
@@ -60,63 +76,100 @@ create table if not exists planner_state_backup (
   created_at timestamptz default now()
 );
 
+alter table planner_state_backup
+  add column if not exists org_id uuid;
+
 create index if not exists planner_state_backup_key_created_at_idx
   on planner_state_backup (key, created_at desc);
 
 -- ============================================================
--- RLS — cloisonnement réel par organisation
+-- Fonctions SECURITY DEFINER — contournent la RLS pour casser la récursion
+-- (une policy sur memberships ne peut pas requêter memberships directement)
 -- ============================================================
 
--- Helper : les org_id dont l'utilisateur courant est membre
--- (utilisé dans les policies ci-dessous)
+create or replace function public.user_org_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select org_id from memberships where user_id = auth.uid()
+$$;
+
+create or replace function public.user_editor_org_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select org_id from memberships
+  where user_id = auth.uid() and role in ('owner','admin')
+$$;
+
+create or replace function public.user_owner_org_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select org_id from memberships where user_id = auth.uid() and role = 'owner'
+$$;
+
+-- ============================================================
+-- RLS — cloisonnement réel par organisation
+-- (drop policy if exists → re-jouable sans "policy already exists")
+-- ============================================================
 
 -- ---- organizations ----
 alter table organizations enable row level security;
 
+drop policy if exists "members read their orgs" on organizations;
 create policy "members read their orgs"
   on organizations for select
-  using (id in (select org_id from memberships where user_id = auth.uid()));
+  using (id in (select user_org_ids()));
 
+drop policy if exists "owners update their org" on organizations;
 create policy "owners update their org"
   on organizations for update
-  using (id in (select org_id from memberships where user_id = auth.uid() and role = 'owner'));
+  using (id in (select user_owner_org_ids()));
 
 -- ---- memberships ----
 alter table memberships enable row level security;
 
+drop policy if exists "members read memberships of their orgs" on memberships;
 create policy "members read memberships of their orgs"
   on memberships for select
-  using (org_id in (select org_id from memberships where user_id = auth.uid()));
+  using (org_id in (select user_org_ids()));
 
+drop policy if exists "admins manage memberships" on memberships;
 create policy "admins manage memberships"
   on memberships for all
-  using (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')))
-  with check (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')));
+  using (org_id in (select user_editor_org_ids()))
+  with check (org_id in (select user_editor_org_ids()));
 
 -- ---- planner_state ----
 alter table planner_state enable row level security;
 
+drop policy if exists "members read own org state" on planner_state;
 create policy "members read own org state"
   on planner_state for select
-  using (org_id in (select org_id from memberships where user_id = auth.uid()));
+  using (org_id in (select user_org_ids()));
 
--- members peuvent lire ; seuls owner/admin écrivent (member = lecture seule)
+-- members = lecture seule ; owner/admin écrivent
+drop policy if exists "editors write own org state" on planner_state;
 create policy "editors write own org state"
   on planner_state for all
-  using  (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')))
-  with check (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')));
+  using  (org_id in (select user_editor_org_ids()))
+  with check (org_id in (select user_editor_org_ids()));
 
 -- ---- invitations ----
 alter table invitations enable row level security;
 
+drop policy if exists "admins manage invitations" on invitations;
 create policy "admins manage invitations"
   on invitations for all
-  using (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')))
-  with check (org_id in (select org_id from memberships where user_id = auth.uid() and role in ('owner','admin')));
-
--- ============================================================
--- Trigger : créer une org + membership owner à l'inscription
--- (optionnel — on peut aussi le faire côté app dans l'onboarding)
--- ============================================================
--- Laissé commenté : on gère la création d'org dans le flux d'onboarding
--- applicatif (Phase 1) pour demander le nom de la société.
+  using (org_id in (select user_editor_org_ids()))
+  with check (org_id in (select user_editor_org_ids()));
