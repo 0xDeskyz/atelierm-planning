@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, User as UserIcon, Building2, Users, CreditCard } from "lucide-react";
+import { LogOut, User as UserIcon, Building2, Users, CreditCard, LayoutDashboard } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+const ADMIN_EMAIL = "deskyzm@gmail.com";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Propriétaire",
@@ -69,6 +71,15 @@ export default function AccountMenu({
               {ROLE_LABEL[role] || role}
             </span>
           </div>
+          {email === ADMIN_EMAIL && (
+            <Link
+              href="/admin"
+              className="w-full flex items-center gap-2 px-4 py-3 text-sm text-violet-700 hover:bg-violet-50 transition border-b"
+            >
+              <LayoutDashboard className="w-4 h-4 text-violet-400" />
+              Dashboard admin
+            </Link>
+          )}
           <Link
             href="/equipe"
             className="w-full flex items-center gap-2 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition border-b"
