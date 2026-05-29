@@ -71,7 +71,7 @@ export default function AccountMenu({
               {ROLE_LABEL[role] || role}
             </span>
           </div>
-          {email === ADMIN_EMAIL && (
+          {email.toLowerCase().trim() === ADMIN_EMAIL && (
             <Link
               href="/admin"
               className="w-full flex items-center gap-2 px-4 py-3 text-sm text-violet-700 hover:bg-violet-50 transition border-b"

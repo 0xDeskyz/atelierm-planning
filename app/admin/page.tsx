@@ -24,7 +24,7 @@ export default async function AdminPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user || user.email !== ADMIN_EMAIL) notFound();
+  if (!user || user.email?.toLowerCase().trim() !== ADMIN_EMAIL.toLowerCase()) notFound();
 
   const admin = createAdminClient();
 
