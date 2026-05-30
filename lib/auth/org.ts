@@ -10,10 +10,12 @@ export type CurrentOrg = {
   plan: string;
   trialEnds: string | null;
   stripeCustomerId: string | null;
+  suspended: boolean;
 };
 
-// Accès autorisé si plan payant actif, ou essai non expiré (fail-open si inconnu).
-export function hasAccess(org: { plan: string; trialEnds: string | null }): boolean {
+// Accès autorisé si non suspendu ET (plan payant actif ou essai non expiré).
+export function hasAccess(org: { plan: string; trialEnds: string | null; suspended?: boolean }): boolean {
+  if (org.suspended) return false; // suspension manuelle = accès coupé
   if (org.plan === "starter" || org.plan === "pro") return true;
   if (!org.trialEnds) return true; // pas de date → on n'enferme pas
   return new Date(org.trialEnds).getTime() > Date.now();
@@ -34,7 +36,7 @@ export async function getCurrentOrg(): Promise<CurrentOrg | null> {
 
   const { data, error } = await supabase
     .from("memberships")
-    .select("org_id, role, organizations(name, plan, trial_ends, stripe_customer_id)")
+    .select("org_id, role, organizations(name, plan, trial_ends, stripe_customer_id, suspended)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -53,5 +55,6 @@ export async function getCurrentOrg(): Promise<CurrentOrg | null> {
     plan: o?.plan || "trial",
     trialEnds: o?.trial_ends || null,
     stripeCustomerId: o?.stripe_customer_id || null,
+    suspended: !!o?.suspended,
   };
 }

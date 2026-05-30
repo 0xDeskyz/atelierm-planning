@@ -19,6 +19,11 @@ export default async function Page() {
     redirect("/onboarding");
   }
 
+  // Org suspendue par l'admin → message dédié
+  if (org.suspended) {
+    redirect("/facturation?suspended=1");
+  }
+
   // Essai terminé et pas d'abonnement → page de facturation
   if (!hasAccess(org)) {
     redirect("/facturation?expired=1");

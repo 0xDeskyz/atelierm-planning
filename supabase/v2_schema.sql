@@ -16,6 +16,10 @@ create table if not exists organizations (
   created_at  timestamptz default now()
 );
 
+-- Colonne ajoutée après coup (idempotent) : suspension manuelle par l'admin.
+alter table organizations
+  add column if not exists suspended boolean not null default false;
+
 -- ---------- Lien utilisateur ↔ organisation + rôle ----------
 create table if not exists memberships (
   id         uuid primary key default gen_random_uuid(),

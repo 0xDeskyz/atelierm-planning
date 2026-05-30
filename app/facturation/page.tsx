@@ -18,7 +18,7 @@ const FEATURES = [
 export default async function FacturationPage({
   searchParams,
 }: {
-  searchParams: { success?: string; session_id?: string; canceled?: string; error?: string; expired?: string };
+  searchParams: { success?: string; session_id?: string; canceled?: string; error?: string; expired?: string; suspended?: string };
 }) {
   const supabase = createClient();
   const {
@@ -100,6 +100,11 @@ export default async function FacturationPage({
         )}
         {searchParams.expired === "1" && (
           <p className="mt-3 text-sm text-red-500">Ton essai est terminé — choisis une offre pour continuer.</p>
+        )}
+        {searchParams.suspended === "1" && (
+          <p className="mt-3 text-sm text-red-500">
+            Ton compte est suspendu. Contacte le support pour réactiver l'accès.
+          </p>
         )}
         {searchParams.error === "owner" && (
           <p className="mt-3 text-sm text-red-500">Seul le propriétaire peut gérer l'abonnement.</p>
