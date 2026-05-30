@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrg, hasAccess } from "@/lib/auth/org";
 import PlannerApp from "./_planner/PlannerApp";
+import Landing from "./_landing/Landing";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,11 @@ export default async function Page() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+
+  // Visiteur non connecté → page d'accueil marketing
+  if (!user) {
+    return <Landing />;
+  }
 
   const org = await getCurrentOrg();
 
