@@ -60,14 +60,21 @@ function LoginForm() {
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-lg border px-3 py-2 text-sm"
           />
-          <input
-            type="password"
-            required
-            placeholder="Mot de passe"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm"
-          />
+          <div className="space-y-1">
+            <input
+              type="password"
+              required
+              placeholder="Mot de passe"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+            />
+            <div className="text-right">
+              <Link href="/oubli-mot-de-passe" className="text-xs text-neutral-400 hover:text-neutral-700">
+                Mot de passe oublié ?
+              </Link>
+            </div>
+          </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"
@@ -76,6 +83,9 @@ function LoginForm() {
           >
             {loading ? "Connexion…" : "Se connecter"}
           </button>
+          <p className="text-center text-xs text-neutral-400">
+            Tu resteras connecté jusqu'à déconnexion manuelle.
+          </p>
         </form>
 
         <div className="my-4 flex items-center gap-3 text-xs text-neutral-400">

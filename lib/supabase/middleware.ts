@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes accessibles sans être connecté ("/" = landing marketing)
-const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth", "/invite", "/legal"];
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth", "/invite", "/legal", "/oubli-mot-de-passe", "/nouveau-mot-de-passe"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
