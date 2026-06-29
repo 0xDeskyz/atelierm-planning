@@ -491,7 +491,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `calendar-site-drop-${site.id}-${weekKey}`,
-    data: { type: "lane-drop", siteId: site.id },
+    data: { type: "lane-drop", siteId: site.id, weekKey },
   });
   const setNodeRef = (el: HTMLDivElement | null) => { setDragRef(el); setDropRef(el); };
   // Pendant le drag : l'original est caché, le DragOverlay flotte à la place.
@@ -573,7 +573,7 @@ function CalendarWeekDropZone({ weekKey, children, isCurrentWeek }: { weekKey: s
 function LaneEmptyDropZone({ lane, weekKey, height, children }: { lane: number; weekKey: string; height: number; children?: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `lane-pin-${lane}-${weekKey}`,
-    data: { type: "lane-pin", lane },
+    data: { type: "lane-pin", lane, weekKey },
   });
   const { active } = useDndContext();
   const isCalendarDrag = active?.data?.current?.type === "calendar-site";
@@ -3205,10 +3205,57 @@ export default function PlannerApp({
     if (!over || !active?.data?.current) return;
     const data = active.data.current;
 
-    // Swap pur : drop d'un chip sur un autre chip → échange des numéros de lane
-    // L'éventuel conflit avec un 3e chantier est résolu automatiquement au rendu (greedy).
+    // Re-planifie un chantier : décale TOUTES ses semaines de planif + ses dates
+    // de début/fin du nombre de semaines entre la semaine de départ et d'arrivée.
+    // Conserve donc la durée du chantier. Retourne true si un décalage a eu lieu.
+    const rescheduleSite = (siteId: string, fromWeekKey: string, toWeekKey: string): boolean => {
+      if (!siteId || !fromWeekKey || !toWeekKey || fromWeekKey === toWeekKey) return false;
+      const fromParsed = parseWeekKey(fromWeekKey);
+      const toParsed = parseWeekKey(toWeekKey);
+      if (!fromParsed || !toParsed) return false;
+      const deltaDays = ((toParsed.year * 53 + toParsed.week) - (fromParsed.year * 53 + fromParsed.week)) * 7;
+      if (deltaDays === 0) return false;
+      const shiftWeekKey = (wk: string): string => {
+        const parsed = parseWeekKey(wk);
+        if (!parsed) return wk;
+        const d = isoWeekStart(parsed.year, parsed.week);
+        d.setDate(d.getDate() + deltaDays);
+        return weekKeyOf(d);
+      };
+      const shiftDateKey = (dk: string | null | undefined): string | null => {
+        if (!dk) return dk ?? null;
+        try {
+          const d = fromLocalKey(dk);
+          d.setDate(d.getDate() + deltaDays);
+          return toLocalKey(d);
+        } catch { return dk; }
+      };
+      setSites((prev: any[]) => prev.map((s: any) => {
+        if (s.id !== siteId) return s;
+        const newPlanningWeeks = Array.isArray(s.planningWeeks)
+          ? s.planningWeeks.map(shiftWeekKey)
+          : s.planningWeeks;
+        return {
+          ...s,
+          planningWeeks: newPlanningWeeks,
+          startDate: shiftDateKey(s.startDate),
+          endDate: shiftDateKey(s.endDate),
+        };
+      }));
+      return true;
+    };
+
+    // Drop d'un chip sur un autre chip.
+    // → Semaine différente : drag latéral = re-planification (décalage des dates).
+    // → Même semaine : simple échange des numéros de lane (réordonnancement vertical).
     if (data.type === "calendar-site" && over.data?.current?.type === "lane-drop") {
       const fromSiteId: string = data.siteId;
+      const fromWeekKey: string = data.fromWeekKey;
+      const targetWeekKey: string | undefined = over.data.current.weekKey;
+      if (targetWeekKey && fromWeekKey && targetWeekKey !== fromWeekKey) {
+        rescheduleSite(fromSiteId, fromWeekKey, targetWeekKey);
+        return;
+      }
       const toSiteId: string | null = over.data.current.siteId;
       if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return;
       const lanes = calendarSiteLaneRef.current;
@@ -3219,9 +3266,17 @@ export default function PlannerApp({
       return;
     }
 
-    // Pin sur une row vide (au-dessus, en-dessous, ou dans un gap) → déplace juste le chantier glissé
+    // Drop sur une row vide.
+    // → Semaine différente : drag latéral = re-planification.
+    // → Même semaine : pin du chantier glissé sur cette lane (réordonnancement vertical).
     if (data.type === "calendar-site" && over.data?.current?.type === "lane-pin") {
       const fromSiteId: string = data.siteId;
+      const fromWeekKey: string = data.fromWeekKey;
+      const targetWeekKey: string | undefined = over.data.current.weekKey;
+      if (targetWeekKey && fromWeekKey && targetWeekKey !== fromWeekKey) {
+        rescheduleSite(fromSiteId, fromWeekKey, targetWeekKey);
+        return;
+      }
       const targetLane: number = Number(over.data.current.lane);
       if (!fromSiteId || !Number.isFinite(targetLane)) return;
       const currentLane = calendarSiteLaneRef.current.get(fromSiteId);
@@ -3262,45 +3317,7 @@ export default function PlannerApp({
     }
 
     if (data.type === "calendar-site" && over.data?.current?.type === "calendar-week") {
-      const fromWeekKey: string = data.fromWeekKey;
-      const toWeekKey: string = over.data.current.weekKey;
-      if (fromWeekKey === toWeekKey) return;
-      const siteId: string = data.siteId;
-      // Compute delta in ISO weeks
-      const fromParsed = parseWeekKey(fromWeekKey);
-      const toParsed = parseWeekKey(toWeekKey);
-      if (!fromParsed || !toParsed) return;
-      const fromAbs = fromParsed.year * 53 + fromParsed.week;
-      const toAbs = toParsed.year * 53 + toParsed.week;
-      const deltaDays = (toAbs - fromAbs) * 7;
-      const shiftWeekKey = (wk: string): string => {
-        const parsed = parseWeekKey(wk);
-        if (!parsed) return wk;
-        const d = isoWeekStart(parsed.year, parsed.week);
-        d.setDate(d.getDate() + deltaDays);
-        return weekKeyOf(d);
-      };
-      setSites((prev: any[]) => prev.map((s: any) => {
-        if (s.id !== siteId) return s;
-        const newPlanningWeeks = Array.isArray(s.planningWeeks)
-          ? s.planningWeeks.map(shiftWeekKey)
-          : s.planningWeeks;
-        // Shift startDate / endDate
-        const shiftDateKey = (dk: string | null | undefined): string | null => {
-          if (!dk) return dk ?? null;
-          try {
-            const d = fromLocalKey(dk);
-            d.setDate(d.getDate() + deltaDays);
-            return toLocalKey(d);
-          } catch { return dk; }
-        };
-        return {
-          ...s,
-          planningWeeks: newPlanningWeeks,
-          startDate: shiftDateKey(s.startDate),
-          endDate: shiftDateKey(s.endDate),
-        };
-      }));
+      rescheduleSite(data.siteId, data.fromWeekKey, over.data.current.weekKey);
       return;
     }
 
