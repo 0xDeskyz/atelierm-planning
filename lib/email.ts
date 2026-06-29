@@ -12,7 +12,9 @@ function appUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 }
 
-const FROM = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+// Expéditeur par défaut. À surcharger via RESEND_FROM_EMAIL.
+// Nécessite que le domaine atelierm.fr soit vérifié dans Resend.
+const FROM = process.env.RESEND_FROM_EMAIL || "Atelier M Planning <info@atelierm.fr>";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrateur",
