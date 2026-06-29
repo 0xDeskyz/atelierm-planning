@@ -1,10 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentOrg, hasAccess } from "@/lib/auth/org";
+import { getCurrentOrg } from "@/lib/auth/org";
 import PlannerApp from "./_planner/PlannerApp";
-import Landing from "./_landing/Landing";
 
 export const dynamic = "force-dynamic";
+
+// Accès simplifié : connexion requise → planning. Plus d'onboarding,
+// plus d'essai, plus de facturation bloquante. Le planning est partagé
+// sur une clé fixe (ou celle de l'org existante si présente).
+const FALLBACK_STATE_KEY = "planner-main";
 
 export default async function Page() {
   const supabase = createClient();
@@ -12,35 +16,23 @@ export default async function Page() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Visiteur non connecté → page d'accueil marketing
+  // Non connecté → page de connexion
   if (!user) {
-    return <Landing />;
+    redirect("/login");
   }
 
+  // On récupère l'org si elle existe (pour réutiliser son planning),
+  // mais on ne bloque jamais : pas d'org → clé fixe partagée.
   const org = await getCurrentOrg();
-
-  // Connecté mais sans organisation → onboarding (création de société)
-  if (!org) {
-    redirect("/onboarding");
-  }
-
-  // Org suspendue par l'admin → message dédié
-  if (org.suspended) {
-    redirect("/facturation?suspended=1");
-  }
-
-  // Essai terminé et pas d'abonnement → page de facturation
-  if (!hasAccess(org)) {
-    redirect("/facturation?expired=1");
-  }
+  const stateKey = org?.stateKey || FALLBACK_STATE_KEY;
 
   return (
     <PlannerApp
-      stateKey={org.stateKey}
-      canEdit={org.role === "owner" || org.role === "admin"}
+      stateKey={stateKey}
+      canEdit={true}
       userEmail={user.email || ""}
-      orgName={org.orgName}
-      role={org.role}
+      orgName={org?.orgName || "Atelier M"}
+      role={org?.role || "owner"}
     />
   );
 }

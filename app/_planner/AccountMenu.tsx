@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogOut, User as UserIcon, Building2, Users, CreditCard, LayoutDashboard } from "lucide-react";
+import { LogOut, User as UserIcon, Building2, LayoutDashboard } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const ADMIN_EMAIL = "deskyzm@gmail.com";
@@ -80,20 +80,6 @@ export default function AccountMenu({
               Dashboard admin
             </Link>
           )}
-          <Link
-            href="/equipe"
-            className="w-full flex items-center gap-2 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition border-b"
-          >
-            <Users className="w-4 h-4 text-neutral-400" />
-            Gérer l'équipe
-          </Link>
-          <Link
-            href="/facturation"
-            className="w-full flex items-center gap-2 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition border-b"
-          >
-            <CreditCard className="w-4 h-4 text-neutral-400" />
-            Abonnement
-          </Link>
           <button
             onClick={logout}
             disabled={loading}
