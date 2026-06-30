@@ -494,7 +494,7 @@ function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffCo
   return cat?.color || "bg-neutral-400";
 }
 
-function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean }) {
+function CalendarSiteChip({ site, weekKey, className, isStart, isEnd, onInfo }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean; onInfo?: (e: React.MouseEvent) => void }) {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
     data: { type: "calendar-site", siteId: site.id, fromWeekKey: weekKey },
@@ -509,7 +509,7 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
   const style: React.CSSProperties = isDragging
     ? { touchAction: "none", opacity: 0 }
     : { touchAction: "none" };
-  const tooltipParts: string[] = [site.name];
+  const tooltipParts: string[] = [site.name, "cliquer pour les infos"];
   if (isStart) tooltipParts.push("démarre cette semaine");
   if (isEnd) tooltipParts.push("se termine cette semaine");
   return (
@@ -518,10 +518,12 @@ function CalendarSiteChip({ site, weekKey, className, isStart, isEnd }: { site: 
       style={style}
       {...listeners}
       {...attributes}
+      // Un clic (sans glisser, seuil 8px) ouvre les infos rapides du chantier
+      onClick={(e) => { if (onInfo) { e.stopPropagation(); onInfo(e); } }}
       className={cx(
         className,
         "rounded-full",
-        "cursor-grab active:cursor-grabbing select-none",
+        "cursor-pointer active:cursor-grabbing select-none",
         isDragging && "opacity-0",
         isOver && "brightness-110 ring-2 ring-white ring-inset"
       )}
@@ -2164,6 +2166,31 @@ export default function PlannerApp({
   const [calFilterPending, setCalFilterPending] = useState(true);
   const [calFilterAbsences, setCalFilterAbsences] = useState(true);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
+  // Popover d'infos rapides au clic sur un chantier dans le calendrier
+  const [calInfoSite, setCalInfoSite] = useState<{ site: any; x: number; y: number } | null>(null);
+
+  // Mémorise les filtres du calendrier par navigateur (pour ne pas les recliquer à chaque visite)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("atelierm-cal-view");
+      if (raw) {
+        const v = JSON.parse(raw);
+        if (typeof v.planned === "boolean") setCalFilterPlanned(v.planned);
+        if (typeof v.pending === "boolean") setCalFilterPending(v.pending);
+        if (typeof v.absences === "boolean") setCalFilterAbsences(v.absences);
+        if (typeof v.events === "boolean") setCalFilterEvents(v.events);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("atelierm-cal-view", JSON.stringify({
+        planned: calFilterPlanned, pending: calFilterPending,
+        absences: calFilterAbsences, events: calFilterEvents,
+      }));
+    } catch {}
+  }, [calFilterPlanned, calFilterPending, calFilterAbsences, calFilterEvents]);
   // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
@@ -6171,6 +6198,7 @@ useEffect(() => {
                                             weekKey={week.weekKey}
                                             isStart={isStart}
                                             isEnd={isEnd}
+                                            onInfo={(e) => setCalInfoSite({ site, x: e.clientX, y: e.clientY })}
                                             className={cx(
                                               "block w-full text-[10px] px-2 font-semibold text-white shadow-sm leading-6",
                                               getChantierColor(site)
@@ -7536,6 +7564,55 @@ useEffect(() => {
           }}
         />
       )}
+
+      {/* Popover infos rapides chantier (clic depuis le calendrier) */}
+      {calInfoSite && (() => {
+        const s = calInfoSite.site;
+        const lvl = resolveDifficulteLevel(s, difficulteConfig);
+        const meta = DIFFICULTE_LEVEL_META[lvl];
+        const cat = CATEGORIE_PRINCIPALE_OPTIONS.find((c) => c.value === s.categoriePrincipale);
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const left = Math.max(8, Math.min(calInfoSite.x, vw - 304));
+        const top = Math.max(8, Math.min(calInfoSite.y + 12, vh - 300));
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setCalInfoSite(null)} />
+            <div className="fixed z-50 w-72 rounded-xl border bg-white shadow-xl p-4 text-sm" style={{ left, top }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={cx("w-3 h-3 rounded-full inline-block border border-black/10 shrink-0", getChantierColor(s))} />
+                  <span className="font-semibold text-neutral-900 truncate">{s.name}</span>
+                </div>
+                <button onClick={() => setCalInfoSite(null)} className="text-neutral-400 hover:text-neutral-700 leading-none text-lg">×</button>
+              </div>
+              <div className="mt-3 space-y-1.5 text-[13px]">
+                {s.clientName && <div className="flex justify-between gap-3"><span className="text-neutral-400">Client</span><span className="text-neutral-800 text-right truncate">{s.clientName}</span></div>}
+                <div className="flex justify-between gap-3"><span className="text-neutral-400">Semaines</span><span className="text-neutral-800 text-right">{s.planningWeeks?.length ? formatWeeksSummary(s.planningWeeks) : "—"}</span></div>
+                {s.quoteSnapshot?.amount ? <div className="flex justify-between gap-3"><span className="text-neutral-400">Budget</span><span className="text-neutral-800">{formatEUR(s.quoteSnapshot.amount)}</span></div> : null}
+                {cat && <div className="flex justify-between gap-3 items-center"><span className="text-neutral-400">Catégorie</span><span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", cat.badge)}>{cat.label}</span></div>}
+              </div>
+              <div className="mt-3 pt-3 border-t">
+                <div className="flex items-center gap-2">
+                  <span className="text-neutral-400 text-[13px]">Difficulté</span>
+                  <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1", meta.badge)}>
+                    <span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />{meta.label}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[13px] text-neutral-600 whitespace-pre-wrap">
+                  {s.difficulteReason?.trim() ? s.difficulteReason : <span className="text-neutral-300 italic">Aucune justification renseignée</span>}
+                </p>
+              </div>
+              <button
+                onClick={() => { openSiteDetail(s.id); setCalInfoSite(null); }}
+                className="mt-3 w-full rounded-lg bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-700 transition"
+              >
+                Ouvrir la fiche complète
+              </button>
+            </div>
+          </>
+        );
+      })()}
 
       {personDetail && (
         <PersonDetailDialog
