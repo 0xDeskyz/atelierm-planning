@@ -4636,6 +4636,24 @@ useEffect(() => {
                 ))}
               </div>
             )}
+            {view === "planning" && (
+              <div className="flex items-center gap-1 rounded-full bg-neutral-100 p-1 pr-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2">Couleur</span>
+                {([
+                  { key: "categorie",  label: "Catégorie" },
+                  { key: "difficulte", label: "Difficulté" },
+                ] as const).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setSiteColorMode(key)}
+                    className={cx(
+                      "px-2.5 py-1 rounded-full text-xs font-medium transition",
+                      siteColorMode === key ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                    )}
+                  >{label}</button>
+                ))}
+              </div>
+            )}
             {["planning", "hours", "timeline", "calendar"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
