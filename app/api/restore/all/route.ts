@@ -1,10 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/restore/all — liste tous les backups, groupés par clé (client admin).
+// GET /api/restore/all — liste tous les backups, groupés par clé (client de session).
 export async function GET() {
   try {
     const supabase = createClient();
@@ -13,8 +12,7 @@ export async function GET() {
     } = await supabase.auth.getUser();
     if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-    const admin = createAdminClient();
-    const { data, error } = await admin
+    const { data, error } = await supabase
       .from("planner_state_backup")
       .select("id, key, created_at, data")
       .order("created_at", { ascending: false })

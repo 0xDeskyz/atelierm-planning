@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,22 +7,16 @@ function orgIdFromKey(key: string): string | null {
   return key.startsWith("org-") ? key.slice(4) : null;
 }
 
-async function requireUser() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
-}
-
-// GET /api/restore/[key] — liste les 20 derniers backups
+// GET /api/restore/[key] — liste les 20 derniers backups (client de session + RLS permissive)
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
-    const user = await requireUser();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-    const admin = createAdminClient();
-    const { data, error } = await admin
+    const { data, error } = await supabase
       .from("planner_state_backup")
       .select("id, key, created_at, data")
       .eq("key", params.key)
@@ -53,16 +46,18 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 // POST /api/restore/[key] — restaure le backup { id }
 export async function POST(req: Request, { params }: { params: { key: string } }) {
   try {
-    const user = await requireUser();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const { id } = await req.json();
     if (!id) return Response.json({ ok: false, error: "id manquant" }, { status: 400 });
 
     const orgId = orgIdFromKey(params.key); // null pour une clé fixe
-    const admin = createAdminClient();
 
-    const { data: backup, error: fetchErr } = await admin
+    const { data: backup, error: fetchErr } = await supabase
       .from("planner_state_backup")
       .select("data")
       .eq("id", id)
@@ -75,7 +70,7 @@ export async function POST(req: Request, { params }: { params: { key: string } }
 
     const restored = { ...backup.data, updatedAt: Date.now(), restoredAt: new Date().toISOString() };
 
-    const { error: saveErr } = await admin
+    const { error: saveErr } = await supabase
       .from("planner_state")
       .upsert({ key: params.key, org_id: orgId, data: restored, updated_at: new Date().toISOString() });
 

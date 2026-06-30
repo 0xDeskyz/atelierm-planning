@@ -1,24 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// Accès simplifié (mono-entreprise) : on exige juste un utilisateur connecté,
-// puis on lit/écrit via le client admin (service-role) qui contourne la RLS.
-// Plus aucun blocage lié aux organisations : tant que tu es connecté, ça sauvegarde.
+// Sauvegarde fiable (app mono-entreprise) : on utilise le client de session
+// (clé anon + cookies) — celui qui sert déjà à la connexion, donc toujours
+// correctement configuré. Les règles RLS sont permissives (cf. relax_state_rls.sql) :
+// tout utilisateur connecté peut lire/écrire. Aucune dépendance au service-role.
 // La clé peut être `org-{uuid}` (héritage) ou une clé fixe comme `planner-main`.
 function orgIdFromKey(key: string): string | null {
   return key.startsWith("org-") ? key.slice(4) : null;
-}
-
-async function requireUser() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
 }
 
 function looksEmpty(payload: any) {
@@ -40,11 +32,13 @@ const NO_CACHE = {
 
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
-    const user = await requireUser();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return Response.json(null, { status: 401 });
 
-    const admin = createAdminClient();
-    const { data, error } = await admin
+    const { data, error } = await supabase
       .from("planner_state")
       .select("data")
       .eq("key", params.key)
@@ -61,16 +55,18 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
   try {
-    const user = await requireUser();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const orgId = orgIdFromKey(params.key); // null pour une clé fixe (planner-main)
     const body = await req.json();
     const incomingVersion = Number(body?.updatedAt || 0);
-    const admin = createAdminClient();
 
     // prev : empty-guard, backup, et décision INSERT vs UPDATE.
-    const { data: prevRow } = await admin
+    const { data: prevRow } = await supabase
       .from("planner_state")
       .select("data")
       .eq("key", params.key)
@@ -96,12 +92,12 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
     // Backup du précédent — fire-and-forget
     if (prev) {
-      admin
+      supabase
         .from("planner_state_backup")
         .insert({ key: params.key, org_id: orgId, data: prev })
         .then(({ error: backupErr }) => {
           if (backupErr) return;
-          admin
+          supabase
             .from("planner_state_backup")
             .select("id")
             .eq("key", params.key)
@@ -109,7 +105,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
             .then(({ data: ids }) => {
               if (ids && ids.length > 20) {
                 const toDelete = ids.slice(20).map((r: any) => r.id);
-                admin.from("planner_state_backup").delete().in("id", toDelete);
+                supabase.from("planner_state_backup").delete().in("id", toDelete);
               }
             });
         });
@@ -122,7 +118,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
     if (prev !== null) {
       writeMethod = "update";
-      const { data: updated, error: updateErr } = await admin
+      const { data: updated, error: updateErr } = await supabase
         .from("planner_state")
         .update({ data: body, updated_at: ts })
         .eq("key", params.key)
@@ -131,7 +127,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       writeError = updateErr?.message ?? null;
     } else {
       writeMethod = "insert";
-      const { data: inserted, error: insertErr } = await admin
+      const { data: inserted, error: insertErr } = await supabase
         .from("planner_state")
         .insert({ key: params.key, org_id: orgId, data: body, updated_at: ts })
         .select("key");
