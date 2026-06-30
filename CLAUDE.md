@@ -21,4 +21,4 @@ Next.js 14 planning app for a French construction company (Atelier M).
 - Span-based greedy packing for lane assignment (first→last planningWeek of each chantier)
 - `LANE_H = 26px` per row
 - Category colors: emerald (AO), violet (Particulier), blue (Pro)
-- Difficulty colors: amber-500 (jaune), orange-500 (orange), red-500 (rouge)
+- Difficulty: 4 niveaux choisis MANUELLEMENT par chantier (`difficulteLevel` + `difficulteReason` texte). Couleurs : green-500 (vert), yellow-400 (jaune), orange-500 (orange), red-500 (rouge). `resolveDifficulteLevel()` retombe sur l'ancien calcul par drapeaux (`difficulte` flags) pour les chantiers non encore édités.

@@ -88,6 +88,7 @@ import {
   DEFAULT_SOUS_CATEGORIES,
   DIFFICULTE_FLAG_LABELS,
   DIFFICULTE_LEVEL_META,
+  DIFFICULTE_LEVELS,
   DifficulteLevel,
   computeDifficulteLevel,
   normalizeQuoteRecord,
@@ -474,10 +475,19 @@ function computeDifficulteWithConfig(
   return "jaune";
 }
 
+// Niveau de difficulté d'un chantier : on prend le niveau choisi MANUELLEMENT
+// (nouveau système : vert/jaune/orange/rouge) ; à défaut on retombe sur l'ancien
+// calcul à partir des cases à cocher (compat. chantiers existants).
+function resolveDifficulteLevel(site: any, diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): DifficulteLevel {
+  const manual = site?.difficulteLevel;
+  if (manual && (DIFFICULTE_LEVELS as string[]).includes(manual)) return manual as DifficulteLevel;
+  return diffConfig ? computeDifficulteWithConfig(site?.difficulte, diffConfig) : computeDifficulteLevel(site?.difficulte);
+}
+
 // Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
 function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): string {
   if (mode === "difficulte") {
-    const lvl = diffConfig ? computeDifficulteWithConfig(site?.difficulte, diffConfig) : computeDifficulteLevel(site?.difficulte);
+    const lvl = resolveDifficulteLevel(site, diffConfig);
     return DIFFICULTE_LEVEL_META[lvl].color;
   }
   const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
@@ -959,6 +969,9 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [sousCategorie, setSousCategorie] = useState<string>("");
   const [newSousCatInput, setNewSousCatInput] = useState<string>("");
   const [diffFlags, setDiffFlags] = useState<Record<string, boolean>>({});
+  // Nouveau système : niveau choisi manuellement + justification libre
+  const [difficulteLevel, setDifficulteLevel] = useState<DifficulteLevel>("vert");
+  const [difficulteReason, setDifficulteReason] = useState<string>("");
 
   useEffect(() => {
     setTab("infos");
@@ -991,6 +1004,13 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setSousCategorie(site?.sousCategorie || "");
     setNewSousCatInput("");
     setDiffFlags(Object.fromEntries(activeDiffFlags.map(f => [f.key, !!(site?.difficulte?.[f.key])])));
+    // Niveau manuel : si déjà défini on le reprend, sinon on retombe sur l'ancien
+    // calcul (pour que les chantiers existants conservent leur couleur).
+    const existingLevel = site?.difficulteLevel && (DIFFICULTE_LEVELS as string[]).includes(site.difficulteLevel)
+      ? (site.difficulteLevel as DifficulteLevel)
+      : (diffCfg ? computeDifficulteWithConfig(site?.difficulte, diffCfg) : computeDifficulteLevel(site?.difficulte));
+    setDifficulteLevel(existingLevel);
+    setDifficulteReason(site?.difficulteReason || "");
     setConfirmArchive(false);
     setConfirmDelete(false);
   }, [site, diffCfg]);
@@ -1024,6 +1044,8 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       categoriePrincipale: categoriePrincipale || null,
       sousCategorie: sousCategorie || null,
       difficulte: diffFlags,
+      difficulteLevel,
+      difficulteReason: difficulteReason.trim(),
     });
   };
 
@@ -1149,38 +1171,34 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                 </div>
               </label>
               <div className="space-y-1.5 md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
-                  {(() => {
-                    const lvl = diffCfg ? computeDifficulteWithConfig(diffFlags, diffCfg) : computeDifficulteLevel(diffFlags as any);
-                    const meta = DIFFICULTE_LEVEL_META[lvl];
-                    return (
-                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full border", meta.badge)}>
-                        ● {meta.label}
-                      </span>
-                    );
-                  })()}
-                </div>
+                <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
                 <div className="flex flex-wrap gap-2">
-                  {activeDiffFlags.map(({ key, label }) => {
-                    const val = !!diffFlags[key];
+                  {DIFFICULTE_LEVELS.map((lvl) => {
+                    const meta = DIFFICULTE_LEVEL_META[lvl];
+                    const active = difficulteLevel === lvl;
                     return (
-                      <label key={key} className={cx(
-                        "flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition",
-                        val ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
-                      )}>
-                        <input
-                          type="checkbox"
-                          checked={val}
-                          onChange={(e) => setDiffFlags(prev => ({ ...prev, [key]: e.target.checked }))}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>{label}</span>
-                      </label>
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setDifficulteLevel(lvl)}
+                        className={cx(
+                          "flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm transition",
+                          active ? "border-neutral-900 ring-2 ring-neutral-900/10 bg-neutral-50" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                        )}
+                      >
+                        <span className={cx("w-3.5 h-3.5 rounded-full inline-block border border-black/10", meta.color)} />
+                        <span className={cx(active && "font-semibold text-neutral-900")}>{meta.label}</span>
+                      </button>
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-neutral-400">Configurable dans Réglages → Personnalisation</p>
+                <textarea
+                  value={difficulteReason}
+                  onChange={(e) => setDifficulteReason(e.target.value)}
+                  placeholder="Pourquoi ce niveau de difficulté ? (ex: accès compliqué, délai serré, marge faible…)"
+                  rows={2}
+                  className="w-full rounded-md border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 resize-y"
+                />
               </div>
               <label className="space-y-1">
                 <span className="text-[11px] text-neutral-600 flex items-center gap-2">
@@ -6527,7 +6545,7 @@ useEffect(() => {
                   if (sitesFilter === "archived" && st !== "archived") return false;
                   if (sitesCatFilters.length > 0 && !sitesCatFilters.includes(s.categoriePrincipale)) return false;
                   if (sitesDiffFilters.length > 0) {
-                    const lvl = computeDifficulteWithConfig(s.difficulte, difficulteConfig);
+                    const lvl = resolveDifficulteLevel(s, difficulteConfig);
                     if (!sitesDiffFilters.includes(lvl)) return false;
                   }
                   if (sitesSearch.trim()) {
@@ -6544,9 +6562,9 @@ useEffect(() => {
                   if (sitesSort.col === "status") return (a.status || 'planned').localeCompare(b.status || 'planned') * dir;
                   if (sitesSort.col === "categorie") return (a.categoriePrincipale || '').localeCompare(b.categoriePrincipale || '', 'fr') * dir;
                   if (sitesSort.col === "difficulte") {
-                    const la = computeDifficulteWithConfig(a.difficulte, difficulteConfig);
-                    const lb = computeDifficulteWithConfig(b.difficulte, difficulteConfig);
-                    const order: Record<string, number> = { jaune: 0, orange: 1, rouge: 2 };
+                    const la = resolveDifficulteLevel(a, difficulteConfig);
+                    const lb = resolveDifficulteLevel(b, difficulteConfig);
+                    const order: Record<string, number> = { vert: 0, jaune: 1, orange: 2, rouge: 3 };
                     return ((order[la] ?? 0) - (order[lb] ?? 0)) * dir;
                   }
                   return 0;
@@ -6677,7 +6695,7 @@ useEffect(() => {
                           <div className="w-px h-4 bg-neutral-200" />
                           {/* Difficulty */}
                           <div className="flex items-center gap-1 flex-wrap">
-                            {(["jaune", "orange", "rouge"] as const).map(lvl => {
+                            {(["vert", "jaune", "orange", "rouge"] as const).map(lvl => {
                               const meta = DIFFICULTE_LEVEL_META[lvl];
                               const active = sitesDiffFilters.includes(lvl);
                               return (
@@ -6794,7 +6812,7 @@ useEffect(() => {
                                   ) : <span className="text-neutral-300">Non planifié</span>}
                                 </td>
                                 <td className="px-3 py-2.5">{(() => { const c = CATEGORIE_PRINCIPALE_OPTIONS.find(x => x.value === site.categoriePrincipale); return c ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", c.badge)}>{c.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
-                                <td className="px-3 py-2.5">{(() => { const lvl = computeDifficulteWithConfig(site.difficulte, difficulteConfig); const meta = DIFFICULTE_LEVEL_META[lvl]; const anyFlag = site.difficulte && Object.values(site.difficulte).some(Boolean); return anyFlag ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1 w-fit", meta.badge)}><span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />{meta.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
+                                <td className="px-3 py-2.5">{(() => { const manual = site.difficulteLevel && (DIFFICULTE_LEVELS as string[]).includes(site.difficulteLevel); const anyFlag = site.difficulte && Object.values(site.difficulte).some(Boolean); if (!manual && !anyFlag) return <span className="text-neutral-300 text-[11px]">—</span>; const lvl = resolveDifficulteLevel(site, difficulteConfig); const meta = DIFFICULTE_LEVEL_META[lvl]; return <span title={site.difficulteReason || undefined} className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1 w-fit", meta.badge)}><span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />{meta.label}</span>; })()}</td>
                                 <td className="px-3 py-2.5">{statusBadge(site.status || "planned")}</td>
                                 <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                                   <div className="flex items-center gap-1">
@@ -8018,99 +8036,23 @@ useEffect(() => {
                   </div>
                   <p className="text-xs text-neutral-400">La personnalisation est mémorisée dans votre navigateur (local). Pour la retrouver sur un autre poste, exportez/importez les données.</p>
 
-                  {/* Difficulty config */}
-                  <div className="space-y-3 pt-3 border-t border-neutral-100">
-                    <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Seuils de difficulté</label>
-                    <p className="text-[11px] text-neutral-400">Configure à partir de combien de drapeaux un chantier s'affiche en rouge dans le planning.</p>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-neutral-700">Rouge à partir de combien de drapeaux</label>
-                      <div className="flex gap-2">
-                        {[1, 2, 3].map((n) => (
-                          <button
-                            key={n}
-                            onClick={() => setDifficulteConfig((prev) => ({ ...prev, rougeAtCount: n }))}
-                            className={cx(
-                              "flex-1 py-2 rounded-md border text-sm font-semibold transition",
-                              difficulteConfig.rougeAtCount === n
-                                ? "bg-red-500 text-white border-red-500"
-                                : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
-                            )}
-                          >
-                            {n} {n === 1 ? "drapeau" : "drapeaux"}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-neutral-400">
-                        {difficulteConfig.rougeAtCount === 1
-                          ? "1 drapeau → rouge directement, 0 → jaune"
-                          : difficulteConfig.rougeAtCount === 2
-                          ? "0 drapeau → jaune · 1 → orange · 2+ → rouge"
-                          : "0 drapeau → jaune · 1-2 → orange · 3 → rouge"}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-neutral-700">Drapeaux forçant rouge directement</label>
-                      <div className="flex flex-col gap-1.5">
-                        {(Object.entries({ technique: "Technique délicate", delai: "Délai serré", marge: "Marge incertaine" }) as [string, string][]).map(([key, label]) => {
-                          const isActive = difficulteConfig.alwaysRougeFlags.includes(key);
-                          return (
-                            <button
-                              key={key}
-                              onClick={() => setDifficulteConfig((prev) => ({
-                                ...prev,
-                                alwaysRougeFlags: isActive
-                                  ? prev.alwaysRougeFlags.filter((f) => f !== key)
-                                  : [...prev.alwaysRougeFlags, key],
-                              }))}
-                              className={cx(
-                                "flex items-center justify-between px-3 py-2 rounded-md border text-sm transition",
-                                isActive
-                                  ? "bg-red-50 border-red-300 text-red-700"
-                                  : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50"
-                              )}
-                            >
-                              <span>{label}</span>
-                              <span className={cx(
-                                "text-[10px] px-2 py-0.5 rounded-full font-semibold",
-                                isActive ? "bg-red-500 text-white" : "bg-neutral-100 text-neutral-400"
-                              )}>
-                                {isActive ? "Rouge" : "Inactif"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <p className="text-[10px] text-neutral-400">Si activé, la présence de ce drapeau seul suffit à afficher rouge, peu importe le seuil.</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-neutral-700">Drapeaux de difficulté</label>
-                      <div className="flex flex-col gap-1">
-                        {difficulteConfig.flags.map((f) => (
-                          <div key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 bg-neutral-50 text-sm">
-                            <span className="flex-1 text-neutral-700">{f.label}</span>
-                            {difficulteConfig.flags.length > 1 && (
-                              <button
-                                onClick={() => setDifficulteConfig((prev) => ({
-                                  ...prev,
-                                  flags: prev.flags.filter((x) => x.key !== f.key),
-                                  alwaysRougeFlags: prev.alwaysRougeFlags.filter((k) => k !== f.key),
-                                }))}
-                                className="text-neutral-400 hover:text-red-500 transition text-base leading-none px-1"
-                                title="Supprimer ce drapeau"
-                              >×</button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <NewFlagInput onAdd={(label: string) => {
-                        const key = label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
-                        if (!key || difficulteConfig.flags.some(f => f.key === key)) return;
-                        setDifficulteConfig((prev) => ({ ...prev, flags: [...prev.flags, { key, label }] }));
-                      }} />
-                      <p className="text-[10px] text-neutral-400">Minimum 1 drapeau. Les drapeaux supprimés ne sont plus affichés dans les formulaires.</p>
+                  {/* Difficulté : niveau désormais choisi manuellement dans chaque fiche chantier */}
+                  <div className="space-y-2 pt-3 border-t border-neutral-100">
+                    <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Difficulté des chantiers</label>
+                    <p className="text-[11px] text-neutral-400">
+                      Le niveau de difficulté se choisit maintenant directement dans chaque fiche chantier
+                      (4 couleurs : vert, jaune, orange, rouge) avec une justification libre. Plus de seuils à configurer ici.
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {DIFFICULTE_LEVELS.map((lvl) => {
+                        const meta = DIFFICULTE_LEVEL_META[lvl];
+                        return (
+                          <span key={lvl} className={cx("inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold border", meta.badge)}>
+                            <span className={cx("w-2.5 h-2.5 rounded-full inline-block", meta.color)} />
+                            {meta.label}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

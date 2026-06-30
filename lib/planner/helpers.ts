@@ -270,9 +270,11 @@ export const DIFFICULTE_FLAG_LABELS = {
 } as const;
 export type DifficulteFlagKey = keyof typeof DIFFICULTE_FLAG_LABELS;
 
-export type DifficulteLevel = "jaune" | "orange" | "rouge";
+export type DifficulteLevel = "vert" | "jaune" | "orange" | "rouge";
+export const DIFFICULTE_LEVELS: DifficulteLevel[] = ["vert", "jaune", "orange", "rouge"];
 export const DIFFICULTE_LEVEL_META: Record<DifficulteLevel, { label: string; color: string; hex: string; badge: string }> = {
-  jaune:  { label: "Jaune",  color: "bg-amber-500", hex: "#f59e0b", badge: "bg-amber-100 text-amber-800 border-amber-200" },
+  vert:   { label: "Vert",   color: "bg-green-500",  hex: "#22c55e", badge: "bg-green-100 text-green-800 border-green-200" },
+  jaune:  { label: "Jaune",  color: "bg-yellow-400", hex: "#facc15", badge: "bg-yellow-100 text-yellow-800 border-yellow-200" },
   orange: { label: "Orange", color: "bg-orange-500", hex: "#f97316", badge: "bg-orange-100 text-orange-800 border-orange-200" },
   rouge:  { label: "Rouge",  color: "bg-red-500",    hex: "#ef4444", badge: "bg-red-100 text-red-800 border-red-200" },
 };
@@ -302,12 +304,16 @@ export const normalizeSiteRecord = (site: any) => {
   }
   const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
   const sousCategorie = sousCategorieRaw || null;
-  // Préserver TOUS les flags de difficulté (y compris les flags personnalisés ajoutés dans les réglages)
+  // Préserver TOUS les flags de difficulté (héritage : ancien système calculé)
   const difficulteRaw = (base as any)?.difficulte;
   const difficulte: Record<string, boolean> =
     difficulteRaw && typeof difficulteRaw === "object"
       ? Object.fromEntries(Object.entries(difficulteRaw).map(([k, v]) => [k, !!v]))
       : { technique: false, delai: false, marge: false };
+  // Nouveau système : niveau choisi manuellement (vert/jaune/orange/rouge) + justification libre
+  const rawLevel = (base as any)?.difficulteLevel;
+  const difficulteLevel = DIFFICULTE_LEVELS.includes(rawLevel) ? rawLevel : null;
+  const difficulteReason = typeof (base as any)?.difficulteReason === "string" ? (base as any).difficulteReason : "";
   return {
     ...base,
     id: (base as any)?.id || ensureId(String((base as any)?.name || start), "site"),
@@ -333,6 +339,8 @@ export const normalizeSiteRecord = (site: any) => {
     categoriePrincipale,
     sousCategorie,
     difficulte,
+    difficulteLevel,
+    difficulteReason,
     situations: Array.isArray((base as any)?.situations) ? (base as any).situations.map((s: any) => ({
       id: s?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `sit-${Date.now()}-${Math.random()}`),
       label: typeof s?.label === "string" ? s.label : "",
