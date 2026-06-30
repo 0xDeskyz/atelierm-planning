@@ -3761,7 +3761,9 @@ export default function PlannerApp({
 
   const savePersonDetail = (payload: any) => {
     if (!payload?.id) return;
-    directSaveInFlightRef.current = true;
+    // On NE supprime PAS l'autosave ici : la modif de `people` doit déclencher
+    // la sauvegarde automatique normale (l'ancienne version bloquait l'autosave
+    // sans jamais envoyer de requête → la modif d'un salarié n'était jamais sauvée).
     setPeople((prev) => prev.map((p) => (p.id === payload.id ? normalizePersonRecord(payload) : p)));
     setPersonDetail(null);
     setPersonDetailOpen(false);
