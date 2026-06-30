@@ -2174,7 +2174,8 @@ export default function PlannerApp({
   const setCalendarScope = (_: any) => {};
   const [calFilterPlanned, setCalFilterPlanned] = useState(true);
   const [calFilterPending, setCalFilterPending] = useState(true);
-  const [calFilterAbsences, setCalFilterAbsences] = useState(true);
+  // Catégorie "Absences" retirée du calendrier : on n'affiche plus la bande absences.
+  const [calFilterAbsences, setCalFilterAbsences] = useState(false);
   const [calFilterEvents, setCalFilterEvents] = useState(true);
   // Popover d'infos rapides au clic sur un chantier dans le calendrier
   const [calInfoSite, setCalInfoSite] = useState<{ site: any; x: number; y: number } | null>(null);
@@ -2187,7 +2188,6 @@ export default function PlannerApp({
         const v = JSON.parse(raw);
         if (typeof v.planned === "boolean") setCalFilterPlanned(v.planned);
         if (typeof v.pending === "boolean") setCalFilterPending(v.pending);
-        if (typeof v.absences === "boolean") setCalFilterAbsences(v.absences);
         if (typeof v.events === "boolean") setCalFilterEvents(v.events);
       }
     } catch {}
@@ -2197,10 +2197,10 @@ export default function PlannerApp({
     try {
       localStorage.setItem("atelierm-cal-view", JSON.stringify({
         planned: calFilterPlanned, pending: calFilterPending,
-        absences: calFilterAbsences, events: calFilterEvents,
+        events: calFilterEvents,
       }));
     } catch {}
-  }, [calFilterPlanned, calFilterPending, calFilterAbsences, calFilterEvents]);
+  }, [calFilterPlanned, calFilterPending, calFilterEvents]);
   // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
@@ -5933,7 +5933,6 @@ useEffect(() => {
                     {[
                       { key: "planned", label: "Planifiés", active: calFilterPlanned, toggle: () => setCalFilterPlanned(v => !v), activeCls: "bg-sky-500 text-white border-sky-500", dot: "bg-white/70" },
                       { key: "pending", label: "En attente", active: calFilterPending, toggle: () => setCalFilterPending(v => !v), activeCls: "bg-amber-400 text-white border-amber-400", dot: "bg-white/70" },
-                      { key: "absences", label: "Absences", active: calFilterAbsences, toggle: () => setCalFilterAbsences(v => !v), activeCls: "bg-rose-400 text-white border-rose-400", dot: "bg-white/70" },
                       { key: "events", label: "Événements", active: calFilterEvents, toggle: () => setCalFilterEvents(v => !v), activeCls: "bg-violet-400 text-white border-violet-400", dot: "bg-white/70" },
                     ].map(({ key, label, active, toggle, activeCls, dot }) => (
                       <button
