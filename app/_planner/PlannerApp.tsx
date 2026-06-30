@@ -494,6 +494,16 @@ function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffCo
   return cat?.color || "bg-neutral-400";
 }
 
+// Même logique mais retourne un code hex (pour les bordures/styles inline)
+function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): string {
+  if (mode === "difficulte") {
+    const lvl = resolveDifficulteLevel(site, diffConfig);
+    return DIFFICULTE_LEVEL_META[lvl].hex;
+  }
+  const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+  return cat?.hex || "#94a3b8";
+}
+
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd, onInfo }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean; onInfo?: (e: React.MouseEvent) => void }) {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `calendar-site-${site.id}-${weekKey}`,
@@ -2342,6 +2352,10 @@ export default function PlannerApp({
   const safeSites = Array.isArray(sites) ? sites : [];
   const getChantierColor = useCallback(
     (site: any) => getSiteDisplayColor(site, siteColorMode, difficulteConfig),
+    [siteColorMode, difficulteConfig]
+  );
+  const getChantierHex = useCallback(
+    (site: any) => getSiteDisplayHex(site, siteColorMode, difficulteConfig),
     [siteColorMode, difficulteConfig]
   );
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
@@ -5601,7 +5615,7 @@ useEffect(() => {
                         <div
                           key={s.id}
                           className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white overflow-hidden border-l-4 px-2.5 py-2"
-                          style={{ borderLeftColor: COLOR_HEX[s.color] || "#94a3b8" }}
+                          style={{ borderLeftColor: getChantierHex(s) }}
                         >
                           <span className="text-sm font-medium text-neutral-800 truncate">{s.name}</span>
                           <button
