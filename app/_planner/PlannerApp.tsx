@@ -1980,6 +1980,8 @@ export default function PlannerApp({
   const [sitesDiffFilters, setSitesDiffFilters] = useState<string[]>([]);
   const [sitesSort, setSitesSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
   const [sitesSearch, setSitesSearch] = useState("");
+  // Multi-sélection des chantiers (actions groupées)
+  const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set());
   const [aoFormOpen, setAoFormOpen] = useState(false);
   const [aoFilter, setAoFilter] = useState<"all" | "a_repondre" | "depose" | "gagne" | "perdu">("all");
   const [devisFormOpen, setDevisFormOpen] = useState(false);
@@ -3643,6 +3645,47 @@ export default function PlannerApp({
   };
   const updateSiteMeta = (id: string, patch: any) =>
     setSites((s) => s.map((x) => (x.id === id ? normalizeSiteRecord({ ...x, ...patch }) : x)));
+
+  // ---- Actions groupées sur la sélection de chantiers ----
+  const toggleSiteSelection = (id: string) =>
+    setSelectedSiteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const clearSiteSelection = () => setSelectedSiteIds(new Set());
+
+  const bulkSetSiteStatus = (status: "planned" | "archived") => {
+    if (selectedSiteIds.size === 0) return;
+    const ids = selectedSiteIds;
+    setSites((s) => s.map((x) => (ids.has(x.id) ? normalizeSiteRecord({ ...x, status }) : x)));
+    clearSiteSelection();
+  };
+
+  const bulkDeleteSites = () => {
+    if (selectedSiteIds.size === 0) return;
+    const ids = selectedSiteIds;
+    if (!window.confirm(`Supprimer ${ids.size} chantier(s) ?\n\nLes affectations et notes liées seront aussi supprimées. Cette action peut être annulée avec Ctrl+Z.`)) return;
+    pushUndo(snapshotNow());
+    const removedSites = sites.filter((x: any) => ids.has(x.id));
+    setSites((s) => s.filter((x) => !ids.has(x.id)));
+    setAssignments((as) => as.filter((a) => !ids.has(a.siteId)));
+    setNotes((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      Object.keys(next).forEach((k) => { if (ids.has(k.split("|")[0])) delete (next as any)[k]; });
+      return next;
+    });
+    setSiteWeekVisibility((prev) => {
+      const next = { ...prev } as Record<string, any>;
+      ids.forEach((id) => { delete next[id]; });
+      return next;
+    });
+    const linkedQuoteIds = removedSites.map((r: any) => r.quoteId).filter(Boolean);
+    if (linkedQuoteIds.length) {
+      setQuotes((prev) => prev.map((q: any) => (linkedQuoteIds.includes(q.id) ? { ...q, chantierDeleted: true, siteId: null } : q)));
+    }
+    clearSiteSelection();
+  };
 
   const openClientHistory = (name: string) => {
     if (!name || !name.trim()) return;
@@ -6658,11 +6701,44 @@ useEffect(() => {
                         </div>
                       </div>
 
+                      {/* Barre d'actions groupées */}
+                      {selectedSiteIds.size > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <span className="text-sm font-semibold text-emerald-800">
+                            {selectedSiteIds.size} sélectionné{selectedSiteIds.size > 1 ? "s" : ""}
+                          </span>
+                          <div className="w-px h-4 bg-emerald-200" />
+                          <button onClick={() => bulkSetSiteStatus("archived")} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 transition">
+                            <Archive className="w-3.5 h-3.5" /> Archiver
+                          </button>
+                          <button onClick={() => bulkSetSiteStatus("planned")} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 transition">
+                            <RotateCcw className="w-3.5 h-3.5" /> Désarchiver
+                          </button>
+                          <button onClick={bulkDeleteSites} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-red-600 bg-white border border-red-200 hover:bg-red-50 transition">
+                            <Trash2 className="w-3.5 h-3.5" /> Supprimer
+                          </button>
+                          <button onClick={clearSiteSelection} className="ml-auto text-xs text-neutral-500 hover:text-neutral-800 underline">
+                            Désélectionner
+                          </button>
+                        </div>
+                      )}
+
                       {/* Table */}
                       <div className="overflow-x-auto rounded-lg border border-neutral-100">
                         <table className="w-full text-sm">
                           <thead className="bg-neutral-50 border-b border-neutral-100">
                             <tr>
+                              <th className="w-8 px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer accent-emerald-600 align-middle"
+                                  checked={filteredSites.length > 0 && filteredSites.every((s: any) => selectedSiteIds.has(s.id))}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setSelectedSiteIds((prev) => { const next = new Set(prev); filteredSites.forEach((s: any) => next.add(s.id)); return next; });
+                                    else setSelectedSiteIds((prev) => { const next = new Set(prev); filteredSites.forEach((s: any) => next.delete(s.id)); return next; });
+                                  }}
+                                />
+                              </th>
                               <th className="w-6 px-3 py-2" />
                               <SortTh col="name" label="Chantier" />
                               <SortTh col="client" label="Client" />
@@ -6681,9 +6757,20 @@ useEffect(() => {
                             {filteredSites.map((site: any) => (
                               <tr
                                 key={site.id}
-                                className="hover:bg-neutral-50 transition cursor-pointer"
+                                className={cx(
+                                  "transition cursor-pointer",
+                                  selectedSiteIds.has(site.id) ? "bg-emerald-50/60 hover:bg-emerald-50" : "hover:bg-neutral-50"
+                                )}
                                 onClick={() => openSiteDetail(site.id)}
                               >
+                                <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer accent-emerald-600 align-middle"
+                                    checked={selectedSiteIds.has(site.id)}
+                                    onChange={() => toggleSiteSelection(site.id)}
+                                  />
+                                </td>
                                 <td className="px-3 py-2.5">
                                   <span className={cx("w-3 h-3 rounded-full inline-block border border-black/10", getChantierColor(site))} />
                                 </td>
