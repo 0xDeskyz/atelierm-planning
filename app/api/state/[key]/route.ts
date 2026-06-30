@@ -1,14 +1,24 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// La clé est `org-{uuid}`. On en extrait l'org_id pour le poser sur les écritures.
-// La RLS (policies par org) garantit qu'un utilisateur ne peut lire/écrire que
-// les données des organisations dont il est membre (et écrire que s'il est owner/admin).
+// Accès simplifié (mono-entreprise) : on exige juste un utilisateur connecté,
+// puis on lit/écrit via le client admin (service-role) qui contourne la RLS.
+// Plus aucun blocage lié aux organisations : tant que tu es connecté, ça sauvegarde.
+// La clé peut être `org-{uuid}` (héritage) ou une clé fixe comme `planner-main`.
 function orgIdFromKey(key: string): string | null {
   return key.startsWith("org-") ? key.slice(4) : null;
+}
+
+async function requireUser() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
 }
 
 function looksEmpty(payload: any) {
@@ -30,14 +40,11 @@ const NO_CACHE = {
 
 export async function GET(_req: Request, { params }: { params: { key: string } }) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await requireUser();
     if (!user) return Response.json(null, { status: 401 });
 
-    // RLS filtre : si l'utilisateur n'est pas membre de l'org, data = null.
-    const { data, error } = await supabase
+    const admin = createAdminClient();
+    const { data, error } = await admin
       .from("planner_state")
       .select("data")
       .eq("key", params.key)
@@ -54,20 +61,16 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 
 export async function PUT(req: Request, { params }: { params: { key: string } }) {
   try {
-    const orgId = orgIdFromKey(params.key);
-    if (!orgId) return Response.json({ ok: false, error: "Invalid key" }, { status: 400 });
-
-    const body = await req.json();
-    const incomingVersion = Number(body?.updatedAt || 0);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await requireUser();
     if (!user) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+    const orgId = orgIdFromKey(params.key); // null pour une clé fixe (planner-main)
+    const body = await req.json();
+    const incomingVersion = Number(body?.updatedAt || 0);
+    const admin = createAdminClient();
+
     // prev : empty-guard, backup, et décision INSERT vs UPDATE.
-    // RLS : null si l'utilisateur n'a pas accès à cette org.
-    const { data: prevRow } = await supabase
+    const { data: prevRow } = await admin
       .from("planner_state")
       .select("data")
       .eq("key", params.key)
@@ -91,14 +94,14 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       );
     }
 
-    // Backup du précédent — fire-and-forget (RLS editor policy s'applique)
+    // Backup du précédent — fire-and-forget
     if (prev) {
-      supabase
+      admin
         .from("planner_state_backup")
         .insert({ key: params.key, org_id: orgId, data: prev })
         .then(({ error: backupErr }) => {
           if (backupErr) return;
-          supabase
+          admin
             .from("planner_state_backup")
             .select("id")
             .eq("key", params.key)
@@ -106,7 +109,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
             .then(({ data: ids }) => {
               if (ids && ids.length > 20) {
                 const toDelete = ids.slice(20).map((r: any) => r.id);
-                supabase.from("planner_state_backup").delete().in("id", toDelete);
+                admin.from("planner_state_backup").delete().in("id", toDelete);
               }
             });
         });
@@ -119,7 +122,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
 
     if (prev !== null) {
       writeMethod = "update";
-      const { data: updated, error: updateErr } = await supabase
+      const { data: updated, error: updateErr } = await admin
         .from("planner_state")
         .update({ data: body, updated_at: ts })
         .eq("key", params.key)
@@ -128,7 +131,7 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
       writeError = updateErr?.message ?? null;
     } else {
       writeMethod = "insert";
-      const { data: inserted, error: insertErr } = await supabase
+      const { data: inserted, error: insertErr } = await admin
         .from("planner_state")
         .insert({ key: params.key, org_id: orgId, data: body, updated_at: ts })
         .select("key");
@@ -137,11 +140,10 @@ export async function PUT(req: Request, { params }: { params: { key: string } })
     }
 
     if (writeError) {
-      // RLS qui bloque une écriture (member en lecture seule, ou mauvaise org)
-      return Response.json({ ok: false, error: writeError, writeMethod }, { status: 403 });
+      return Response.json({ ok: false, error: writeError, writeMethod }, { status: 500 });
     }
     if (writeRows === 0) {
-      return Response.json({ ok: false, error: "Write affected 0 rows (permission?)", writeMethod }, { status: 403 });
+      return Response.json({ ok: false, error: "Write affected 0 rows", writeMethod }, { status: 500 });
     }
 
     return Response.json(
