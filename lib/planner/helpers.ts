@@ -242,8 +242,31 @@ export const ORIGINE_OPTIONS = [
   { value: "ao_prive",      label: "AO Privé",      badge: "bg-violet-100 text-violet-700 border-violet-200" },
   { value: "devis_direct",  label: "Devis direct",  badge: "bg-sky-100 text-sky-700 border-sky-200" },
   { value: "gre_a_gre",     label: "Gré à gré",     badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { value: "reseaux",       label: "Réseaux",       badge: "bg-pink-100 text-pink-700 border-pink-200" },
+  { value: "vitrine",       label: "Vitrine",       badge: "bg-amber-100 text-amber-700 border-amber-200" },
 ] as const;
 export type OrigineType = typeof ORIGINE_OPTIONS[number]["value"];
+
+// Palettes pour les catégories/origines ajoutées par l'utilisateur (couleur auto)
+export const CATEGORIE_COLOR_PRESETS = [
+  { badge: "bg-blue-100 text-blue-800 border-blue-200",         color: "bg-blue-600",    hex: "#2563eb" },
+  { badge: "bg-violet-100 text-violet-800 border-violet-200",   color: "bg-violet-500",  hex: "#8b5cf6" },
+  { badge: "bg-emerald-100 text-emerald-800 border-emerald-200", color: "bg-emerald-600", hex: "#059669" },
+  { badge: "bg-amber-100 text-amber-800 border-amber-200",      color: "bg-amber-500",   hex: "#f59e0b" },
+  { badge: "bg-rose-100 text-rose-800 border-rose-200",         color: "bg-rose-500",    hex: "#f43f5e" },
+  { badge: "bg-sky-100 text-sky-800 border-sky-200",            color: "bg-sky-600",     hex: "#0284c7" },
+  { badge: "bg-teal-100 text-teal-800 border-teal-200",         color: "bg-teal-600",    hex: "#0d9488" },
+];
+export const ORIGINE_BADGE_PRESETS = [
+  "bg-indigo-100 text-indigo-700 border-indigo-200",
+  "bg-violet-100 text-violet-700 border-violet-200",
+  "bg-sky-100 text-sky-700 border-sky-200",
+  "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "bg-pink-100 text-pink-700 border-pink-200",
+  "bg-amber-100 text-amber-700 border-amber-200",
+  "bg-teal-100 text-teal-700 border-teal-200",
+  "bg-rose-100 text-rose-700 border-rose-200",
+];
 
 // Catégorisation business des chantiers (analyse)
 export const CATEGORIE_PRINCIPALE_OPTIONS = [
@@ -302,13 +325,15 @@ export const normalizeSiteRecord = (site: any) => {
   const color = (base as any)?.color || SITE_COLORS[colorIndex] || SITE_COLORS[0];
   const status = (base as any)?.status === "archived" ? "archived" : (base as any)?.status === "pending" ? "pending" : "planned";
   const planningWeeks = Array.isArray((base as any)?.planningWeeks) ? (base as any).planningWeeks : [];
-  const validOrigines = ORIGINE_OPTIONS.map(o => o.value) as string[];
-  const origine = validOrigines.includes((base as any)?.origine) ? (base as any).origine : null;
-  const validCategories = CATEGORIE_PRINCIPALE_OPTIONS.map(c => c.value) as string[];
+  // Origine & catégorie sont désormais des listes éditables → on accepte toute
+  // valeur non vide (les libellés/couleurs sont résolus à l'affichage ; une
+  // valeur dont l'option a été supprimée s'affiche simplement en "—").
+  const rawOrigine = (base as any)?.origine;
+  const origine = typeof rawOrigine === "string" && rawOrigine.trim() ? rawOrigine : null;
   // Migration auto des anciennes valeurs (ao/pro/particulier) → nouvelles (public/prive/particulier)
   const rawCatOriginal = (base as any)?.categoriePrincipale;
-  const rawCat = rawCatOriginal && CATEGORIE_MIGRATION[rawCatOriginal] ? CATEGORIE_MIGRATION[rawCatOriginal] : rawCatOriginal;
-  const categoriePrincipale = validCategories.includes(rawCat) ? rawCat : null;
+  const migratedCat = rawCatOriginal && CATEGORIE_MIGRATION[rawCatOriginal] ? CATEGORIE_MIGRATION[rawCatOriginal] : rawCatOriginal;
+  const categoriePrincipale = typeof migratedCat === "string" && migratedCat.trim() ? migratedCat : null;
   const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
   const sousCategorie = sousCategorieRaw || null;
   // Préserver TOUS les flags de difficulté (héritage : ancien système calculé)

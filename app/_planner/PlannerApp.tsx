@@ -85,6 +85,8 @@ import {
   normalizeSiteRecord,
   ORIGINE_OPTIONS,
   CATEGORIE_PRINCIPALE_OPTIONS,
+  CATEGORIE_COLOR_PRESETS,
+  ORIGINE_BADGE_PRESETS,
   DEFAULT_SOUS_CATEGORIES,
   DIFFICULTE_FLAG_LABELS,
   DIFFICULTE_LEVEL_META,
@@ -485,23 +487,65 @@ function resolveDifficulteLevel(site: any, diffConfig?: { rougeAtCount: number; 
 }
 
 // Calcule la classe Tailwind de fond d'un chantier selon le mode de coloration choisi
-function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): string {
+function getSiteDisplayColor(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }, catOptions?: any[]): string {
   if (mode === "difficulte") {
     const lvl = resolveDifficulteLevel(site, diffConfig);
     return DIFFICULTE_LEVEL_META[lvl].color;
   }
-  const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+  const cat = (catOptions || CATEGORIE_PRINCIPALE_OPTIONS).find((c: any) => c.value === site?.categoriePrincipale);
   return cat?.color || "bg-neutral-400";
 }
 
 // Même logique mais retourne un code hex (pour les bordures/styles inline)
-function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }): string {
+function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConfig?: { rougeAtCount: number; alwaysRougeFlags: string[] }, catOptions?: any[]): string {
   if (mode === "difficulte") {
     const lvl = resolveDifficulteLevel(site, diffConfig);
     return DIFFICULTE_LEVEL_META[lvl].hex;
   }
-  const cat = CATEGORIE_PRINCIPALE_OPTIONS.find(c => c.value === site?.categoriePrincipale);
+  const cat = (catOptions || CATEGORIE_PRINCIPALE_OPTIONS).find((c: any) => c.value === site?.categoriePrincipale);
   return cat?.hex || "#94a3b8";
+}
+
+// Gestionnaire de liste éditable (catégories / origines) : ajout, renommage, suppression
+function OptionsManager({ title, hint, options, onAdd, onRename, onDelete }: any) {
+  const [newLabel, setNewLabel] = useState("");
+  return (
+    <div className="space-y-2 pt-3 border-t border-neutral-100">
+      <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">{title}</label>
+      {hint && <p className="text-[11px] text-neutral-400">{hint}</p>}
+      <div className="space-y-1.5">
+        {options.map((o: any) => (
+          <div key={o.value} className="flex items-center gap-2">
+            <span className={cx("w-3 h-3 rounded-full shrink-0 border border-black/10", o.color || (o.badge || "").split(" ")[0] || "bg-neutral-300")} />
+            <input
+              defaultValue={o.label}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== o.label) onRename(o.value, v); }}
+              onKeyDown={(e: any) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              className="flex-1 rounded-md border border-neutral-200 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+            />
+            <button
+              onClick={() => { if (window.confirm(`Supprimer "${o.label}" ? Les chantiers qui l'utilisaient afficheront "—".`)) onDelete(o.value); }}
+              className="text-neutral-300 hover:text-red-500 transition text-lg leading-none px-1"
+              title="Supprimer"
+            >×</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="Nouveau libellé…"
+          onKeyDown={(e: any) => { if (e.key === "Enter" && newLabel.trim()) { e.preventDefault(); onAdd(newLabel.trim()); setNewLabel(""); } }}
+          className="flex-1 rounded-md border border-neutral-200 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+        />
+        <button
+          onClick={() => { if (newLabel.trim()) { onAdd(newLabel.trim()); setNewLabel(""); } }}
+          className="px-3 py-1 rounded-md bg-neutral-900 text-white text-xs font-semibold hover:bg-neutral-700 transition"
+        >Ajouter</button>
+      </div>
+    </div>
+  );
 }
 
 function CalendarSiteChip({ site, weekKey, className, isStart, isEnd, onInfo }: { site: any; weekKey: string; className?: string; isStart?: boolean; isEnd?: boolean; onInfo?: (e: React.MouseEvent) => void }) {
@@ -950,7 +994,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie, difficulteConfig: diffCfg }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
   const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
@@ -1126,9 +1170,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
                 >
                   <option value="">— Non renseigné</option>
-                  {ORIGINE_OPTIONS.map(o => (
+                  {origineOptionsProp.map((o: any) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
+                  {origine && !origineOptionsProp.some((o: any) => o.value === origine) && (
+                    <option value={origine}>{origine}</option>
+                  )}
                 </select>
               </label>
               <label className="space-y-1">
@@ -1139,7 +1186,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
                 >
                   <option value="">— Non renseignée</option>
-                  {CATEGORIE_PRINCIPALE_OPTIONS.map(c => (
+                  {catOptionsProp.map((c: any) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>
@@ -2203,6 +2250,9 @@ export default function PlannerApp({
   }, [calFilterPlanned, calFilterPending, calFilterEvents]);
   // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
   const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
+  // Listes ÉDITABLES (ajout / renommage / suppression) — persistées dans l'état
+  const [categorieOptions, setCategorieOptions] = useState<any[]>(() => CATEGORIE_PRINCIPALE_OPTIONS.map((o) => ({ ...o })));
+  const [origineOptions, setOrigineOptions] = useState<any[]>(() => ORIGINE_OPTIONS.map((o) => ({ ...o })));
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"difficulte" | "categorie">("categorie");
   // Configuration personnalisable des seuils de difficulté
@@ -2351,13 +2401,45 @@ export default function PlannerApp({
   const safePeople = useMemo(() => (Array.isArray(people) ? people.map(normalizePersonRecord) : []), [people]);
   const safeSites = Array.isArray(sites) ? sites : [];
   const getChantierColor = useCallback(
-    (site: any) => getSiteDisplayColor(site, siteColorMode, difficulteConfig),
-    [siteColorMode, difficulteConfig]
+    (site: any) => getSiteDisplayColor(site, siteColorMode, difficulteConfig, categorieOptions),
+    [siteColorMode, difficulteConfig, categorieOptions]
   );
   const getChantierHex = useCallback(
-    (site: any) => getSiteDisplayHex(site, siteColorMode, difficulteConfig),
-    [siteColorMode, difficulteConfig]
+    (site: any) => getSiteDisplayHex(site, siteColorMode, difficulteConfig, categorieOptions),
+    [siteColorMode, difficulteConfig, categorieOptions]
   );
+
+  // ---- Gestion des listes éditables : catégories & origines ----
+  const slugifyOption = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `opt${Date.now()}`;
+  const addCategorie = (label: string) => {
+    const t = label.trim(); if (!t) return;
+    setCategorieOptions((prev) => {
+      if (prev.some((o: any) => o.label.toLowerCase() === t.toLowerCase())) return prev;
+      let value = slugifyOption(t); if (prev.some((o: any) => o.value === value)) value = `${value}_${prev.length}`;
+      const preset = CATEGORIE_COLOR_PRESETS[prev.length % CATEGORIE_COLOR_PRESETS.length];
+      return [...prev, { value, label: t, ...preset }];
+    });
+  };
+  const renameCategorie = (value: string, label: string) => {
+    const t = label.trim(); if (!t) return;
+    setCategorieOptions((prev) => prev.map((o: any) => (o.value === value ? { ...o, label: t } : o)));
+  };
+  const deleteCategorie = (value: string) => setCategorieOptions((prev) => prev.filter((o: any) => o.value !== value));
+  const addOrigine = (label: string) => {
+    const t = label.trim(); if (!t) return;
+    setOrigineOptions((prev) => {
+      if (prev.some((o: any) => o.label.toLowerCase() === t.toLowerCase())) return prev;
+      let value = slugifyOption(t); if (prev.some((o: any) => o.value === value)) value = `${value}_${prev.length}`;
+      const badge = ORIGINE_BADGE_PRESETS[prev.length % ORIGINE_BADGE_PRESETS.length];
+      return [...prev, { value, label: t, badge }];
+    });
+  };
+  const renameOrigine = (value: string, label: string) => {
+    const t = label.trim(); if (!t) return;
+    setOrigineOptions((prev) => prev.map((o: any) => (o.value === value ? { ...o, label: t } : o)));
+  };
+  const deleteOrigine = (value: string) => setOrigineOptions((prev) => prev.filter((o: any) => o.value !== value));
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "pending"), [safeSites]);
@@ -3917,6 +3999,8 @@ export default function PlannerApp({
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
     if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
+    if (Array.isArray(state.categorieOptions) && state.categorieOptions.length) setCategorieOptions(state.categorieOptions.filter((o: any) => o && o.value));
+    if (Array.isArray(state.origineOptions) && state.origineOptions.length) setOrigineOptions(state.origineOptions.filter((o: any) => o && o.value));
     // Migration : l'ancien "default" (libre) est ramené à "categorie"
     if (state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
     else if (state.siteColorMode === "default") setSiteColorMode("categorie");
@@ -4234,6 +4318,8 @@ const saveRemote = useMemo(() => {
     calendarEvents,
     validatedWeeks,
     customSousCategories,
+    categorieOptions,
+    origineOptions,
     siteColorMode,
     difficulteConfig,
     siteLanePins,
@@ -4241,7 +4327,7 @@ const saveRemote = useMemo(() => {
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, siteColorMode, difficulteConfig, siteLanePins]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, categorieOptions, origineOptions, siteColorMode, difficulteConfig, siteLanePins]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -6652,7 +6738,7 @@ useEffect(() => {
               };
 
               const origineBadge = (origine: string | null) => {
-                const opt = ORIGINE_OPTIONS.find(o => o.value === origine);
+                const opt = origineOptions.find((o: any) => o.value === origine);
                 if (!opt) return <span className="text-neutral-300 text-[11px]">—</span>;
                 return <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span>;
               };
@@ -6744,7 +6830,7 @@ useEffect(() => {
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Categories */}
                           <div className="flex items-center gap-1 flex-wrap">
-                            {CATEGORIE_PRINCIPALE_OPTIONS.map(c => {
+                            {categorieOptions.map((c: any) => {
                               const active = sitesCatFilters.includes(c.value);
                               return (
                                 <button key={c.value}
@@ -6873,7 +6959,7 @@ useEffect(() => {
                                     <span>{formatWeeksSummary(site.planningWeeks)}</span>
                                   ) : <span className="text-neutral-300">Non planifié</span>}
                                 </td>
-                                <td className="px-3 py-2.5">{(() => { const c = CATEGORIE_PRINCIPALE_OPTIONS.find(x => x.value === site.categoriePrincipale); return c ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", c.badge)}>{c.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
+                                <td className="px-3 py-2.5">{(() => { const c = categorieOptions.find((x: any) => x.value === site.categoriePrincipale); return c ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", c.badge)}>{c.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
                                 <td className="px-3 py-2.5">{(() => { const manual = site.difficulteLevel && (DIFFICULTE_LEVELS as string[]).includes(site.difficulteLevel); const anyFlag = site.difficulte && Object.values(site.difficulte).some(Boolean); if (!manual && !anyFlag) return <span className="text-neutral-300 text-[11px]">—</span>; const lvl = resolveDifficulteLevel(site, difficulteConfig); const meta = DIFFICULTE_LEVEL_META[lvl]; return <span title={site.difficulteReason || undefined} className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1 w-fit", meta.badge)}><span className={cx("w-2 h-2 rounded-full inline-block", meta.color)} />{meta.label}</span>; })()}</td>
                                 <td className="px-3 py-2.5">{statusBadge(site.status || "planned")}</td>
                                 <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -7301,7 +7387,7 @@ useEffect(() => {
                                     </button>
                                   </td>
                                   <td className="px-3 py-2.5 text-neutral-600">{s.clientName ? <button onClick={() => openClientHistory(s.clientName)} className="hover:underline hover:text-sky-700 text-left">{s.clientName}</button> : <span className="text-neutral-300">—</span>}</td>
-                                  <td className="px-3 py-2.5">{(() => { const opt = ORIGINE_OPTIONS.find(o => o.value === s.origine); return opt ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
+                                  <td className="px-3 py-2.5">{(() => { const opt = origineOptions.find((o: any) => o.value === s.origine); return opt ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
                                   <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
                                   <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
                                   <td className="px-3 py-2 w-24">
@@ -7590,6 +7676,8 @@ useEffect(() => {
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
           difficulteConfig={difficulteConfig}
+          categorieOptions={categorieOptions}
+          origineOptions={origineOptions}
           customSousCategories={customSousCategories}
           onAddSousCategorie={(name: string) => {
             const t = name.trim();
@@ -7604,7 +7692,7 @@ useEffect(() => {
         const s = calInfoSite.site;
         const lvl = resolveDifficulteLevel(s, difficulteConfig);
         const meta = DIFFICULTE_LEVEL_META[lvl];
-        const cat = CATEGORIE_PRINCIPALE_OPTIONS.find((c) => c.value === s.categoriePrincipale);
+        const cat = categorieOptions.find((c: any) => c.value === s.categoriePrincipale);
         const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
         const vh = typeof window !== "undefined" ? window.innerHeight : 800;
         const left = Math.max(8, Math.min(calInfoSite.x, vw - 304));
@@ -8166,6 +8254,24 @@ useEffect(() => {
                       })}
                     </div>
                   </div>
+
+                  <OptionsManager
+                    title="Catégories principales"
+                    hint="Type de client. La couleur (auto) sert à colorer les chantiers en mode « Difficulté / Catégorie »."
+                    options={categorieOptions}
+                    onAdd={addCategorie}
+                    onRename={renameCategorie}
+                    onDelete={deleteCategorie}
+                  />
+
+                  <OptionsManager
+                    title="Origines"
+                    hint="Provenance du chantier (AO, réseaux, vitrine, recommandation…)."
+                    options={origineOptions}
+                    onAdd={addOrigine}
+                    onRename={renameOrigine}
+                    onDelete={deleteOrigine}
+                  />
                 </div>
               )}
 
