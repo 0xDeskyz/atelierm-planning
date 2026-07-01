@@ -994,7 +994,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, customSousCategories = [], onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
   const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
@@ -1200,7 +1200,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                     className="flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
                   >
                     <option value="">— Non renseignée</option>
-                    {Array.from(new Set([...DEFAULT_SOUS_CATEGORIES, ...customSousCategories, ...(sousCategorie ? [sousCategorie] : [])])).map((s: string) => (
+                    {Array.from(new Set([...sousCatOptionsProp, ...(sousCategorie ? [sousCategorie] : [])])).map((s: string) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
@@ -2248,8 +2248,8 @@ export default function PlannerApp({
       }));
     } catch {}
   }, [calFilterPlanned, calFilterPending, calFilterEvents]);
-  // Sous-catégories personnalisées ajoutées par l'utilisateur (en plus des DEFAULT_SOUS_CATEGORIES)
-  const [customSousCategories, setCustomSousCategories] = useState<string[]>([]);
+  // Sous-catégories : liste ÉDITABLE complète (défauts + ajouts), persistée.
+  const [sousCategorieOptions, setSousCategorieOptions] = useState<string[]>(() => [...DEFAULT_SOUS_CATEGORIES]);
   // Listes ÉDITABLES (ajout / renommage / suppression) — persistées dans l'état
   const [categorieOptions, setCategorieOptions] = useState<any[]>(() => CATEGORIE_PRINCIPALE_OPTIONS.map((o) => ({ ...o })));
   const [origineOptions, setOrigineOptions] = useState<any[]>(() => ORIGINE_OPTIONS.map((o) => ({ ...o })));
@@ -2440,6 +2440,17 @@ export default function PlannerApp({
     setOrigineOptions((prev) => prev.map((o: any) => (o.value === value ? { ...o, label: t } : o)));
   };
   const deleteOrigine = (value: string) => setOrigineOptions((prev) => prev.filter((o: any) => o.value !== value));
+  const addSousCat = (label: string) => {
+    const t = label.trim(); if (!t) return;
+    setSousCategorieOptions((prev) => (prev.some((s) => s.toLowerCase() === t.toLowerCase()) ? prev : [...prev, t]));
+  };
+  const renameSousCat = (oldLabel: string, label: string) => {
+    const t = label.trim(); if (!t || t === oldLabel) return;
+    setSousCategorieOptions((prev) => prev.map((s) => (s === oldLabel ? t : s)));
+    // Renomme aussi la valeur sur les chantiers qui l'utilisaient
+    setSites((prev) => prev.map((s: any) => (s.sousCategorie === oldLabel ? { ...s, sousCategorie: t } : s)));
+  };
+  const deleteSousCat = (label: string) => setSousCategorieOptions((prev) => prev.filter((s) => s !== label));
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "pending"), [safeSites]);
@@ -3903,7 +3914,7 @@ export default function PlannerApp({
       people, sites: updatedSites, assignments, notes, absencesByWeek, absencesByDay,
       siteWeekVisibility: updatedVisibility, hoursPerDay, quotes, tenders, clients,
       tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault,
-      eventCalendars, calendarEvents, validatedWeeks, customSousCategories,
+      eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions,
       siteColorMode, difficulteConfig, siteLanePins,
       chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
       updatedAt: stamp, clientId: clientIdRef.current,
@@ -3998,7 +4009,15 @@ export default function PlannerApp({
     if (state.validatedWeeks && typeof state.validatedWeeks === "object") setValidatedWeeks(state.validatedWeeks);
     if (Array.isArray(state.eventCalendars)) setEventCalendars(state.eventCalendars);
     if (Array.isArray(state.calendarEvents)) setCalendarEvents(state.calendarEvents);
-    if (Array.isArray(state.customSousCategories)) setCustomSousCategories(state.customSousCategories.filter((s: any) => typeof s === "string"));
+    // Sous-catégories : nouvelle liste éditable ; sinon migration depuis l'ancien
+    // customSousCategories (défauts + ajouts).
+    if (Array.isArray(state.sousCategorieOptions)) {
+      const list = state.sousCategorieOptions.filter((s: any) => typeof s === "string" && s.trim());
+      if (list.length) setSousCategorieOptions(Array.from(new Set(list)));
+    } else if (Array.isArray(state.customSousCategories)) {
+      const custom = state.customSousCategories.filter((s: any) => typeof s === "string");
+      setSousCategorieOptions(Array.from(new Set([...DEFAULT_SOUS_CATEGORIES, ...custom])));
+    }
     if (Array.isArray(state.categorieOptions) && state.categorieOptions.length) setCategorieOptions(state.categorieOptions.filter((o: any) => o && o.value));
     if (Array.isArray(state.origineOptions) && state.origineOptions.length) setOrigineOptions(state.origineOptions.filter((o: any) => o && o.value));
     // Migration : l'ancien "default" (libre) est ramené à "categorie"
@@ -4317,7 +4336,7 @@ const saveRemote = useMemo(() => {
     eventCalendars,
     calendarEvents,
     validatedWeeks,
-    customSousCategories,
+    sousCategorieOptions,
     categorieOptions,
     origineOptions,
     siteColorMode,
@@ -4327,7 +4346,7 @@ const saveRemote = useMemo(() => {
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, customSousCategories, categorieOptions, origineOptions, siteColorMode, difficulteConfig, siteLanePins]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions, siteColorMode, difficulteConfig, siteLanePins]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -7678,12 +7697,8 @@ useEffect(() => {
           difficulteConfig={difficulteConfig}
           categorieOptions={categorieOptions}
           origineOptions={origineOptions}
-          customSousCategories={customSousCategories}
-          onAddSousCategorie={(name: string) => {
-            const t = name.trim();
-            if (!t) return;
-            setCustomSousCategories((prev) => prev.includes(t) || DEFAULT_SOUS_CATEGORIES.includes(t) ? prev : [...prev, t]);
-          }}
+          sousCategorieOptions={sousCategorieOptions}
+          onAddSousCategorie={(name: string) => addSousCat(name)}
         />
       )}
 
@@ -8271,6 +8286,15 @@ useEffect(() => {
                     onAdd={addOrigine}
                     onRename={renameOrigine}
                     onDelete={deleteOrigine}
+                  />
+
+                  <OptionsManager
+                    title="Sous-catégories"
+                    hint="Contexte du chantier (appel d'offre, syndic, architecte…). Renommer met aussi à jour les chantiers concernés."
+                    options={sousCategorieOptions.map((s) => ({ value: s, label: s }))}
+                    onAdd={addSousCat}
+                    onRename={renameSousCat}
+                    onDelete={deleteSousCat}
                   />
                 </div>
               )}
