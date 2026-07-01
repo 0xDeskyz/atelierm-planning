@@ -28,10 +28,11 @@ function useLongPress(callback: () => void, ms = 500) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, locked }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, onCellOpen, locked }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site }, disabled: locked });
-  const longPress = useLongPress(() => { if (onCellAction && !locked) onCellAction(date, site); }, 500);
+  const open = (pos: { x: number; y: number } | null) => { if (onCellOpen && !locked) onCellOpen(date, site, pos); };
+  const longPress = useLongPress(() => open(null), 500);
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
   const raw = notes[key];
@@ -46,6 +47,7 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
     <div
       className={cx(
         "relative border min-h-20 p-2 rounded-xl bg-white magic-cell",
+        !locked && "cursor-pointer",
         locked && "opacity-90 pointer-events-auto",
         isOver ? "ring-2 ring-sky-400 is-over" : "",
         status === "holiday"
@@ -59,7 +61,8 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
       )}
       ref={setNodeRef}
       title={meta.text || ""}
-      onContextMenu={(e) => { if (!onCellAction || locked) return; e.preventDefault(); onCellAction(date, site); }}
+      onClick={(e) => { if (locked) return; const t = e.target as HTMLElement; if (t.closest("button,input,a,select,textarea")) return; open({ x: e.clientX, y: e.clientY }); }}
+      onContextMenu={(e) => { if (locked) return; e.preventDefault(); open({ x: e.clientX, y: e.clientY }); }}
       {...longPress}
     >
       {locked && (
@@ -125,7 +128,7 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
       {/* Edit button */}
       {!locked && (
         <div className="mt-1.5 flex justify-end">
-          <button onClick={() => onEditNote(date, site)} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
+          <button onClick={(e) => { e.stopPropagation(); open({ x: (e as any).clientX, y: (e as any).clientY }); }} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
             <Edit3 className="w-3.5 h-3.5" />
           </button>
         </div>

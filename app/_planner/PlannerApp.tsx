@@ -506,6 +506,137 @@ function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConf
   return cat?.hex || "#94a3b8";
 }
 
+// Éditeur de case unifié : onglets Affecter / Statut·Note, ouvert au clic à la position du curseur
+function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAbsent, onAssign, onAssignWeek, onRemove, onCopyDayToWeek, onSaveMeta, onQuickAction }: any) {
+  const { date, site, pos } = target;
+  const dateKey = toLocalKey(date);
+  const [tab, setTab] = useState<"affecter" | "statut">("affecter");
+  const [wholeWeek, setWholeWeek] = useState(false);
+  const initial = typeof meta === "string" ? { text: meta } : (meta || {});
+  const [status, setStatus] = useState<string>(initial.holiday ? "nontravaille" : initial.blocked ? "indisponible" : "disponible");
+  const [eventType, setEventType] = useState<string | null>(initial.eventType || null);
+  const [text, setText] = useState<string>(initial.text || "");
+  const [hoursOverride, setHoursOverride] = useState<string>(initial.hoursOverride != null ? String(initial.hoursOverride) : "");
+
+  const cellAss = assignments.filter((a: any) => a.siteId === site.id && a.date === dateKey);
+  const assignedIds = new Set(cellAss.map((a: any) => a.personId));
+  const available = people.filter((p: any) => !assignedIds.has(p.id));
+
+  const saveMeta = () => {
+    onSaveMeta({
+      holiday: status === "nontravaille",
+      blocked: status === "indisponible",
+      eventType: eventType || undefined,
+      text: text.trim() || undefined,
+      hoursOverride: hoursOverride === "" ? undefined : hoursOverride,
+    });
+    onClose();
+  };
+
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const W = 320, H = 460;
+  const left = pos ? Math.max(8, Math.min(pos.x, vw - W - 8)) : (vw - W) / 2;
+  const top = pos ? Math.max(8, Math.min(pos.y + 8, vh - H - 8)) : (vh - H) / 2;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed z-50 rounded-xl border bg-white shadow-2xl flex flex-col" style={{ left, top, width: W, maxHeight: H }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-neutral-900 truncate">{site.name}</div>
+            <div className="text-xs text-neutral-500">{date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</div>
+          </div>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-lg leading-none px-1">×</button>
+        </div>
+        <div className="flex border-b text-sm">
+          {([["affecter", "Affecter"], ["statut", "Statut / Note"]] as [any, string][]).map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} className={cx("flex-1 py-2 font-medium border-b-2 -mb-px transition", tab === id ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600")}>{label}</button>
+          ))}
+        </div>
+        <div className="overflow-y-auto p-3 space-y-3">
+          {tab === "affecter" ? (
+            <>
+              {cellAss.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Sur ce jour</div>
+                  {cellAss.map((a: any) => {
+                    const p = people.find((x: any) => x.id === a.personId);
+                    if (!p) return null;
+                    return (
+                      <div key={a.id} className="flex items-center gap-2 px-2 py-1 rounded-lg bg-neutral-50">
+                        <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", p.color || "bg-neutral-400")} />
+                        <span className="text-sm text-neutral-800 flex-1 truncate">{p.name}</span>
+                        <button onClick={() => onRemove(a.id)} className="text-neutral-300 hover:text-red-500 text-base leading-none px-1">×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer">
+                <input type="checkbox" checked={wholeWeek} onChange={(e) => setWholeWeek(e.target.checked)} className="accent-neutral-900" />
+                Affecter sur toute la semaine
+              </label>
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Ajouter un salarié</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {available.length === 0 && <div className="col-span-2 text-xs text-neutral-400 italic">Tous les salariés sont affectés.</div>}
+                  {available.map((p: any) => {
+                    const absent = isAbsent(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        disabled={absent}
+                        onClick={() => (wholeWeek ? onAssignWeek(p.id) : onAssign(p.id))}
+                        className={cx("flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm text-left transition", absent ? "opacity-40 cursor-not-allowed border-neutral-100" : "border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50")}
+                        title={absent ? "Absent cette semaine" : undefined}
+                      >
+                        <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", p.color || "bg-neutral-400")} />
+                        <span className="truncate">{p.name.split(" ")[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <button onClick={onCopyDayToWeek} className="w-full rounded-lg border border-neutral-200 py-2 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition">↔ Recopier ce jour sur la semaine</button>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {([["disponible", "✅", "Disponible"], ["indisponible", "🚧", "Indispo"], ["nontravaille", "🏖", "Non trav."]] as [string, string, string][]).map(([id, icon, label]) => (
+                  <button key={id} onClick={() => setStatus(id)} className={cx("flex flex-col items-center gap-1 py-2 rounded-lg border-2 text-[11px] font-medium transition", status === id ? "border-neutral-900 bg-neutral-50 text-neutral-900" : "border-neutral-200 text-neutral-500 hover:border-neutral-300")}>
+                    <span className="text-base leading-none">{icon}</span>{label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {EVENT_TYPES.map((et: any) => (
+                  <button key={et.id} onClick={() => setEventType(eventType === et.id ? null : et.id)} className={cx("inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs transition", eventType === et.id ? et.color + " border-current" : "border-neutral-200 text-neutral-500 hover:border-neutral-300")}>
+                    <span>{et.icon}</span>{et.label}
+                  </button>
+                ))}
+              </div>
+              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Note / libellé…" className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-neutral-500">Heures spécifiques</span>
+                <input type="number" min={0} step={0.5} value={hoursOverride} onChange={(e) => setHoursOverride(e.target.value)} placeholder="—" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-sm text-center" />
+              </div>
+              <button onClick={saveMeta} className="w-full rounded-lg bg-neutral-900 py-2 text-sm font-semibold text-white hover:bg-neutral-700 transition">Enregistrer</button>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1 border-t px-2 py-2 text-[11px]">
+          <button onClick={() => onQuickAction("duplicateYesterday")} className="flex-1 py-1.5 rounded-md hover:bg-neutral-100 text-neutral-600" title="Dupliquer la veille">↩ Veille</button>
+          <button onClick={() => onQuickAction("copy")} className="flex-1 py-1.5 rounded-md hover:bg-neutral-100 text-neutral-600" title="Copier la cellule">⧉ Copier</button>
+          <button onClick={() => onQuickAction("paste")} disabled={!canPaste} className={cx("flex-1 py-1.5 rounded-md text-neutral-600", canPaste ? "hover:bg-neutral-100" : "opacity-30 cursor-not-allowed")} title="Coller">⇲ Coller</button>
+          <button onClick={() => onQuickAction("clear")} className="flex-1 py-1.5 rounded-md hover:bg-red-50 text-red-500" title="Vider la cellule">✕ Vider</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // Gestionnaire de liste éditable (catégories / origines) : ajout, renommage, suppression
 function OptionsManager({ title, hint, options, onAdd, onRename, onDelete }: any) {
   const [newLabel, setNewLabel] = useState("");
@@ -2194,6 +2325,8 @@ export default function PlannerApp({
   // après chargement des sites (besoin des spans).
   const pendingLaneOrderMigrationRef = useRef<string[] | null>(null);
   const [cellActionTarget, setCellActionTarget] = useState<{ date: Date; site: any } | null>(null);
+  // Éditeur de case unifié (clic / clic droit) : position pour le popover
+  const [cellEditorTarget, setCellEditorTarget] = useState<{ date: Date; site: any; pos: { x: number; y: number } | null } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
   useEffect(() => {
@@ -3630,6 +3763,68 @@ export default function PlannerApp({
       showToast("Cellule collée");
     }
     setCellActionTarget(null);
+  };
+
+  // --- Éditeur de case unifié : affectation en 1 clic + actions semaine ---
+  const cellMetaOf = (site: any, dateKey: string) => {
+    const raw = notes[cellKey(site.id, dateKey)];
+    return typeof raw === "string" ? { text: raw } : raw || {};
+  };
+  const assignPersonToCell = (personId: string, date: Date, site: any) => {
+    const dateKey = toLocalKey(date);
+    const meta = cellMetaOf(site, dateKey);
+    if (meta.holiday || meta.blocked) { showToast("Case non travaillée / indisponible"); return; }
+    if (isAbsentOnWeek(personId, weekKeyOf(date))) { showToast("Salarié absent cette semaine"); return; }
+    if (assignments.some((a: any) => a.personId === personId && a.date === dateKey && a.siteId === site.id)) return;
+    const id = (typeof crypto !== "undefined" && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${personId}-${site.id}-${dateKey}-${Date.now()}`;
+    setAssignments((prev) => [...prev, { id, personId, siteId: site.id, date: dateKey }]);
+  };
+  const assignPersonWholeWeek = (personId: string, site: any) => {
+    let added = 0;
+    setAssignments((prev) => {
+      const next = [...prev];
+      for (const d of weekDays) {
+        const dk = toLocalKey(d);
+        const meta = cellMetaOf(site, dk);
+        if (meta.holiday || meta.blocked) continue;
+        if (isAbsentOnWeek(personId, weekKeyOf(d))) continue;
+        if (next.some((a: any) => a.personId === personId && a.date === dk && a.siteId === site.id)) continue;
+        next.push({ id: `${personId}-${site.id}-${dk}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, personId, siteId: site.id, date: dk });
+        added++;
+      }
+      return next;
+    });
+    showToast(added ? `Affecté sur ${added} jour${added > 1 ? "s" : ""}` : "Déjà affecté / rien à ajouter");
+  };
+  const copyDayToWeek = (date: Date, site: any) => {
+    const srcKey = toLocalKey(date);
+    const srcAss = assignments.filter((a: any) => a.siteId === site.id && a.date === srcKey);
+    if (!srcAss.length) { showToast("Aucune affectation à recopier"); return; }
+    setAssignments((prev) => {
+      const next = [...prev];
+      for (const d of weekDays) {
+        const dk = toLocalKey(d);
+        if (dk === srcKey) continue;
+        const meta = cellMetaOf(site, dk);
+        if (meta.holiday || meta.blocked) continue;
+        for (const a of srcAss) {
+          if (isAbsentOnWeek(a.personId, weekKeyOf(d))) continue;
+          if (next.some((x: any) => x.personId === a.personId && x.date === dk && x.siteId === site.id)) continue;
+          next.push({ id: `${a.personId}-${site.id}-${dk}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, personId: a.personId, siteId: site.id, date: dk, portion: a.portion, hours: a.hours });
+        }
+      }
+      return next;
+    });
+    showToast("Jour recopié sur la semaine");
+  };
+  const saveCellMeta = (date: Date, site: any, patch: any) => {
+    const key = cellKey(site.id, toLocalKey(date));
+    setNotes((prev) => {
+      const cur = typeof prev[key] === "string" ? { text: prev[key] } : (prev[key] || {});
+      const merged: any = { ...cur, ...patch };
+      Object.keys(merged).forEach((k) => { const v = merged[k]; if (v === undefined || v === "" || v === false || v === null) delete merged[k]; });
+      return { ...prev, [key]: merged };
+    });
   };
 
   const clearCurrentWeek = () => {
@@ -5828,7 +6023,7 @@ useEffect(() => {
                             onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
                             publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                             absencesByDay={absencesByDay}
-                            onCellAction={(dt: Date, st: any) => setCellActionTarget({ date: dt, site: st })}
+                            onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
                             locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                           />
                         ))}
@@ -6016,7 +6211,7 @@ useEffect(() => {
                                   onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
                                         publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                                   absencesByDay={absencesByDay}
-                                  onCellAction={(dt: Date, st: any) => setCellActionTarget({ date: dt, site: st })}
+                                  onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
                                   locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                                 />
                               ))}
@@ -8349,6 +8544,25 @@ useEffect(() => {
             </div>
           </div>
         </>
+      )}
+
+      {/* Éditeur de case unifié (clic / clic droit / crayon) */}
+      {cellEditorTarget && (
+        <CellEditor
+          target={cellEditorTarget}
+          onClose={() => setCellEditorTarget(null)}
+          people={safePeople}
+          assignments={assignments}
+          meta={notes[cellKey(cellEditorTarget.site.id, toLocalKey(cellEditorTarget.date))]}
+          canPaste={!!cellClipboard}
+          isAbsent={(pid: string) => isAbsentOnWeek(pid, weekKeyOf(cellEditorTarget.date))}
+          onAssign={(pid: string) => assignPersonToCell(pid, cellEditorTarget.date, cellEditorTarget.site)}
+          onAssignWeek={(pid: string) => assignPersonWholeWeek(pid, cellEditorTarget.site)}
+          onRemove={(id: string) => setAssignments((prev) => prev.filter((a: any) => a.id !== id))}
+          onCopyDayToWeek={() => copyDayToWeek(cellEditorTarget.date, cellEditorTarget.site)}
+          onSaveMeta={(patch: any) => saveCellMeta(cellEditorTarget.date, cellEditorTarget.site, patch)}
+          onQuickAction={(id: string) => applyCellAction(id, cellEditorTarget.date, cellEditorTarget.site)}
+        />
       )}
 
       {/* Bottom sheet actions cellule (long-press / clic droit) */}
