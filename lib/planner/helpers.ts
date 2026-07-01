@@ -247,18 +247,26 @@ export type OrigineType = typeof ORIGINE_OPTIONS[number]["value"];
 
 // Catégorisation business des chantiers (analyse)
 export const CATEGORIE_PRINCIPALE_OPTIONS = [
-  { value: "ao",          label: "Appel d'offre", badge: "bg-emerald-100 text-emerald-800 border-emerald-200", color: "bg-emerald-600", hex: "#059669" },
-  { value: "particulier", label: "Particulier",   badge: "bg-violet-100 text-violet-800 border-violet-200",     color: "bg-violet-500", hex: "#8b5cf6" },
-  { value: "pro",         label: "Professionnel", badge: "bg-blue-100 text-blue-800 border-blue-200",           color: "bg-blue-600",   hex: "#2563eb" },
+  { value: "public",      label: "Public",      badge: "bg-blue-100 text-blue-800 border-blue-200",           color: "bg-blue-600",    hex: "#2563eb" },
+  { value: "prive",       label: "Privé",       badge: "bg-violet-100 text-violet-800 border-violet-200",     color: "bg-violet-500",  hex: "#8b5cf6" },
+  { value: "particulier", label: "Particulier", badge: "bg-emerald-100 text-emerald-800 border-emerald-200",  color: "bg-emerald-600", hex: "#059669" },
 ] as const;
 export type CategoriePrincipale = typeof CATEGORIE_PRINCIPALE_OPTIONS[number]["value"];
 
+// Conversion des anciennes catégories → nouvelles (appliquée au chargement)
+export const CATEGORIE_MIGRATION: Record<string, string> = {
+  ao: "public",
+  pro: "prive",
+  particulier: "particulier",
+};
+
 export const DEFAULT_SOUS_CATEGORIES = [
-  "Dégâts des eaux",
-  "Patrimoine",
+  "Appel d'offre",
+  "Marché négocié",
   "Syndic",
   "Architecte",
-  "Mairie",
+  "Assurance / Dégât des eaux",
+  "Recommandation",
   "Autre",
 ];
 
@@ -297,11 +305,10 @@ export const normalizeSiteRecord = (site: any) => {
   const validOrigines = ORIGINE_OPTIONS.map(o => o.value) as string[];
   const origine = validOrigines.includes((base as any)?.origine) ? (base as any).origine : null;
   const validCategories = CATEGORIE_PRINCIPALE_OPTIONS.map(c => c.value) as string[];
-  const rawCat = (base as any)?.categoriePrincipale;
+  // Migration auto des anciennes valeurs (ao/pro/particulier) → nouvelles (public/prive/particulier)
+  const rawCatOriginal = (base as any)?.categoriePrincipale;
+  const rawCat = rawCatOriginal && CATEGORIE_MIGRATION[rawCatOriginal] ? CATEGORIE_MIGRATION[rawCatOriginal] : rawCatOriginal;
   const categoriePrincipale = validCategories.includes(rawCat) ? rawCat : null;
-  if (rawCat && !categoriePrincipale) {
-    console.warn('[normalizeSiteRecord] categoriePrincipale stripped — raw value:', JSON.stringify(rawCat), '| type:', typeof rawCat, '| valid:', validCategories);
-  }
   const sousCategorieRaw = typeof (base as any)?.sousCategorie === "string" ? (base as any).sousCategorie.trim() : "";
   const sousCategorie = sousCategorieRaw || null;
   // Préserver TOUS les flags de difficulté (héritage : ancien système calculé)

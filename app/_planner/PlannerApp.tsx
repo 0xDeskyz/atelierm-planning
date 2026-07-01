@@ -1153,7 +1153,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                     className="flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
                   >
                     <option value="">— Non renseignée</option>
-                    {[...DEFAULT_SOUS_CATEGORIES, ...customSousCategories].map((s: string) => (
+                    {Array.from(new Set([...DEFAULT_SOUS_CATEGORIES, ...customSousCategories, ...(sousCategorie ? [sousCategorie] : [])])).map((s: string) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
@@ -3967,7 +3967,9 @@ export default function PlannerApp({
     const spansOverlap = (a: [string, string], b: [string, string]) => !(a[1] < b[0] || b[1] < a[0]);
     const catIdxOf = (s: any) => {
       const c = String(s?.categoriePrincipale || "").toLowerCase();
-      return c === "ao" ? 0 : c === "particulier" ? 1 : c === "pro" ? 2 : 99;
+      // Ordre : Public → Privé → Particulier (compat anciennes valeurs ao/pro)
+      const order: Record<string, number> = { public: 0, ao: 0, prive: 1, pro: 1, particulier: 2 };
+      return c in order ? order[c] : 99;
     };
     const sorted = [...sites].sort((a: any, b: any) => {
       const ca = catIdxOf(a), cb = catIdxOf(b);
@@ -5990,7 +5992,8 @@ useEffect(() => {
                         });
                       }
                       // 2. Tri par défaut (non-pinned) : catégorie → 1re semaine → nom
-                      const CATEGORY_ORDER: Record<string, number> = { ao: 0, particulier: 1, pro: 2 };
+                      // Ordre : Public → Privé → Particulier (compat anciennes valeurs ao/pro)
+                      const CATEGORY_ORDER: Record<string, number> = { public: 0, ao: 0, prive: 1, pro: 1, particulier: 2 };
                       const catIdx = (s: any) => {
                         const c = String(s?.categoriePrincipale || "").toLowerCase();
                         return c in CATEGORY_ORDER ? CATEGORY_ORDER[c] : 99;

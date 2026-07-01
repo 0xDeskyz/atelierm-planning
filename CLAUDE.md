@@ -20,5 +20,5 @@ Next.js 14 planning app for a French construction company (Atelier M).
 - Calendar lane order persisted in Supabase as `calendarLaneOrder: string[]`
 - Span-based greedy packing for lane assignment (first→last planningWeek of each chantier)
 - `LANE_H = 26px` per row
-- Category colors: emerald (AO), violet (Particulier), blue (Pro)
+- Catégorie principale (type de client) : blue (Public), violet (Privé), emerald (Particulier). Anciennes valeurs migrées via `CATEGORIE_MIGRATION` (ao→public, pro→prive, particulier→particulier). Sous-catégorie = liste libre partagée (`DEFAULT_SOUS_CATEGORIES` : Appel d'offre, Marché négocié, Syndic…).
 - Difficulty: 4 niveaux choisis MANUELLEMENT par chantier (`difficulteLevel` + `difficulteReason` texte). Couleurs : green-500 (vert), yellow-400 (jaune), orange-500 (orange), red-500 (rouge). `resolveDifficulteLevel()` retombe sur l'ancien calcul par drapeaux (`difficulte` flags) pour les chantiers non encore édités.
