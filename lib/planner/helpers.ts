@@ -301,11 +301,10 @@ export const DIFFICULTE_FLAG_LABELS = {
 } as const;
 export type DifficulteFlagKey = keyof typeof DIFFICULTE_FLAG_LABELS;
 
-export type DifficulteLevel = "vert" | "jaune" | "orange" | "rouge";
-export const DIFFICULTE_LEVELS: DifficulteLevel[] = ["vert", "jaune", "orange", "rouge"];
+export type DifficulteLevel = "vert" | "orange" | "rouge";
+export const DIFFICULTE_LEVELS: DifficulteLevel[] = ["vert", "orange", "rouge"];
 export const DIFFICULTE_LEVEL_META: Record<DifficulteLevel, { label: string; color: string; hex: string; badge: string }> = {
   vert:   { label: "Vert",   color: "bg-green-500",  hex: "#22c55e", badge: "bg-green-100 text-green-800 border-green-200" },
-  jaune:  { label: "Jaune",  color: "bg-yellow-400", hex: "#facc15", badge: "bg-yellow-100 text-yellow-800 border-yellow-200" },
   orange: { label: "Orange", color: "bg-orange-500", hex: "#f97316", badge: "bg-orange-100 text-orange-800 border-orange-200" },
   rouge:  { label: "Rouge",  color: "bg-red-500",    hex: "#ef4444", badge: "bg-red-100 text-red-800 border-red-200" },
 };
@@ -314,7 +313,7 @@ export function computeDifficulteLevel(flags?: { technique?: boolean; delai?: bo
   const count = (flags?.technique ? 1 : 0) + (flags?.delai ? 1 : 0) + (flags?.marge ? 1 : 0);
   if (count >= 2) return "rouge";
   if (count === 1) return "orange";
-  return "jaune";
+  return "vert";
 }
 
 export const normalizeSiteRecord = (site: any) => {
@@ -342,8 +341,10 @@ export const normalizeSiteRecord = (site: any) => {
     difficulteRaw && typeof difficulteRaw === "object"
       ? Object.fromEntries(Object.entries(difficulteRaw).map(([k, v]) => [k, !!v]))
       : { technique: false, delai: false, marge: false };
-  // Nouveau système : niveau choisi manuellement (vert/jaune/orange/rouge) + justification libre
-  const rawLevel = (base as any)?.difficulteLevel;
+  // Niveau choisi manuellement (vert/orange/rouge) + justification libre.
+  // Migration : l'ancien niveau "jaune" (système 4 couleurs) devient "vert".
+  let rawLevel = (base as any)?.difficulteLevel;
+  if (rawLevel === "jaune") rawLevel = "vert";
   const difficulteLevel = DIFFICULTE_LEVELS.includes(rawLevel) ? rawLevel : null;
   const difficulteReason = typeof (base as any)?.difficulteReason === "string" ? (base as any).difficulteReason : "";
   return {

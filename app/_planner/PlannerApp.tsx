@@ -467,14 +467,14 @@ function computeDifficulteWithConfig(
   flags: Record<string, boolean | undefined> | null | undefined,
   config: { rougeAtCount: number; alwaysRougeFlags: string[]; flags?: { key: string; label: string }[] }
 ): DifficulteLevel {
-  if (!flags) return "jaune";
+  if (!flags) return "vert";
   const configFlags = config.flags?.length ? config.flags : DEFAULT_DIFFICULTE_FLAGS;
   const activeKeys = configFlags.map(f => f.key).filter(k => !!(flags as any)[k]);
   if (activeKeys.some(k => (config.alwaysRougeFlags || []).includes(k))) return "rouge";
   const count = activeKeys.length;
   if (count >= (config.rougeAtCount ?? 2)) return "rouge";
   if (count >= 1) return "orange";
-  return "jaune";
+  return "vert";
 }
 
 // Niveau de difficulté d'un chantier : on prend le niveau choisi MANUELLEMENT
@@ -6731,7 +6731,7 @@ useEffect(() => {
                   if (sitesSort.col === "difficulte") {
                     const la = resolveDifficulteLevel(a, difficulteConfig);
                     const lb = resolveDifficulteLevel(b, difficulteConfig);
-                    const order: Record<string, number> = { vert: 0, jaune: 1, orange: 2, rouge: 3 };
+                    const order: Record<string, number> = { vert: 0, jaune: 0, orange: 1, rouge: 2 };
                     return ((order[la] ?? 0) - (order[lb] ?? 0)) * dir;
                   }
                   return 0;
@@ -6862,7 +6862,7 @@ useEffect(() => {
                           <div className="w-px h-4 bg-neutral-200" />
                           {/* Difficulty */}
                           <div className="flex items-center gap-1 flex-wrap">
-                            {(["vert", "jaune", "orange", "rouge"] as const).map(lvl => {
+                            {(["vert", "orange", "rouge"] as const).map(lvl => {
                               const meta = DIFFICULTE_LEVEL_META[lvl];
                               const active = sitesDiffFilters.includes(lvl);
                               return (
@@ -8255,7 +8255,7 @@ useEffect(() => {
                     <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Difficulté des chantiers</label>
                     <p className="text-[11px] text-neutral-400">
                       Le niveau de difficulté se choisit maintenant directement dans chaque fiche chantier
-                      (4 couleurs : vert, jaune, orange, rouge) avec une justification libre. Plus de seuils à configurer ici.
+                      (3 couleurs : vert, orange, rouge) avec une justification libre. Plus de seuils à configurer ici.
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">
                       {DIFFICULTE_LEVELS.map((lvl) => {
