@@ -2365,6 +2365,9 @@ export default function PlannerApp({
   // Éditeur de case unifié (clic / clic droit) : position pour le popover
   const [cellEditorTarget, setCellEditorTarget] = useState<{ date: Date; site: any; pos: { x: number; y: number } | null } | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+  // Ajout direct depuis le FAB (raccourcis salarié / chantier)
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
+  const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [weekDetailTarget, setWeekDetailTarget] = useState<{ weekKey: string; weekNum: number; start: Date; absences: string[]; events: any[] } | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -8746,9 +8749,9 @@ useEffect(() => {
         <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2">
           {fabOpen && (
             <div className="flex flex-col gap-2 mb-1 animate-fadeIn">
-              <button onClick={() => { setFabOpen(false); setEventDialogOpen(true); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">📅 Événement</button>
-              <button onClick={() => { setFabOpen(false); setView("sites"); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">🏗 Chantier</button>
-              <button onClick={() => { setFabOpen(false); setView("salaries"); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">👤 Salarié</button>
+              <button onClick={() => { setFabOpen(false); setEventDialogOpen(true); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">📅 Ajouter un événement</button>
+              <button onClick={() => { setFabOpen(false); setAddSiteOpen(true); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">🏗 Ajouter un chantier</button>
+              <button onClick={() => { setFabOpen(false); setAddPersonOpen(true); }} className="h-12 px-4 rounded-full bg-white border border-neutral-200 shadow-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition">👤 Ajouter un salarié</button>
             </div>
           )}
           <button
@@ -8759,6 +8762,10 @@ useEffect(() => {
           >+</button>
         </div>
       )}
+
+      {/* Formulaires d'ajout ouverts depuis le FAB (raccourcis) */}
+      <AddPersonDialog open={addPersonOpen} setOpen={setAddPersonOpen} onAdd={addPerson} usedColors={safePeople.map((p: any) => p.color)} />
+      <AddSiteDialog open={addSiteOpen} setOpen={setAddSiteOpen} onAdd={addSite} usedColors={safeSites.map((s: any) => s.color)} />
     </div>
   );
 }
