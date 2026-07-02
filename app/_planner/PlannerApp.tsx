@@ -4066,7 +4066,7 @@ export default function PlannerApp({
   const bulkDeleteSites = () => {
     if (selectedSiteIds.size === 0) return;
     const ids = selectedSiteIds;
-    if (!window.confirm(`Supprimer ${ids.size} chantier(s) ?\n\nLes affectations et notes liées seront aussi supprimées. Cette action peut être annulée avec Ctrl+Z.`)) return;
+    if (!window.confirm(`Supprimer définitivement ${ids.size} chantier(s) ?\n\n⚠️ Les affectations, heures et données de rentabilité liées seront PERDUES (plus dans les stats/exports).\n\n👉 Pour garder l'historique, ARCHIVE plutôt que de supprimer.`)) return;
     pushUndo(snapshotNow());
     const removedSites = sites.filter((x: any) => ids.has(x.id));
     setSites((s) => s.filter((x) => !ids.has(x.id)));
@@ -7260,7 +7260,7 @@ useEffect(() => {
                                     )}
                                     <button
                                       onClick={() => {
-                                        if (window.confirm(`Supprimer le chantier "${site.name}" ?\n\nLes affectations et notes liées seront aussi supprimées. Cette action peut être annulée avec Ctrl+Z.`)) {
+                                        if (window.confirm(`Supprimer définitivement le chantier "${site.name}" ?\n\n⚠️ Les affectations, heures et données de rentabilité liées seront PERDUES et n'apparaîtront plus dans tes stats/exports.\n\n👉 Pour garder l'historique (bilan de fin d'année), ARCHIVE-le plutôt que de le supprimer.`)) {
                                           removeSite(site.id);
                                         }
                                       }}
