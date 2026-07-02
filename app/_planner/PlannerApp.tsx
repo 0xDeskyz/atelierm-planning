@@ -507,7 +507,7 @@ function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConf
 }
 
 // Éditeur de case unifié : onglets Affecter / Statut·Note, ouvert au clic à la position du curseur
-function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAbsent, onAssign, onAssignWeek, onRemove, onCopyDayToWeek, onSaveMeta, onQuickAction }: any) {
+function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAbsent, eventTypes = EVENT_TYPES, onAssign, onAssignWeek, onRemove, onCopyDayToWeek, onSaveMeta, onQuickAction }: any) {
   const { date, site, pos } = target;
   const dateKey = toLocalKey(date);
   const [tab, setTab] = useState<"affecter" | "statut">("affecter");
@@ -611,17 +611,13 @@ function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAb
                 ))}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {EVENT_TYPES.map((et: any) => (
+                {eventTypes.map((et: any) => (
                   <button key={et.id} onClick={() => setEventType(eventType === et.id ? null : et.id)} className={cx("inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs transition", eventType === et.id ? et.color + " border-current" : "border-neutral-200 text-neutral-500 hover:border-neutral-300")}>
                     <span>{et.icon}</span>{et.label}
                   </button>
                 ))}
               </div>
               <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Note / libellé…" className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-500">Heures spécifiques</span>
-                <input type="number" min={0} step={0.5} value={hoursOverride} onChange={(e) => setHoursOverride(e.target.value)} placeholder="—" className="w-16 rounded-md border border-neutral-200 px-2 py-1 text-sm text-center" />
-              </div>
               <button onClick={saveMeta} className="w-full rounded-lg bg-neutral-900 py-2 text-sm font-semibold text-white hover:bg-neutral-700 transition">Enregistrer</button>
             </>
           )}
@@ -634,6 +630,47 @@ function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAb
         </div>
       </div>
     </>
+  );
+}
+
+// Gestionnaire des types d'événement (emoji + libellé) : ajout, renommage, suppression
+function EventTypesManager({ options, onAdd, onRename, onDelete }: any) {
+  const [newLabel, setNewLabel] = useState("");
+  const [newIcon, setNewIcon] = useState("");
+  return (
+    <div className="space-y-2 pt-3 border-t border-neutral-100">
+      <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Types d'événement</label>
+      <p className="text-[11px] text-neutral-400">Proposés dans l'éditeur de case (onglet Statut / Note) et affichés sur les cases.</p>
+      <div className="space-y-1.5">
+        {options.map((o: any) => (
+          <div key={o.id} className="flex items-center gap-2">
+            <input
+              defaultValue={o.icon}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== o.icon) onRename(o.id, { icon: v }); }}
+              className="w-10 text-center rounded-md border border-neutral-200 px-1 py-1 text-sm"
+            />
+            <input
+              defaultValue={o.label}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== o.label) onRename(o.id, { label: v }); }}
+              onKeyDown={(e: any) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              className="flex-1 rounded-md border border-neutral-200 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+            />
+            <button onClick={() => { if (window.confirm(`Supprimer le type "${o.label}" ?`)) onDelete(o.id); }} className="text-neutral-300 hover:text-red-500 text-lg leading-none px-1" title="Supprimer">×</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <input value={newIcon} onChange={(e) => setNewIcon(e.target.value)} placeholder="😀" className="w-10 text-center rounded-md border border-neutral-200 px-1 py-1 text-sm" />
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="Nouveau type…"
+          onKeyDown={(e: any) => { if (e.key === "Enter" && newLabel.trim()) { e.preventDefault(); onAdd(newLabel.trim(), newIcon); setNewLabel(""); setNewIcon(""); } }}
+          className="flex-1 rounded-md border border-neutral-200 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
+        />
+        <button onClick={() => { if (newLabel.trim()) { onAdd(newLabel.trim(), newIcon); setNewLabel(""); setNewIcon(""); } }} className="px-3 py-1 rounded-md bg-neutral-900 text-white text-xs font-semibold hover:bg-neutral-700 transition">Ajouter</button>
+      </div>
+    </div>
   );
 }
 
@@ -2386,6 +2423,7 @@ export default function PlannerApp({
   // Listes ÉDITABLES (ajout / renommage / suppression) — persistées dans l'état
   const [categorieOptions, setCategorieOptions] = useState<any[]>(() => CATEGORIE_PRINCIPALE_OPTIONS.map((o) => ({ ...o })));
   const [origineOptions, setOrigineOptions] = useState<any[]>(() => ORIGINE_OPTIONS.map((o) => ({ ...o })));
+  const [eventTypeOptions, setEventTypeOptions] = useState<any[]>(() => EVENT_TYPES.map((o) => ({ ...o })));
   // Mode de coloration des chantiers dans planning/calendrier : "default" = couleur libre, "difficulte" = jaune/orange/rouge auto, "categorie" = par catégorie principale
   const [siteColorMode, setSiteColorMode] = useState<"difficulte" | "categorie">("categorie");
   // Configuration personnalisable des seuils de difficulté
@@ -2584,6 +2622,19 @@ export default function PlannerApp({
     setSites((prev) => prev.map((s: any) => (s.sousCategorie === oldLabel ? { ...s, sousCategorie: t } : s)));
   };
   const deleteSousCat = (label: string) => setSousCategorieOptions((prev) => prev.filter((s) => s !== label));
+  const addEventType = (label: string, icon?: string) => {
+    const t = label.trim(); if (!t) return;
+    setEventTypeOptions((prev) => {
+      if (prev.some((o: any) => o.label.toLowerCase() === t.toLowerCase())) return prev;
+      let id = slugifyOption(t); if (prev.some((o: any) => o.id === id)) id = `${id}_${prev.length}`;
+      const badge = ORIGINE_BADGE_PRESETS[prev.length % ORIGINE_BADGE_PRESETS.length];
+      return [...prev, { id, label: t, icon: (icon && icon.trim()) || "📌", color: badge }];
+    });
+  };
+  const renameEventType = (id: string, patch: { label?: string; icon?: string }) => {
+    setEventTypeOptions((prev) => prev.map((o: any) => (o.id === id ? { ...o, ...(patch.label ? { label: patch.label.trim() } : {}), ...(patch.icon ? { icon: patch.icon.trim() } : {}) } : o)));
+  };
+  const deleteEventType = (id: string) => setEventTypeOptions((prev) => prev.filter((o: any) => o.id !== id));
   const safeQuotes = useMemo(() => (Array.isArray(quotes) ? quotes.map(normalizeQuoteRecord) : []), [quotes]);
   const plannedSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "planned"), [safeSites]);
   const pendingSites = useMemo(() => safeSites.filter((s) => (s.status || "planned") === "pending"), [safeSites]);
@@ -4109,7 +4160,7 @@ export default function PlannerApp({
       people, sites: updatedSites, assignments, notes, absencesByWeek, absencesByDay,
       siteWeekVisibility: updatedVisibility, hoursPerDay, quotes, tenders, clients,
       tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault,
-      eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions,
+      eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions, eventTypeOptions,
       siteColorMode, difficulteConfig, siteLanePins,
       chantiersSeeded2026: true, [ROSTER_SEED_FLAG]: true,
       updatedAt: stamp, clientId: clientIdRef.current,
@@ -4215,6 +4266,7 @@ export default function PlannerApp({
     }
     if (Array.isArray(state.categorieOptions) && state.categorieOptions.length) setCategorieOptions(state.categorieOptions.filter((o: any) => o && o.value));
     if (Array.isArray(state.origineOptions) && state.origineOptions.length) setOrigineOptions(state.origineOptions.filter((o: any) => o && o.value));
+    if (Array.isArray(state.eventTypeOptions) && state.eventTypeOptions.length) setEventTypeOptions(state.eventTypeOptions.filter((o: any) => o && o.id));
     // Migration : l'ancien "default" (libre) est ramené à "categorie"
     if (state.siteColorMode === "difficulte" || state.siteColorMode === "categorie") setSiteColorMode(state.siteColorMode);
     else if (state.siteColorMode === "default") setSiteColorMode("categorie");
@@ -4534,6 +4586,7 @@ const saveRemote = useMemo(() => {
     sousCategorieOptions,
     categorieOptions,
     origineOptions,
+    eventTypeOptions,
     siteColorMode,
     difficulteConfig,
     siteLanePins,
@@ -4541,7 +4594,7 @@ const saveRemote = useMemo(() => {
     [ROSTER_SEED_FLAG]: true,
     updatedAt: stamp,
     clientId: clientIdRef.current,
-  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions, siteColorMode, difficulteConfig, siteLanePins]);
+  }), [people, sites, assignments, notes, absencesByWeek, absencesByDay, siteWeekVisibility, hoursPerDay, quotes, tenders, clients, tauxJournalierDefault, tauxMaterielDefault, fraisFixesDefault, eventCalendars, calendarEvents, validatedWeeks, sousCategorieOptions, categorieOptions, origineOptions, eventTypeOptions, siteColorMode, difficulteConfig, siteLanePins]);
 
   const snapshotNow = useCallback(() => ({
     people, sites, assignments, notes, absencesByWeek, siteWeekVisibility, hoursPerDay, quotes, eventCalendars, calendarEvents,
@@ -6024,6 +6077,7 @@ useEffect(() => {
                             publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                             absencesByDay={absencesByDay}
                             onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                            eventTypes={eventTypeOptions}
                             locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                           />
                         ))}
@@ -6128,6 +6182,7 @@ useEffect(() => {
                           onUpdateAssignment={updateAssignment}
                           onRemoveAssignment={(id: string) => setAssignments((prev: any) => prev.filter((a: any) => a.id !== id))}
                           getInfo={getAssignmentHoursInfo}
+                          eventTypes={eventTypeOptions}
                         />
                       ))}
                     </div>
@@ -6212,6 +6267,7 @@ useEffect(() => {
                                         publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
                                   absencesByDay={absencesByDay}
                                   onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                            eventTypes={eventTypeOptions}
                                   locked={Boolean(validatedWeeks[weekKeyOf(d)])}
                                 />
                               ))}
@@ -8491,6 +8547,13 @@ useEffect(() => {
                     onRename={renameSousCat}
                     onDelete={deleteSousCat}
                   />
+
+                  <EventTypesManager
+                    options={eventTypeOptions}
+                    onAdd={addEventType}
+                    onRename={renameEventType}
+                    onDelete={deleteEventType}
+                  />
                 </div>
               )}
 
@@ -8555,6 +8618,7 @@ useEffect(() => {
           assignments={assignments}
           meta={notes[cellKey(cellEditorTarget.site.id, toLocalKey(cellEditorTarget.date))]}
           canPaste={!!cellClipboard}
+          eventTypes={eventTypeOptions}
           isAbsent={(pid: string) => isAbsentOnWeek(pid, weekKeyOf(cellEditorTarget.date))}
           onAssign={(pid: string) => assignPersonToCell(pid, cellEditorTarget.date, cellEditorTarget.site)}
           onAssignWeek={(pid: string) => assignPersonWholeWeek(pid, cellEditorTarget.site)}

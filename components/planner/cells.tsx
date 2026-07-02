@@ -28,7 +28,7 @@ function useLongPress(callback: () => void, ms = 500) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, onCellOpen, locked }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, onCellOpen, eventTypes = EVENT_TYPES, locked }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site }, disabled: locked });
   const open = (pos: { x: number; y: number } | null) => { if (onCellOpen && !locked) onCellOpen(date, site, pos); };
@@ -75,9 +75,9 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
           {meta.holiday && !publicHoliday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-medium">🏖 Non travaillé</div>)}
           {meta.blocked && !meta.holiday && (<div className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 font-medium">🚧 Indisponible</div>)}
           {meta.eventType && (() => {
-            const et = EVENT_TYPES.find((e) => e.id === meta.eventType);
+            const et = eventTypes.find((e: any) => e.id === meta.eventType);
             return et ? (
-              <div className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>
+              <div className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id] || et.color)}>
                 {et.icon} {et.label}{meta.text ? ` · ${meta.text}` : ""}
               </div>
             ) : null;
@@ -140,7 +140,7 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
 // ==================================
 // Hours Cell
 // ==================================
-export function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, onRemoveAssignment, getInfo }: any) {
+export function HoursCell({ date, site, assignments, people, notes, hoursPerDay, conflictMap, onEditNote, onUpdateAssignment, onRemoveAssignment, getInfo, eventTypes = EVENT_TYPES }: any) {
   const todays = assignments.filter((a: any) => a.date === toLocalKey(date) && a.siteId === site.id);
   const key = cellKey(site.id, toLocalKey(date));
   const raw = notes[key];
@@ -165,7 +165,7 @@ export function HoursCell({ date, site, assignments, people, notes, hoursPerDay,
           <span className="text-xs font-semibold text-neutral-700">{date.getDate()}</span>
           {meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">🏖 Non travaillé</span>}
           {meta.blocked && !meta.holiday && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">🚧 Indispo</span>}
-          {meta.eventType && (() => { const et = EVENT_TYPES.find((e) => e.id === meta.eventType); return et ? <span className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id])}>{et.icon}</span> : null; })()}
+          {meta.eventType && (() => { const et = eventTypes.find((e: any) => e.id === meta.eventType); return et ? <span className={cx("text-[10px] px-1.5 py-0.5 rounded-full border font-medium", EVENT_CELL_STYLE[et.id] || et.color)}>{et.icon}</span> : null; })()}
           {meta.text && !meta.eventType && <span className="text-[10px] text-neutral-400 truncate max-w-[80px]" title={meta.text}>{meta.text}</span>}
         </div>
         <button onClick={() => onEditNote(date, site)} className="opacity-30 hover:opacity-70 transition" title="Éditer">
