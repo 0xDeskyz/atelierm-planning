@@ -6143,76 +6143,77 @@ useEffect(() => {
               </div>
             )}
 
-            {/* TEST V3 — ruban horizontal : semaines qui s'enchaînent de gauche à droite */}
+            {/* TEST V3 — blocs-semaines côte à côte : chaque semaine = ses propres chantiers,
+                défilement horizontal de gauche à droite */}
             {view === "testv3" && (() => {
               const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
-              const totalDayCols = weeksV3.length * 5;
-              const cols = `200px repeat(${totalDayCols}, 116px)`;
-              // Chantiers affichés : ceux planifiés sur au moins une des semaines visibles
-              const visibleWkKeys = weeksV3.map((w) => weekKeyOf(w[0]));
-              const rowsSites = plannedSites.filter((s) => visibleWkKeys.some((wk) => isSiteVisibleOnWeek(s.id, wk)));
+              const cardCols = "138px repeat(5, 94px)";
               return (
-                <div className="rounded-2xl border border-neutral-200 bg-white overflow-x-auto">
-                  <div className="min-w-max">
-                    {/* En-tête semaines */}
-                    <div className="grid sticky top-0 z-20 bg-white border-b border-neutral-200" style={{ gridTemplateColumns: cols }}>
-                      <div className="sticky left-0 z-30 bg-white px-3 py-2 text-[11px] font-semibold text-neutral-500 border-r border-neutral-200">Chantier</div>
-                      {weeksV3.map((days) => {
-                        const wkKey = weekKeyOf(days[0]);
-                        const isCur = wkKey === todayWeekKey;
-                        return (
-                          <div key={wkKey} className={cx("px-2 py-2 text-center text-xs font-bold border-r border-neutral-200", isCur ? "bg-sky-50 text-sky-700" : "text-neutral-700")} style={{ gridColumn: "span 5" }}>
-                            Sem. {getISOWeek(days[0])} · {formatFR(days[0])}
-                            {isCur && <span className="ml-1 text-[10px] font-semibold text-sky-600">• en cours</span>}
-                            {Boolean(validatedWeeks[wkKey]) && <span className="ml-1" title="Semaine verrouillée">🔒</span>}
+                <div className="overflow-x-auto pb-2">
+                  <div className="flex gap-3 min-w-max items-start">
+                    {weeksV3.map((days) => {
+                      const wkKey = weekKeyOf(days[0]);
+                      const isCur = wkKey === todayWeekKey;
+                      const locked = Boolean(validatedWeeks[wkKey]);
+                      const weekSites = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey));
+                      return (
+                        <div key={wkKey} className={cx("shrink-0 rounded-2xl border p-2 space-y-1.5", isCur ? "border-sky-300 bg-sky-50/50" : "border-neutral-200 bg-white")}>
+                          {/* En-tête semaine */}
+                          <div className="flex items-center gap-2 px-1 py-0.5">
+                            <span className={cx("text-sm font-bold", isCur ? "text-sky-700" : "text-neutral-700")}>Sem. {getISOWeek(days[0])}</span>
+                            <span className="text-[11px] text-neutral-400">{formatFR(days[0])} → {formatFR(days[4])}</span>
+                            {isCur && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">En cours</span>}
+                            {locked && <span title="Semaine verrouillée">🔒</span>}
                           </div>
-                        );
-                      })}
-                    </div>
-                    {/* En-tête jours */}
-                    <div className="grid sticky top-[37px] z-10 bg-neutral-50 border-b border-neutral-200 text-[10px] text-neutral-500" style={{ gridTemplateColumns: cols }}>
-                      <div className="sticky left-0 z-20 bg-neutral-50 border-r border-neutral-200" />
-                      {weeksV3.map((days) => days.map((d, i) => {
-                        const holiday = publicHolidays.get(toLocalKey(d));
-                        return (
-                          <div key={toLocalKey(d)} className={cx("px-1 py-1 text-center border-r border-neutral-100", holiday && "text-red-600 font-semibold", i === 4 && "border-neutral-200")} title={holiday || ""}>
-                            {dayNames[i]} {d.getDate()}
+                          {/* En-tête jours */}
+                          <div className="grid text-[10px] text-neutral-500" style={{ gridTemplateColumns: cardCols }}>
+                            <div />
+                            {days.map((d, i) => {
+                              const holiday = publicHolidays.get(toLocalKey(d));
+                              return (
+                                <div key={i} className={cx("text-center", holiday && "text-red-600 font-semibold")} title={holiday || ""}>
+                                  {dayNames[i]} {d.getDate()}
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      }))}
-                    </div>
-                    {/* Lignes chantiers */}
-                    {rowsSites.length === 0 && (
-                      <p className="px-3 py-6 text-sm text-neutral-400 italic">Aucun chantier planifié sur ces semaines.</p>
-                    )}
-                    {rowsSites.map((site) => (
-                      <div key={site.id} className="grid border-b border-neutral-100 last:border-b-0" style={{ gridTemplateColumns: cols }}>
-                        <div className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-neutral-200 flex items-center gap-1.5 min-w-0">
-                          <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
-                          <span className="text-sm font-medium text-neutral-800 truncate" title={site.name}>{site.name}</span>
+                          {/* Chantiers de la semaine */}
+                          {weekSites.length === 0 ? (
+                            <p className="px-1 py-6 text-xs text-neutral-400 italic text-center">Aucun chantier cette semaine.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {weekSites.map((site) => (
+                                <div key={site.id} className="grid gap-1 items-stretch" style={{ gridTemplateColumns: cardCols }}>
+                                  <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                                    <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
+                                    <span className="text-xs font-medium text-neutral-800 truncate" title={site.name}>{site.name}</span>
+                                  </div>
+                                  {days.map((d) => (
+                                    <DayCell
+                                      key={toLocalKey(d)}
+                                      date={d}
+                                      site={site}
+                                      people={people}
+                                      assignments={assignments}
+                                      onEditNote={openNote}
+                                      notes={notes}
+                                      hoursPerDay={hoursPerDay}
+                                      conflictMap={conflictMap}
+                                      onRemoveAssignment={(id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id))}
+                                      publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                      absencesByDay={absencesByDay}
+                                      onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                                      eventTypes={eventTypeOptions}
+                                      locked={locked}
+                                    />
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        {weeksV3.map((days) => days.map((d, i) => (
-                          <div key={`${site.id}-${toLocalKey(d)}`} className={cx("p-0.5 border-r border-neutral-100", i === 4 && "border-neutral-200")}>
-                            <DayCell
-                              date={d}
-                              site={site}
-                              people={people}
-                              assignments={assignments}
-                              onEditNote={openNote}
-                              notes={notes}
-                              hoursPerDay={hoursPerDay}
-                              conflictMap={conflictMap}
-                              onRemoveAssignment={(id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id))}
-                              publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
-                              absencesByDay={absencesByDay}
-                              onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
-                              eventTypes={eventTypeOptions}
-                              locked={Boolean(validatedWeeks[weekKeyOf(d)])}
-                            />
-                          </div>
-                        )))}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
