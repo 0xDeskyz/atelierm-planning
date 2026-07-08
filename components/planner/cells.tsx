@@ -28,7 +28,7 @@ function useLongPress(callback: () => void, ms = 500) {
 // ==================================
 // Droppable Cell (Day x Site)
 // ==================================
-export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, onCellOpen, eventTypes = EVENT_TYPES, locked }: any) {
+export function DayCell({ date, site, assignments, people, onEditNote, notes, onRemoveAssignment, hoursPerDay, conflictMap, publicHoliday, absencesByDay, onCellAction, onCellOpen, eventTypes = EVENT_TYPES, compact = false, locked }: any) {
   const id = `cell-${site.id}-${toLocalKey(date)}`;
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "day-site", date, site }, disabled: locked });
   const open = (pos: { x: number; y: number } | null) => { if (onCellOpen && !locked) onCellOpen(date, site, pos); };
@@ -46,7 +46,8 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
   return (
     <div
       className={cx(
-        "relative border min-h-20 p-2 rounded-xl bg-white magic-cell",
+        "relative border rounded-xl bg-white magic-cell",
+        compact ? "min-h-[3rem] p-1" : "min-h-20 p-2",
         !locked && "cursor-pointer",
         locked && "opacity-90 pointer-events-auto",
         isOver ? "ring-2 ring-sky-400 is-over" : "",
@@ -93,45 +94,67 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
             </div>
           )}
         </div>
-        <div className="text-[11px] text-neutral-400 shrink-0 ml-1">{date.getDate()}</div>
+        {!compact && <div className="text-[11px] text-neutral-400 shrink-0 ml-1">{date.getDate()}</div>}
       </div>
 
       {/* Assignments list */}
-      <div className="flex flex-wrap gap-1.5">
-        {todays.map((a: any) => {
-          const p = people.find((pp: any) => pp.id === a.personId);
-          const conflictKey = `${a.personId}|${a.date}`;
-          const conflict = (conflictMap?.[conflictKey] || 0) > 1;
-          const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
-          const personBase = meta.hoursOverride != null && meta.hoursOverride !== ""
-            ? Number(meta.hoursOverride)
-            : (p?.hoursPerDay ?? baseHours);
-          return p ? (
-            <div key={a.id} className="flex items-center gap-1">
-              <AssignmentChip
-                a={a}
-                person={p}
-                onRemove={() => onRemoveAssignment(a.id)}
-                baseHours={Number.isFinite(personBase) ? personBase : baseHours}
-                conflict={conflict}
-              />
-              {absence && (
-                <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
-                  {absence}
-                </span>
-              )}
-            </div>
-          ) : null;
-        })}
-      </div>
-
-      {/* Edit button */}
-      {!locked && (
-        <div className="mt-1.5 flex justify-end">
-          <button onClick={(e) => { e.stopPropagation(); open({ x: (e as any).clientX, y: (e as any).clientY }); }} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
+      {compact ? (
+        <div className="flex flex-col gap-1">
+          {todays.map((a: any) => {
+            const p = people.find((pp: any) => pp.id === a.personId);
+            if (!p) return null;
+            const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
+            const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
+            return (
+              <span
+                key={a.id}
+                className={cx("flex items-center gap-1 px-1.5 py-0.5 rounded-full text-white text-[10px] font-semibold leading-tight w-full", p.color || "bg-neutral-400", conflict && "ring-1 ring-amber-400")}
+                title={p.name}
+              >
+                <span className="truncate">{p.name.split(" ")[0]}</span>
+                {absence && <span className="ml-auto text-[8px] font-bold px-1 rounded-full bg-white/25 shrink-0">{absence}</span>}
+                {conflict && !absence && <span className="ml-auto shrink-0">!</span>}
+              </span>
+            );
+          })}
         </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {todays.map((a: any) => {
+              const p = people.find((pp: any) => pp.id === a.personId);
+              const conflictKey = `${a.personId}|${a.date}`;
+              const conflict = (conflictMap?.[conflictKey] || 0) > 1;
+              const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
+              const personBase = meta.hoursOverride != null && meta.hoursOverride !== ""
+                ? Number(meta.hoursOverride)
+                : (p?.hoursPerDay ?? baseHours);
+              return p ? (
+                <div key={a.id} className="flex items-center gap-1">
+                  <AssignmentChip
+                    a={a}
+                    person={p}
+                    onRemove={() => onRemoveAssignment(a.id)}
+                    baseHours={Number.isFinite(personBase) ? personBase : baseHours}
+                    conflict={conflict}
+                  />
+                  {absence && (
+                    <span className={cx("text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0", ABSENCE_BADGE[absence] || "bg-neutral-400")} title={absence === "CP" ? "Congé payé" : absence === "MAL" ? "Maladie" : "Jour off / RTT"}>
+                      {absence}
+                    </span>
+                  )}
+                </div>
+              ) : null;
+            })}
+          </div>
+          {!locked && (
+            <div className="mt-1.5 flex justify-end">
+              <button onClick={(e) => { e.stopPropagation(); open({ x: (e as any).clientX, y: (e as any).clientY }); }} className="opacity-40 hover:opacity-80 transition" aria-label="Éditer la case" title="Éditer la case">
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

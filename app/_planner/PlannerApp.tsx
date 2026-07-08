@@ -5069,12 +5069,26 @@ useEffect(() => {
             {["planning", "hours", "timeline", "calendar", "testv3"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
+                  {view === "testv3" && (
+                    <button
+                      onClick={() => setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() - 28); return nd; })}
+                      className="h-9 px-2.5 rounded-lg text-sm font-semibold border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
+                      title="Reculer d'un mois (4 semaines)"
+                    >« Mois</button>
+                  )}
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
                   <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Suivant">
                     <ChevronRight className="w-4 h-4" />
                   </Button>
+                  {view === "testv3" && (
+                    <button
+                      onClick={() => setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + 28); return nd; })}
+                      className="h-9 px-2.5 rounded-lg text-sm font-semibold border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
+                      title="Avancer d'un mois (4 semaines)"
+                    >Mois »</button>
+                  )}
                   <button
                     onClick={() => setAnchor(new Date())}
                     className={cx(
@@ -6204,6 +6218,7 @@ useEffect(() => {
                                       absencesByDay={absencesByDay}
                                       onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
                                       eventTypes={eventTypeOptions}
+                                      compact
                                       locked={locked}
                                     />
                                   ))}
