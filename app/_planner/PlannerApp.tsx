@@ -2353,7 +2353,7 @@ export default function PlannerApp({
 
   // View / navigation
   const [view, setView] = useState<
-    "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite"
+    "accueil" | "planning" | "hours" | "calendar" | "sites" | "salaries" | "rentabilite" | "testv3"
   >("accueil");
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const calendarSortedSitesRef = useRef<any[]>([]);
@@ -2374,7 +2374,7 @@ export default function PlannerApp({
       const tag = (e.target as HTMLElement | null)?.tagName;
       const isEditable = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement | null)?.isContentEditable;
       if (isEditable) return;
-      if (!(view === "planning" || view === "hours" || view === "calendar" || view === "timeline")) return;
+      if (!(view === "planning" || view === "hours" || view === "calendar" || view === "timeline" || view === "testv3")) return;
       if (e.key === "ArrowLeft") { e.preventDefault(); setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() - 7); return nd; }); }
       else if (e.key === "ArrowRight") { e.preventDefault(); setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + 7); return nd; }); }
       else if (e.key === "t" || e.key === "T") { e.preventDefault(); setAnchor(new Date()); }
@@ -2469,6 +2469,12 @@ export default function PlannerApp({
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const weekFull = useMemo(() => getWeekDatesLocal(anchor), [anchor]);
   const weekDays = useMemo(() => weekFull.slice(0, 5), [weekFull]);
+  // Semaine suivante (vue Test v3 : deux semaines consécutives)
+  const nextWeekDays = useMemo(() => {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + 7);
+    return getWeekDatesLocal(d).slice(0, 5);
+  }, [anchor]);
   const isPlanningWeek = view === "planning" && planningView === "week";
   const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
@@ -3839,11 +3845,13 @@ export default function PlannerApp({
     const id = (typeof crypto !== "undefined" && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${personId}-${site.id}-${dateKey}-${Date.now()}`;
     setAssignments((prev) => [...prev, { id, personId, siteId: site.id, date: dateKey }]);
   };
-  const assignPersonWholeWeek = (personId: string, site: any) => {
+  const assignPersonWholeWeek = (personId: string, site: any, refDate?: Date) => {
+    // Semaine dérivée de la date cliquée (vue 2 semaines : peut différer de weekDays)
+    const daysOfWeek = refDate ? getWeekDatesLocal(refDate).slice(0, 5) : weekDays;
     let added = 0;
     setAssignments((prev) => {
       const next = [...prev];
-      for (const d of weekDays) {
+      for (const d of daysOfWeek) {
         const dk = toLocalKey(d);
         const meta = cellMetaOf(site, dk);
         if (meta.holiday || meta.blocked) continue;
@@ -3860,9 +3868,10 @@ export default function PlannerApp({
     const srcKey = toLocalKey(date);
     const srcAss = assignments.filter((a: any) => a.siteId === site.id && a.date === srcKey);
     if (!srcAss.length) { showToast("Aucune affectation à recopier"); return; }
+    const daysOfWeek = getWeekDatesLocal(date).slice(0, 5);
     setAssignments((prev) => {
       const next = [...prev];
-      for (const d of weekDays) {
+      for (const d of daysOfWeek) {
         const dk = toLocalKey(d);
         if (dk === srcKey) continue;
         const meta = cellMetaOf(site, dk);
@@ -4907,6 +4916,7 @@ useEffect(() => {
               {[
                 { v: "accueil", label: "Accueil", icon: <Home className="w-3.5 h-3.5" /> },
                 { v: "planning", label: "Planning", icon: <CalendarRange className="w-3.5 h-3.5" /> },
+                { v: "testv3", label: "Test v3", icon: <CalendarRange className="w-3.5 h-3.5" /> },
                 { v: "hours", label: "Heures", icon: <Clock3 className="w-3.5 h-3.5" /> },
                 { v: "calendar", label: "Calendrier", icon: <CalendarRange className="w-3.5 h-3.5" /> },
               ].map(({ v, label, icon }) => (
@@ -5045,7 +5055,7 @@ useEffect(() => {
                 Archivés
               </button>
             )}
-            {["planning", "hours", "timeline", "calendar"].includes(view) && (
+            {["planning", "hours", "timeline", "calendar", "testv3"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Précédent">
@@ -5103,6 +5113,14 @@ useEffect(() => {
                   {isPlanningMonth && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{anchor.toLocaleString("fr-FR", { month: "long", year: "numeric" })}</span>
+                      <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
+                        Semaine actuelle : S{pad2(todayWeekNumber)}
+                      </span>
+                    </div>
+                  )}
+                  {view === "testv3" && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{`S${getISOWeek(weekDays[0])} + S${getISOWeek(nextWeekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(nextWeekDays[4], true)}`}</span>
                       <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
                         Semaine actuelle : S{pad2(todayWeekNumber)}
                       </span>
@@ -6111,6 +6129,70 @@ useEffect(() => {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* TEST V3 — deux semaines consécutives empilées */}
+            {view === "testv3" && (
+              <div className="space-y-6">
+                {[weekDays, nextWeekDays].map((days, wi) => {
+                  const wkKey = weekKeyOf(days[0]);
+                  const weekSites = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey));
+                  const isCurrent = wkKey === todayWeekKey;
+                  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+                  return (
+                    <div key={wkKey} className={cx("rounded-2xl border p-3 space-y-2", isCurrent ? "border-sky-200 bg-sky-50/40" : "border-neutral-200 bg-white")}>
+                      <div className="grid grid-cols-6 text-xs text-neutral-500">
+                        <div className="px-1 flex items-center gap-2">
+                          <span className={cx("text-sm font-bold", isCurrent ? "text-sky-700" : "text-neutral-700")}>Sem. {getISOWeek(days[0])}</span>
+                          {isCurrent && <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>}
+                          {Boolean(validatedWeeks[wkKey]) && <span title="Semaine verrouillée">🔒</span>}
+                        </div>
+                        {days.map((d, i) => {
+                          const holiday = publicHolidays.get(toLocalKey(d));
+                          return (
+                            <div key={i} className={cx("text-center", holiday ? "text-red-600 font-semibold" : "")}>
+                              {dayNames[i]} {d.getDate()}
+                              {holiday && <div className="text-[9px] leading-tight truncate" title={holiday}>{holiday}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="space-y-1.5">
+                        {weekSites.length === 0 && (
+                          <p className="text-xs text-neutral-400 italic px-1 py-2">Aucun chantier sur cette semaine.</p>
+                        )}
+                        {weekSites.map((site) => (
+                          <div key={`${wkKey}-${site.id}`} className="grid gap-1.5 items-stretch grid-cols-6">
+                            <div className="text-sm flex items-center gap-1.5 font-semibold text-neutral-900 min-w-0">
+                              <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 flex-shrink-0", getChantierColor(site))} aria-hidden />
+                              <span className="truncate" title={site.name}>{site.name}</span>
+                            </div>
+                            {days.map((d) => (
+                              <DayCell
+                                key={`${site.id}-${toLocalKey(d)}`}
+                                date={d}
+                                site={site}
+                                people={people}
+                                assignments={assignments}
+                                onEditNote={openNote}
+                                notes={notes}
+                                hoursPerDay={hoursPerDay}
+                                conflictMap={conflictMap}
+                                onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
+                                publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                absencesByDay={absencesByDay}
+                                onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                                eventTypes={eventTypeOptions}
+                                locked={Boolean(validatedWeeks[wkKey])}
+                              />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -8647,7 +8729,7 @@ useEffect(() => {
           eventTypes={eventTypeOptions}
           isAbsent={(pid: string) => isAbsentOnWeek(pid, weekKeyOf(cellEditorTarget.date))}
           onAssign={(pid: string) => assignPersonToCell(pid, cellEditorTarget.date, cellEditorTarget.site)}
-          onAssignWeek={(pid: string) => assignPersonWholeWeek(pid, cellEditorTarget.site)}
+          onAssignWeek={(pid: string) => assignPersonWholeWeek(pid, cellEditorTarget.site, cellEditorTarget.date)}
           onRemove={(id: string) => setAssignments((prev) => prev.filter((a: any) => a.id !== id))}
           onCopyDayToWeek={() => copyDayToWeek(cellEditorTarget.date, cellEditorTarget.site)}
           onSaveMeta={(patch: any) => saveCellMeta(cellEditorTarget.date, cellEditorTarget.site, patch)}
