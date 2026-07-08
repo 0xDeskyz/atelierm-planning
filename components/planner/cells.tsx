@@ -105,16 +105,19 @@ export function DayCell({ date, site, assignments, people, onEditNote, notes, on
             if (!p) return null;
             const conflict = (conflictMap?.[`${a.personId}|${a.date}`] || 0) > 1;
             const absence = absencesByDay?.[toLocalKey(date)]?.[a.personId] as string | undefined;
+            const personBase = meta.hoursOverride != null && meta.hoursOverride !== "" ? Number(meta.hoursOverride) : (p?.hoursPerDay ?? baseHours);
             return (
-              <span
-                key={a.id}
-                className={cx("flex items-center gap-1 px-1.5 py-0.5 rounded-full text-white text-[10px] font-semibold leading-tight w-full", p.color || "bg-neutral-400", conflict && "ring-1 ring-amber-400")}
-                title={p.name}
-              >
-                <span className="truncate">{p.name.split(" ")[0]}</span>
-                {absence && <span className="ml-auto text-[8px] font-bold px-1 rounded-full bg-white/25 shrink-0">{absence}</span>}
-                {conflict && !absence && <span className="ml-auto shrink-0">!</span>}
-              </span>
+              <div key={a.id} className="flex items-center gap-1 w-full">
+                <AssignmentChip
+                  a={a}
+                  person={p}
+                  onRemove={() => onRemoveAssignment(a.id)}
+                  baseHours={Number.isFinite(personBase) ? personBase : baseHours}
+                  conflict={conflict}
+                  compact
+                />
+                {absence && <span className="text-[8px] font-bold px-1 py-0.5 rounded-full text-white bg-neutral-500 shrink-0">{absence}</span>}
+              </div>
             );
           })}
         </div>

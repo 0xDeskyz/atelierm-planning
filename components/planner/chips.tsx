@@ -25,7 +25,7 @@ export function PersonChip({ person }: any) {
 // ==================================
 // Assignment chip (draggable)
 // ==================================
-export function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any) {
+export function AssignmentChip({ a, person, onRemove, baseHours, conflict, compact = false }: any) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `assign-${a.id}`,
     data: { type: "assignment", assignmentId: a.id, personId: a.personId, from: { siteId: a.siteId, dateKey: a.date } },
@@ -42,6 +42,29 @@ export function AssignmentChip({ a, person, onRemove, baseHours, conflict }: any
     if (portion !== 1) return portion === 0.5 ? "½j" : `${portion}j`;
     return null;
   })();
+
+  // Version compacte (vues denses type Test v3) : épurée mais toujours draggable.
+  if (compact) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...listeners}
+        {...attributes}
+        className={cx(
+          "w-full px-1.5 py-0.5 rounded-full text-white text-[10px] font-semibold leading-tight flex items-center gap-1 select-none cursor-grab active:cursor-grabbing",
+          person.color || "bg-neutral-500",
+          isDragging ? "opacity-95" : "hover:brightness-105",
+          conflict ? "ring-1 ring-amber-400" : ""
+        )}
+        title={person.name}
+      >
+        <span className="truncate">{person.name.split(" ")[0]}</span>
+        {conflict && <span className="ml-auto shrink-0">!</span>}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
