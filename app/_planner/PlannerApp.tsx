@@ -2383,6 +2383,8 @@ export default function PlannerApp({
     return () => window.removeEventListener("keydown", onKey);
   }, [view]);
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
+  // Afficher (discrètement) les chantiers archivés qui ont des affectations sur la semaine
+  const [showArchivedPlanning, setShowArchivedPlanning] = useState(false);
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
   const [sidebarArchivedOpen, setSidebarArchivedOpen] = useState(false);
@@ -2672,10 +2674,14 @@ export default function PlannerApp({
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
   const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
   const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
-  const sitesForCurrentWeek = useMemo(
-    () => plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)),
-    [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek]
-  );
+  const sitesForCurrentWeek = useMemo(() => {
+    const base = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey));
+    if (!showArchivedPlanning) return base;
+    // On ajoute les chantiers archivés ayant au moins une affectation cette semaine
+    const weekKeys = new Set(weekDateKeys);
+    const archivedWithWork = archivedSites.filter((s) => assignments.some((a: any) => a.siteId === s.id && weekKeys.has(a.date)));
+    return [...base, ...archivedWithWork];
+  }, [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek, showArchivedPlanning, archivedSites, assignments, weekDateKeys]);
   const allSitesCollapsed = sitesForCurrentWeek.length > 0 && sitesForCurrentWeek.every((s) => collapsedSites.has(s.id));
   const toggleAllSites = () =>
     setCollapsedSites(allSitesCollapsed ? new Set() : new Set(sitesForCurrentWeek.map((s) => s.id)));
@@ -5026,6 +5032,19 @@ useEffect(() => {
                 ))}
               </div>
             )}
+            {view === "planning" && (
+              <button
+                onClick={() => setShowArchivedPlanning((v) => !v)}
+                title="Afficher les chantiers archivés qui ont des affectations cette semaine (pour vérifier l'historique)"
+                className={cx(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition",
+                  showArchivedPlanning ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-400 border-neutral-200 hover:text-neutral-600 hover:border-neutral-300"
+                )}
+              >
+                <span className={cx("w-1.5 h-1.5 rounded-full", showArchivedPlanning ? "bg-white/70" : "bg-neutral-300")} />
+                Archivés
+              </button>
+            )}
             {["planning", "hours", "timeline", "calendar"].includes(view) && (
               <>
                 <div className="flex items-center gap-1">
@@ -6046,8 +6065,9 @@ useEffect(() => {
                 <div className="space-y-2">
                   {sitesForCurrentWeek.map((site) => {
                     const isCollapsed = collapsedSites.has(site.id);
+                    const isArchivedRow = site.status === "archived";
                     return (
-                      <div key={site.id} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6")}>
+                      <div key={site.id} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6", isArchivedRow && "opacity-60")}>
                         <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
                           <button
                             onClick={() => toggleSiteCollapsed(site.id)}
@@ -6064,6 +6084,9 @@ useEffect(() => {
                             aria-hidden
                           />
                           {site.name}
+                          {isArchivedRow && (
+                            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-500">Archivé</span>
+                          )}
                         </div>
                         {!isCollapsed && weekDays.map((d) => (
                           <DayCell
