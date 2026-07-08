@@ -2684,10 +2684,10 @@ export default function PlannerApp({
     const base = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey));
     if (!showArchivedPlanning) return base;
     // On ajoute les chantiers archivés ayant au moins une affectation cette semaine
-    const weekKeys = new Set(weekDateKeys);
+    const weekKeys = new Set(weekDays.map((d) => toLocalKey(d)));
     const archivedWithWork = archivedSites.filter((s) => assignments.some((a: any) => a.siteId === s.id && weekKeys.has(a.date)));
     return [...base, ...archivedWithWork];
-  }, [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek, showArchivedPlanning, archivedSites, assignments, weekDateKeys]);
+  }, [plannedSites, siteWeekVisibility, currentWeekKey, isSiteVisibleOnWeek, showArchivedPlanning, archivedSites, assignments, weekDays]);
   const allSitesCollapsed = sitesForCurrentWeek.length > 0 && sitesForCurrentWeek.every((s) => collapsedSites.has(s.id));
   const toggleAllSites = () =>
     setCollapsedSites(allSitesCollapsed ? new Set() : new Set(sitesForCurrentWeek.map((s) => s.id)));
