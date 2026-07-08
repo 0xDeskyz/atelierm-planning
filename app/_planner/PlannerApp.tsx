@@ -2475,6 +2475,17 @@ export default function PlannerApp({
     d.setDate(d.getDate() + 7);
     return getWeekDatesLocal(d).slice(0, 5);
   }, [anchor]);
+  // Ruban de semaines consécutives (vue Test v3 : défilement horizontal)
+  const V3_WEEKS_SHOWN = 8;
+  const weeksV3 = useMemo(() => {
+    const arr: Date[][] = [];
+    for (let i = 0; i < V3_WEEKS_SHOWN; i++) {
+      const d = new Date(anchor);
+      d.setDate(d.getDate() + i * 7);
+      arr.push(getWeekDatesLocal(d).slice(0, 5));
+    }
+    return arr;
+  }, [anchor]);
   const isPlanningWeek = view === "planning" && planningView === "week";
   const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
@@ -5120,7 +5131,7 @@ useEffect(() => {
                   )}
                   {view === "testv3" && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span>{`S${getISOWeek(weekDays[0])} + S${getISOWeek(nextWeekDays[0])} • ${formatFR(weekDays[0], true)} → ${formatFR(nextWeekDays[4], true)}`}</span>
+                      <span>{`S${getISOWeek(weeksV3[0][0])} → S${getISOWeek(weeksV3[weeksV3.length - 1][0])} • ${formatFR(weeksV3[0][0], true)} → ${formatFR(weeksV3[weeksV3.length - 1][4], true)}`}</span>
                       <span className="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-1 rounded-full">
                         Semaine actuelle : S{pad2(todayWeekNumber)}
                       </span>
@@ -6132,69 +6143,80 @@ useEffect(() => {
               </div>
             )}
 
-            {/* TEST V3 — deux semaines consécutives empilées */}
-            {view === "testv3" && (
-              <div className="space-y-6">
-                {[weekDays, nextWeekDays].map((days, wi) => {
-                  const wkKey = weekKeyOf(days[0]);
-                  const weekSites = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey));
-                  const isCurrent = wkKey === todayWeekKey;
-                  const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
-                  return (
-                    <div key={wkKey} className={cx("rounded-2xl border p-3 space-y-2", isCurrent ? "border-sky-200 bg-sky-50/40" : "border-neutral-200 bg-white")}>
-                      <div className="grid grid-cols-6 text-xs text-neutral-500">
-                        <div className="px-1 flex items-center gap-2">
-                          <span className={cx("text-sm font-bold", isCurrent ? "text-sky-700" : "text-neutral-700")}>Sem. {getISOWeek(days[0])}</span>
-                          {isCurrent && <span className="rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700">En cours</span>}
-                          {Boolean(validatedWeeks[wkKey]) && <span title="Semaine verrouillée">🔒</span>}
-                        </div>
-                        {days.map((d, i) => {
-                          const holiday = publicHolidays.get(toLocalKey(d));
-                          return (
-                            <div key={i} className={cx("text-center", holiday ? "text-red-600 font-semibold" : "")}>
-                              {dayNames[i]} {d.getDate()}
-                              {holiday && <div className="text-[9px] leading-tight truncate" title={holiday}>{holiday}</div>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="space-y-1.5">
-                        {weekSites.length === 0 && (
-                          <p className="text-xs text-neutral-400 italic px-1 py-2">Aucun chantier sur cette semaine.</p>
-                        )}
-                        {weekSites.map((site) => (
-                          <div key={`${wkKey}-${site.id}`} className="grid gap-1.5 items-stretch grid-cols-6">
-                            <div className="text-sm flex items-center gap-1.5 font-semibold text-neutral-900 min-w-0">
-                              <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 flex-shrink-0", getChantierColor(site))} aria-hidden />
-                              <span className="truncate" title={site.name}>{site.name}</span>
-                            </div>
-                            {days.map((d) => (
-                              <DayCell
-                                key={`${site.id}-${toLocalKey(d)}`}
-                                date={d}
-                                site={site}
-                                people={people}
-                                assignments={assignments}
-                                onEditNote={openNote}
-                                notes={notes}
-                                hoursPerDay={hoursPerDay}
-                                conflictMap={conflictMap}
-                                onRemoveAssignment={(id:string)=>setAssignments((prev)=>prev.filter(a=>a.id!==id))}
-                                publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
-                                absencesByDay={absencesByDay}
-                                onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
-                                eventTypes={eventTypeOptions}
-                                locked={Boolean(validatedWeeks[wkKey])}
-                              />
-                            ))}
+            {/* TEST V3 — ruban horizontal : semaines qui s'enchaînent de gauche à droite */}
+            {view === "testv3" && (() => {
+              const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+              const totalDayCols = weeksV3.length * 5;
+              const cols = `200px repeat(${totalDayCols}, 116px)`;
+              // Chantiers affichés : ceux planifiés sur au moins une des semaines visibles
+              const visibleWkKeys = weeksV3.map((w) => weekKeyOf(w[0]));
+              const rowsSites = plannedSites.filter((s) => visibleWkKeys.some((wk) => isSiteVisibleOnWeek(s.id, wk)));
+              return (
+                <div className="rounded-2xl border border-neutral-200 bg-white overflow-x-auto">
+                  <div className="min-w-max">
+                    {/* En-tête semaines */}
+                    <div className="grid sticky top-0 z-20 bg-white border-b border-neutral-200" style={{ gridTemplateColumns: cols }}>
+                      <div className="sticky left-0 z-30 bg-white px-3 py-2 text-[11px] font-semibold text-neutral-500 border-r border-neutral-200">Chantier</div>
+                      {weeksV3.map((days) => {
+                        const wkKey = weekKeyOf(days[0]);
+                        const isCur = wkKey === todayWeekKey;
+                        return (
+                          <div key={wkKey} className={cx("px-2 py-2 text-center text-xs font-bold border-r border-neutral-200", isCur ? "bg-sky-50 text-sky-700" : "text-neutral-700")} style={{ gridColumn: "span 5" }}>
+                            Sem. {getISOWeek(days[0])} · {formatFR(days[0])}
+                            {isCur && <span className="ml-1 text-[10px] font-semibold text-sky-600">• en cours</span>}
+                            {Boolean(validatedWeeks[wkKey]) && <span className="ml-1" title="Semaine verrouillée">🔒</span>}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    {/* En-tête jours */}
+                    <div className="grid sticky top-[37px] z-10 bg-neutral-50 border-b border-neutral-200 text-[10px] text-neutral-500" style={{ gridTemplateColumns: cols }}>
+                      <div className="sticky left-0 z-20 bg-neutral-50 border-r border-neutral-200" />
+                      {weeksV3.map((days) => days.map((d, i) => {
+                        const holiday = publicHolidays.get(toLocalKey(d));
+                        return (
+                          <div key={toLocalKey(d)} className={cx("px-1 py-1 text-center border-r border-neutral-100", holiday && "text-red-600 font-semibold", i === 4 && "border-neutral-200")} title={holiday || ""}>
+                            {dayNames[i]} {d.getDate()}
+                          </div>
+                        );
+                      }))}
+                    </div>
+                    {/* Lignes chantiers */}
+                    {rowsSites.length === 0 && (
+                      <p className="px-3 py-6 text-sm text-neutral-400 italic">Aucun chantier planifié sur ces semaines.</p>
+                    )}
+                    {rowsSites.map((site) => (
+                      <div key={site.id} className="grid border-b border-neutral-100 last:border-b-0" style={{ gridTemplateColumns: cols }}>
+                        <div className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-neutral-200 flex items-center gap-1.5 min-w-0">
+                          <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
+                          <span className="text-sm font-medium text-neutral-800 truncate" title={site.name}>{site.name}</span>
+                        </div>
+                        {weeksV3.map((days) => days.map((d, i) => (
+                          <div key={`${site.id}-${toLocalKey(d)}`} className={cx("p-0.5 border-r border-neutral-100", i === 4 && "border-neutral-200")}>
+                            <DayCell
+                              date={d}
+                              site={site}
+                              people={people}
+                              assignments={assignments}
+                              onEditNote={openNote}
+                              notes={notes}
+                              hoursPerDay={hoursPerDay}
+                              conflictMap={conflictMap}
+                              onRemoveAssignment={(id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id))}
+                              publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                              absencesByDay={absencesByDay}
+                              onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                              eventTypes={eventTypeOptions}
+                              locked={Boolean(validatedWeeks[weekKeyOf(d)])}
+                            />
+                          </div>
+                        )))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* HOURS VIEW */}
             {view === "hours" && (
