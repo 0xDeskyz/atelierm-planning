@@ -38,6 +38,8 @@ import {
   Trash2,
   Upload,
   Users,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 // ================= Modules extraits
@@ -2385,6 +2387,14 @@ export default function PlannerApp({
   const [planningView, setPlanningView] = useState<"week" | "month">("week");
   // Afficher (discrètement) les chantiers archivés qui ont des affectations sur la semaine
   const [showArchivedPlanning, setShowArchivedPlanning] = useState(false);
+  // Repli de la barre latérale Salariés (gagner de la place à l'écran)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    try { const v = localStorage.getItem("atelierm-sidebar-collapsed"); if (v === "1") setSidebarCollapsed(true); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("atelierm-sidebar-collapsed", sidebarCollapsed ? "1" : "0"); } catch {}
+  }, [sidebarCollapsed]);
   const [collapsedSites, setCollapsedSites] = useState<Set<string>>(new Set());
   const [sidebarChantierOpen, setSidebarChantierOpen] = useState(true);
   const [sidebarArchivedOpen, setSidebarArchivedOpen] = useState(false);
@@ -4956,6 +4966,17 @@ useEffect(() => {
             {/* Séparateur */}
             <div className="w-px h-5 bg-neutral-200 shrink-0" />
 
+            {/* Replier / déplier la barre latérale Salariés */}
+            {["planning", "hours", "testv3"].includes(view) && (
+              <button
+                onClick={() => setSidebarCollapsed((v) => !v)}
+                title={sidebarCollapsed ? "Afficher les salariés" : "Masquer les salariés (plus de place)"}
+                className="h-8 w-8 rounded-lg flex items-center justify-center border border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 transition shrink-0"
+              >
+                {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </button>
+            )}
+
             {/* Gestion */}
             <div className="flex items-center gap-0.5">
               {[
@@ -5831,10 +5852,10 @@ useEffect(() => {
           >
             <div className="grid grid-cols-12 gap-4">
               {/* Left column: People & Sites */}
-              {view !== "calendar" && (
+              {view !== "calendar" && !sidebarCollapsed && (
                 <div
                   className={cx(
-                    "col-span-12 lg:col-span-3 space-y-4",
+                    "col-span-12 lg:col-span-2 space-y-4",
                     isPlanningMonth && "lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
                   )}
                 >
@@ -6065,7 +6086,7 @@ useEffect(() => {
 
           {/* Right column: Calendars */}
           <div
-            className={cx("col-span-12", view === "calendar" ? "lg:col-span-12" : "lg:col-span-9")}
+            className={cx("col-span-12", (view === "calendar" || sidebarCollapsed) ? "lg:col-span-12" : "lg:col-span-10")}
             onTouchStart={(e) => {
               if (!(isPlanningWeek || view === "hours")) return;
               const t = e.touches[0]; if (!t) return;
@@ -6170,7 +6191,7 @@ useEffect(() => {
                 défilement horizontal de gauche à droite */}
             {view === "testv3" && (() => {
               const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
-              const cardCols = "138px repeat(5, 94px)";
+              const cardCols = "170px repeat(5, 96px)";
               const firstWk = getISOWeek(weeksV3[0][0]);
               const lastWk = getISOWeek(weeksV3[weeksV3.length - 1][0]);
               const jumpMonth = (dir: number) => setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + dir * 28); return nd; });

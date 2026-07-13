@@ -14,10 +14,11 @@ export function PersonChip({ person }: any) {
   const initials = person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes}
-      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs cursor-grab magic-chip-inner", person.color || "bg-neutral-500", isDragging && "is-dragging")}
+      className={cx("select-none inline-flex items-center gap-2 pr-3 pl-1 py-1 rounded-full text-white text-xs cursor-grab magic-chip-inner max-w-full min-w-0", person.color || "bg-neutral-500", isDragging && "is-dragging")}
+      title={person.name}
     >
       <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center font-semibold text-[10px] shrink-0">{initials}</span>
-      <span className="font-medium">{person.name}</span>
+      <span className="font-medium truncate">{person.name}</span>
     </div>
   );
 }
