@@ -4908,8 +4908,8 @@ useEffect(() => {
       {/* Header */}
       <div className="space-y-2">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-          {/* Navbar unique */}
-          <div className="rounded-xl border bg-white shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
+          {/* Navbar unique — collante en haut pour rester visible au scroll */}
+          <div className="sticky top-0 z-40 rounded-xl border bg-white/95 backdrop-blur shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
             {/* Logo */}
             <div className="flex items-center gap-2.5 pr-4 border-r border-neutral-100 shrink-0">
               {branding.logoImage ? (
