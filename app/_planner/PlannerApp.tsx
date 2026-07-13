@@ -2486,6 +2486,15 @@ export default function PlannerApp({
     }
     return arr;
   }, [anchor]);
+  // Hauteur de la barre principale (pour épingler la mini-barre Test v3 juste en dessous)
+  const navbarRef = useRef<HTMLDivElement | null>(null);
+  const [navbarH, setNavbarH] = useState(64);
+  useEffect(() => {
+    const measure = () => setNavbarH(navbarRef.current?.offsetHeight ?? 64);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [view]);
   const isPlanningWeek = view === "planning" && planningView === "week";
   const isPlanningMonth = view === "planning" && planningView === "month";
   const previousWeek = useMemo(() => {
@@ -4909,7 +4918,7 @@ useEffect(() => {
       <div className="space-y-2">
         <Tabs value={view} onValueChange={(v: any) => setView(v)}>
           {/* Navbar unique — collante en haut pour rester visible au scroll */}
-          <div className="sticky top-0 z-40 rounded-xl border bg-white/95 backdrop-blur shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
+          <div ref={navbarRef} className="sticky top-0 z-40 rounded-xl border bg-white/95 backdrop-blur shadow-sm px-4 py-2.5 flex items-center gap-3 flex-wrap">
             {/* Logo */}
             <div className="flex items-center gap-2.5 pr-4 border-r border-neutral-100 shrink-0">
               {branding.logoImage ? (
@@ -6162,31 +6171,65 @@ useEffect(() => {
             {view === "testv3" && (() => {
               const dayNames = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
               const cardCols = "138px repeat(5, 94px)";
+              const firstWk = getISOWeek(weeksV3[0][0]);
+              const lastWk = getISOWeek(weeksV3[weeksV3.length - 1][0]);
+              const jumpMonth = (dir: number) => setAnchor((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + dir * 28); return nd; });
               return (
-                <div className="overflow-x-auto pb-2">
-                  <div className="flex gap-3 min-w-max items-start">
+                <div>
+                  {/* Mini-barre de navigation épinglée sous la barre principale */}
+                  <div
+                    className="sticky z-30 mb-3 flex items-center justify-between gap-2 flex-wrap rounded-xl border border-neutral-200 bg-white/95 backdrop-blur px-2.5 py-2 shadow-sm"
+                    style={{ top: navbarH + 8 }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => jumpMonth(-1)} className="h-8 px-2.5 rounded-lg text-xs font-semibold text-neutral-600 border border-neutral-200 hover:bg-neutral-50 transition" title="Reculer d'un mois">« Mois</button>
+                      <button onClick={() => shift(-1)} className="h-8 w-8 rounded-lg flex items-center justify-center text-neutral-600 border border-neutral-200 hover:bg-neutral-50 transition" title="Semaine précédente"><ChevronLeft className="w-4 h-4" /></button>
+                      <button onClick={() => shift(1)} className="h-8 w-8 rounded-lg flex items-center justify-center text-neutral-600 border border-neutral-200 hover:bg-neutral-50 transition" title="Semaine suivante"><ChevronRight className="w-4 h-4" /></button>
+                      <button onClick={() => jumpMonth(1)} className="h-8 px-2.5 rounded-lg text-xs font-semibold text-neutral-600 border border-neutral-200 hover:bg-neutral-50 transition" title="Avancer d'un mois">Mois »</button>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <CalendarRange className="w-4 h-4 text-neutral-400" />
+                      <span className="font-semibold text-neutral-800">S{firstWk} <span className="text-neutral-300">→</span> S{lastWk}</span>
+                      <span className="text-neutral-400 hidden sm:inline">· {formatFR(weeksV3[0][0])} → {formatFR(weeksV3[weeksV3.length - 1][4])}</span>
+                    </div>
+                    <button
+                      onClick={() => setAnchor(new Date())}
+                      className={cx(
+                        "h-8 px-3 rounded-lg text-xs font-semibold border transition",
+                        isViewingCurrentWeek ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-700"
+                      )}
+                      title="Revenir à aujourd'hui (T)"
+                    >Aujourd'hui</button>
+                  </div>
+
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex gap-3 min-w-max items-start">
                     {weeksV3.map((days) => {
                       const wkKey = weekKeyOf(days[0]);
                       const isCur = wkKey === todayWeekKey;
                       const locked = Boolean(validatedWeeks[wkKey]);
                       const weekSites = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey));
                       return (
-                        <div key={wkKey} className={cx("shrink-0 rounded-2xl border p-2 space-y-1.5", isCur ? "border-sky-300 bg-sky-50/50" : "border-neutral-200 bg-white")}>
+                        <div key={wkKey} className={cx("shrink-0 rounded-2xl border p-2.5 space-y-2 transition", isCur ? "border-sky-300 bg-sky-50/40 shadow-sm ring-1 ring-sky-200" : "border-neutral-200 bg-white shadow-sm")}>
                           {/* En-tête semaine */}
-                          <div className="flex items-center gap-2 px-1 py-0.5">
-                            <span className={cx("text-sm font-bold", isCur ? "text-sky-700" : "text-neutral-700")}>Sem. {getISOWeek(days[0])}</span>
-                            <span className="text-[11px] text-neutral-400">{formatFR(days[0])} → {formatFR(days[4])}</span>
-                            {isCur && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">En cours</span>}
-                            {locked && <span title="Semaine verrouillée">🔒</span>}
+                          <div className="flex items-center justify-between gap-2 px-0.5">
+                            <div className="flex items-baseline gap-1.5">
+                              <span className={cx("text-sm font-bold", isCur ? "text-sky-700" : "text-neutral-800")}>S{getISOWeek(days[0])}</span>
+                              <span className="text-[11px] text-neutral-400">{formatFR(days[0])} → {formatFR(days[4])}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {isCur && <span className="rounded-full bg-sky-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">En cours</span>}
+                              {locked && <span title="Semaine verrouillée">🔒</span>}
+                            </div>
                           </div>
                           {/* En-tête jours */}
-                          <div className="grid text-[10px] text-neutral-500" style={{ gridTemplateColumns: cardCols }}>
+                          <div className="grid text-[10px] font-semibold text-neutral-400 border-b border-neutral-100 pb-1" style={{ gridTemplateColumns: cardCols }}>
                             <div />
                             {days.map((d, i) => {
                               const holiday = publicHolidays.get(toLocalKey(d));
                               return (
-                                <div key={i} className={cx("text-center", holiday && "text-red-600 font-semibold")} title={holiday || ""}>
-                                  {dayNames[i]} {d.getDate()}
+                                <div key={i} className={cx("text-center", holiday && "text-red-500")} title={holiday || ""}>
+                                  <span className="uppercase">{dayNames[i]}</span> <span className="text-neutral-500">{d.getDate()}</span>
                                 </div>
                               );
                             })}
@@ -6229,6 +6272,7 @@ useEffect(() => {
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
               );
