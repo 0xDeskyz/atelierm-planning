@@ -7659,12 +7659,6 @@ useEffect(() => {
                 </th>
               );
 
-              const rowColor = (pct: number | null) => {
-                if (pct == null) return "";
-                if (pct >= 20) return "bg-emerald-50";
-                if (pct >= 5) return "bg-amber-50";
-                return "bg-red-50";
-              };
               const margeColor = (pct: number | null) => {
                 if (pct == null) return "text-neutral-400";
                 if (pct >= 20) return "text-emerald-700 font-semibold";
@@ -7839,7 +7833,7 @@ useEffect(() => {
                             const isExpanded = expandedRentaRows.has(s.id);
                             return (
                               <>
-                                <tr key={s.id} className={`hover:bg-neutral-50 transition ${rowColor(margePercent)}`}>
+                                <tr key={s.id} className="hover:bg-neutral-50 transition">
                                   <td className="px-2 py-2 w-6 text-center">
                                     {moByPerson.length > 0 && (
                                       <button
