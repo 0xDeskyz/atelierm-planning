@@ -361,7 +361,11 @@ export const normalizeSiteRecord = (site: any) => {
     contactName:
       (base as any)?.contactName || (base as any)?.clientName || (base as any)?.quoteSnapshot?.client || "",
     contactPhone: (base as any)?.contactPhone || "",
-    tauxMateriel: Number.isFinite(Number((base as any)?.tauxMateriel)) ? Number((base as any).tauxMateriel) : 15,
+    // null/"" = pas de taux spécifique → le taux matériel par défaut s'applique (Number(null) vaut 0, d'où le test explicite)
+    tauxMateriel:
+      (base as any)?.tauxMateriel != null && (base as any).tauxMateriel !== "" && Number.isFinite(Number((base as any).tauxMateriel))
+        ? Number((base as any).tauxMateriel)
+        : null,
     montantDevis: Number.isFinite(Number((base as any)?.montantDevis)) && Number((base as any).montantDevis) > 0 ? Number((base as any).montantDevis) : null,
     couts: Array.isArray((base as any)?.couts) ? (base as any).couts.map((c: any) => ({
       id: c?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `cout-${Date.now()}-${Math.random()}`),
@@ -535,4 +539,15 @@ export function debounce<T extends (...args: any[]) => void>(fn: T, ms = 600) {
   const d = (...args: Parameters<T>) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   d.cancel = () => clearTimeout(t);
   return d;
+}
+
+/** CA (montant HT du marché) d'un chantier : devis lié, sinon snapshot du devis, sinon montant saisi à la main. */
+export function getSiteBudget(site: any, quotes: any[] = [], montantOverride?: number | null): number {
+  const pos = (v: any) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+  const linked = site?.quoteId ? (quotes || []).find((q: any) => q.id === site.quoteId) : null;
+  return (
+    pos(linked?.amount) ||
+    pos(site?.quoteSnapshot?.amount) ||
+    pos(montantOverride !== undefined ? montantOverride : site?.montantDevis)
+  );
 }

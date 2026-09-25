@@ -8,15 +8,15 @@ Next.js 14 planning app for a French construction company (Atelier M).
 - Supabase (postgres, jsonb state, RLS)
 - @dnd-kit/core for drag-and-drop
 - Tailwind CSS
-- Vercel auto-deploy from `main`
+- Vercel production = branche `v2-saas` (PAS `main`, qui est obsolète)
 
 ## Deploy workflow
 
-**Always push directly to `main` after every change** — Vercel auto-deploys from main. No confirmation needed, no feature branches required. Commit → push to main → done.
+**La prod tourne sur `v2-saas`.** Pousser sur `v2-saas` après chaque changement. **Ne JAMAIS pousser sur `main`** : c'est une ancienne version (avant le passage SaaS) et un push y redéploie l'ancienne appli en production (planning vide pour les utilisateurs).
 
 ## Key conventions
 
-- All app logic lives in `app/page.tsx` (monolithic by design)
+- All app logic lives in `app/_planner/PlannerApp.tsx` (monolithic by design); `app/page.tsx` is just the entry point
 - Calendar lane order persisted in Supabase as `calendarLaneOrder: string[]`
 - Span-based greedy packing for lane assignment (first→last planningWeek of each chantier)
 - `LANE_H = 26px` per row

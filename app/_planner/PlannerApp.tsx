@@ -112,6 +112,7 @@ import {
   formatFR,
   formatEUR,
   getPortion,
+  getSiteBudget,
   debounce,
 } from "@/lib/planner/helpers";
 import {
@@ -1164,7 +1165,7 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, quotes: quotesProp = [], onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, fraisFixesDefault: fraisFDefault = 0, quotes: quotesProp = [], onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
   const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [name, setName] = useState<string>("");
@@ -1289,10 +1290,11 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
   const totalFacture = situations.reduce((s: number, sit: any) => s + (Number(sit.montant) || 0), 0);
   const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
-  const budget = Number(linkedQuote?.amount ?? site?.quoteSnapshot?.amount ?? site?.montantDevis ?? 0);
+  const budget = getSiteBudget(site, quotesProp, montantDevis !== "" ? Number(montantDevis) : null);
   const tauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : tauxMDefault;
   const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
-  const coutTotal = moKnown + coutMateriel + totalCouts;
+  const fraisFixes = budget > 0 ? budget * (fraisFDefault / 100) : 0;
+  const coutTotal = moKnown + coutMateriel + totalCouts + fraisFixes;
   const marge = budget > 0 ? budget - coutTotal : null;
   const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
   const resteAFacturer = budget > 0 ? budget - totalFacture : null;
@@ -1563,7 +1565,17 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
 
             {/* Matériel */}
             <div className="flex items-center justify-between py-1 border-b border-neutral-50">
-              <span className="text-neutral-600">Matériel ({tauxMat}% du devis)</span>
+              <div className="flex items-center gap-2">
+                <span className="text-neutral-600">Matériel</span>
+                <input
+                  type="number" min={0} max={200} step={0.5}
+                  value={tauxMateriel}
+                  onChange={(e: any) => setTauxMateriel(e.target.value)}
+                  placeholder={String(tauxMDefault)}
+                  className="w-16 border border-neutral-200 rounded px-2 py-0.5 text-sm text-right"
+                />
+                <span className="text-neutral-400 text-xs">% du devis{tauxMateriel === "" ? ` (défaut ${tauxMDefault}%)` : ""}</span>
+              </div>
               <span className="font-medium">{budget > 0 ? formatEUR(coutMateriel) : <span className="text-neutral-300 text-xs">budget non défini</span>}</span>
             </div>
 
@@ -1655,6 +1667,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                 <div className="flex justify-between"><span className="text-neutral-600">Main d'œuvre</span><span>{formatEUR(moKnown)}</span></div>
                 <div className="flex justify-between"><span className="text-neutral-600">Matériel ({tauxMat}% du devis)</span><span>{formatEUR(coutMateriel)}</span></div>
                 {couts.length > 0 && <div className="flex justify-between"><span className="text-neutral-600">Coûts divers</span><span>{formatEUR(totalCouts)}</span></div>}
+                {fraisFixes > 0 && <div className="flex justify-between"><span className="text-neutral-600">Frais fixes ({fraisFDefault}% du devis)</span><span>{formatEUR(fraisFixes)}</span></div>}
                 <div className="flex justify-between font-semibold border-t pt-1"><span>Coût total estimé</span><span>{formatEUR(coutTotal)}</span></div>
                 {budget > 0 && (
                   <div className={cx("flex justify-between font-bold text-base pt-1", (marge ?? 0) >= 0 ? "text-emerald-700" : "text-red-600")}>
@@ -2010,7 +2023,7 @@ function ClientHistoryDialog({ open, onOpenChange, clientName, sites, quotes, te
   const clientQuotes = (quotes || []).filter((q: any) => matchClient(q.client || "", clientName));
   const clientTenders = (tenders || []).filter((t: any) => matchClient(t.client || "", clientName));
   const nbSites = clientSites.length;
-  const caTotal = clientSites.reduce((s: number, site: any) => s + Number(site.quoteSnapshot?.amount ?? 0), 0);
+  const caTotal = clientSites.reduce((s: number, site: any) => s + getSiteBudget(site, quotes), 0);
   const nbDevis = clientQuotes.length;
   const nbAo = clientTenders.length;
   const registeredClient = (clients || []).find((c: any) => matchClient(c.name, clientName));
@@ -5549,13 +5562,7 @@ useEffect(() => {
         });
 
         plannedSites.forEach((s: any) => {
-          const siteBudget = Number(
-            s.quoteSnapshot?.amount ??
-              (s.quoteId
-                ? safeQuotes.find((q: any) => q.id === s.quoteId)?.amount
-                : 0) ??
-              0
-          );
+          const siteBudget = getSiteBudget(s, safeQuotes);
           const totalFact = (s.situations || []).reduce(
             (sum: number, sit: any) => sum + (Number(sit.montant) || 0),
             0
@@ -5581,13 +5588,7 @@ useEffect(() => {
         const caTotalEnCours = accueilActiveSites.reduce(
           (sum: number, s: any) =>
             sum +
-            Number(
-              s.quoteSnapshot?.amount ??
-                (s.quoteId
-                  ? safeQuotes.find((q: any) => q.id === s.quoteId)?.amount
-                  : 0) ??
-                0
-            ),
+            getSiteBudget(s, safeQuotes),
           0
         );
         const aoEnCours = tenders.filter(
@@ -5731,13 +5732,7 @@ useEffect(() => {
                       const assignedPeopleForSite = safePeople.filter((p: any) =>
                         sitePersonIds.has(p.id)
                       );
-                      const siteBudget = Number(
-                        site.quoteSnapshot?.amount ??
-                          (site.quoteId
-                            ? safeQuotes.find((q: any) => q.id === site.quoteId)?.amount
-                            : 0) ??
-                          0
-                      );
+                      const siteBudget = getSiteBudget(site, safeQuotes);
                       return (
                         <button
                           key={site.id}
@@ -7105,7 +7100,7 @@ useEffect(() => {
             )}
 
             {view === "sites" && (() => {
-              const totalCA = [...plannedSites, ...pendingSites].reduce((s: number, site: any) => s + Number(site.quoteSnapshot?.amount ?? 0), 0);
+              const totalCA = [...plannedSites, ...pendingSites].reduce((s: number, site: any) => s + getSiteBudget(site, safeQuotes), 0);
 
               const parseBatappliCSV = (text: string) => {
                 const rows = text.trim().split(/\r?\n/);
@@ -7187,7 +7182,7 @@ useEffect(() => {
                   const dir = sitesSort.dir === "asc" ? 1 : -1;
                   if (sitesSort.col === "name") return (a.name || '').localeCompare(b.name || '', 'fr') * dir;
                   if (sitesSort.col === "client") return (a.clientName || '').localeCompare(b.clientName || '', 'fr') * dir;
-                  if (sitesSort.col === "budget") return (Number(a.quoteSnapshot?.amount ?? 0) - Number(b.quoteSnapshot?.amount ?? 0)) * dir;
+                  if (sitesSort.col === "budget") return (getSiteBudget(a, safeQuotes) - getSiteBudget(b, safeQuotes)) * dir;
                   if (sitesSort.col === "status") return (a.status || 'planned').localeCompare(b.status || 'planned') * dir;
                   if (sitesSort.col === "categorie") return (a.categoriePrincipale || '').localeCompare(b.categoriePrincipale || '', 'fr') * dir;
                   if (sitesSort.col === "difficulte") {
@@ -7433,7 +7428,7 @@ useEffect(() => {
                                   ) : <span className="text-neutral-300">—</span>}
                                 </td>
                                 <td className="px-3 py-2.5 text-neutral-700 whitespace-nowrap">
-                                  {site.quoteSnapshot?.amount ? formatEUR(site.quoteSnapshot.amount) : <span className="text-neutral-300">—</span>}
+                                  {getSiteBudget(site, safeQuotes) > 0 ? formatEUR(getSiteBudget(site, safeQuotes)) : <span className="text-neutral-300">—</span>}
                                 </td>
                                 <td className="px-3 py-2.5 text-neutral-500 text-xs whitespace-nowrap">
                                   {site.planningWeeks?.length ? (
@@ -7590,8 +7585,7 @@ useEffect(() => {
                   .filter(Boolean);
                 const mainOeuvre = moByPerson.reduce((sum: number, r: any) => sum + (r.cout ?? 0), 0);
                 const tauxMat = s.tauxMateriel != null ? s.tauxMateriel : tauxMaterielDefault;
-                const linkedQuote = s.quoteId ? safeQuotes.find((q: any) => q.id === s.quoteId) : null;
-                const budget = Number(linkedQuote?.amount ?? s.quoteSnapshot?.amount ?? 0);
+                const budget = getSiteBudget(s, safeQuotes);
                 const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
                 const extraCouts = (s.couts || []).reduce((sum: number, c: any) => sum + (Number(c.montant) || 0), 0);
                 const fraisFixes = budget > 0 ? budget * (fraisFixesDefault / 100) : 0;
@@ -8154,6 +8148,7 @@ useEffect(() => {
           people={people}
           tauxJournalierDefault={tauxJournalierDefault}
           tauxMaterielDefault={tauxMaterielDefault}
+          fraisFixesDefault={fraisFixesDefault}
           quotes={quotes}
           onOpenClientHistory={openClientHistory}
           difficulteConfig={difficulteConfig}
