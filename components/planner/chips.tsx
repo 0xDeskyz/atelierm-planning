@@ -58,10 +58,11 @@ export function AssignmentChip({ a, person, onRemove, baseHours, conflict, compa
           isDragging ? "opacity-95" : "hover:brightness-105",
           conflict ? "ring-1 ring-amber-400" : ""
         )}
-        title={person.name}
+        title={portion !== 1 ? `${person.name} – ${portion === 0.5 ? "½ journée" : `${portion} j.`}` : person.name}
       >
         <span className="truncate">{person.name.split(" ")[0]}</span>
-        {conflict && <span className="ml-auto shrink-0">!</span>}
+        {portion !== 1 && <span className="ml-auto shrink-0 px-1 rounded-full bg-black/25 text-[9px]">{portion === 0.5 ? "½" : portion}</span>}
+        {conflict && <span className={cx("shrink-0", portion === 1 && "ml-auto")}>!</span>}
       </div>
     );
   }

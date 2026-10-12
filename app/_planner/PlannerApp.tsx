@@ -514,11 +514,12 @@ function getSiteDisplayHex(site: any, mode: "difficulte" | "categorie", diffConf
 }
 
 // Éditeur de case unifié : onglets Affecter / Statut·Note, ouvert au clic à la position du curseur
-function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAbsent, eventTypes = EVENT_TYPES, onAssign, onAssignWeek, onRemove, onCopyDayToWeek, onSaveMeta, onQuickAction }: any) {
+function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAbsent, eventTypes = EVENT_TYPES, onAssign, onAssignWeek, onRemove, onSetPortion, onCopyDayToWeek, onSaveMeta, onQuickAction }: any) {
   const { date, site, pos } = target;
   const dateKey = toLocalKey(date);
   const [tab, setTab] = useState<"affecter" | "statut">("affecter");
   const [wholeWeek, setWholeWeek] = useState(false);
+  const [addPortion, setAddPortion] = useState<1 | 0.5>(1);
   const initial = typeof meta === "string" ? { text: meta } : (meta || {});
   const [status, setStatus] = useState<string>(initial.holiday ? "nontravaille" : initial.blocked ? "indisponible" : "disponible");
   const [eventType, setEventType] = useState<string | null>(initial.eventType || null);
@@ -575,6 +576,14 @@ function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAb
                       <div key={a.id} className="flex items-center gap-2 px-2 py-1 rounded-lg bg-neutral-50">
                         <span className={cx("w-2.5 h-2.5 rounded-full shrink-0 border border-black/10", p.color || "bg-neutral-400")} />
                         <span className="text-sm text-neutral-800 flex-1 truncate">{p.name}</span>
+                        <div className="flex rounded-md border border-neutral-200 overflow-hidden text-[11px] shrink-0" title="Journée entière ou demi-journée">
+                          {([[1, "Journée"], [0.5, "½"]] as const).map(([v, label]) => (
+                            <button key={v} onClick={() => onSetPortion(a.id, v)}
+                              className={cx("px-1.5 py-0.5 transition", getPortion(a.portion) === v ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-100")}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                         <button onClick={() => onRemove(a.id)} className="text-neutral-300 hover:text-red-500 text-base leading-none px-1">×</button>
                       </div>
                     );
@@ -586,7 +595,17 @@ function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAb
                 Affecter sur toute la semaine
               </label>
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Ajouter un salarié</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Ajouter un salarié</div>
+                  <div className="flex rounded-md border border-neutral-200 overflow-hidden text-[11px]">
+                    {([[1, "Journée"], [0.5, "½ journée"]] as const).map(([v, label]) => (
+                      <button key={v} onClick={() => setAddPortion(v)}
+                        className={cx("px-2 py-0.5 transition", addPortion === v ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-100")}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {available.length === 0 && <div className="col-span-2 text-xs text-neutral-400 italic">Tous les salariés sont affectés.</div>}
                   {available.map((p: any) => {
@@ -595,7 +614,7 @@ function CellEditor({ target, onClose, people, assignments, meta, canPaste, isAb
                       <button
                         key={p.id}
                         disabled={absent}
-                        onClick={() => (wholeWeek ? onAssignWeek(p.id) : onAssign(p.id))}
+                        onClick={() => (wholeWeek ? onAssignWeek(p.id, addPortion) : onAssign(p.id, addPortion))}
                         className={cx("flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-sm text-left transition", absent ? "opacity-40 cursor-not-allowed border-neutral-100" : "border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50")}
                         title={absent ? "Absent cette semaine" : undefined}
                       >
@@ -3041,12 +3060,17 @@ export default function PlannerApp({
     [assignments, weekDateSet]
   );
 
+  // Conflit = même salarié compté plus d'une journée le même jour (deux ½ journées ne sont pas un conflit).
+  // Valeur > 1 → conflit (nombre d'affectations concernées) ; sinon 1.
   const conflictMap = useMemo(() => {
     const counts: Record<string, number> = {};
+    const totals: Record<string, number> = {};
     assignments.forEach((a) => {
       const key = `${a.personId}|${a.date}`;
       counts[key] = (counts[key] || 0) + 1;
+      totals[key] = (totals[key] || 0) + getPortion((a as any).portion);
     });
+    Object.keys(counts).forEach((key) => { if (totals[key] <= 1) counts[key] = 1; });
     return counts;
   }, [assignments]);
 
@@ -4146,16 +4170,16 @@ export default function PlannerApp({
     const raw = notes[cellKey(site.id, dateKey)];
     return typeof raw === "string" ? { text: raw } : raw || {};
   };
-  const assignPersonToCell = (personId: string, date: Date, site: any) => {
+  const assignPersonToCell = (personId: string, date: Date, site: any, portion?: number) => {
     const dateKey = toLocalKey(date);
     const meta = cellMetaOf(site, dateKey);
     if (meta.holiday || meta.blocked) { showToast("Case non travaillée / indisponible"); return; }
     if (isAbsentOnWeek(personId, weekKeyOf(date))) { showToast("Salarié absent cette semaine"); return; }
     if (assignments.some((a: any) => a.personId === personId && a.date === dateKey && a.siteId === site.id)) return;
     const id = (typeof crypto !== "undefined" && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${personId}-${site.id}-${dateKey}-${Date.now()}`;
-    setAssignments((prev) => [...prev, { id, personId, siteId: site.id, date: dateKey }]);
+    setAssignments((prev) => [...prev, { id, personId, siteId: site.id, date: dateKey, ...(portion && portion !== 1 ? { portion } : {}) }]);
   };
-  const assignPersonWholeWeek = (personId: string, site: any, refDate?: Date) => {
+  const assignPersonWholeWeek = (personId: string, site: any, refDate?: Date, portion?: number) => {
     // Semaine dérivée de la date cliquée (vue 2 semaines : peut différer de weekDays)
     const daysOfWeek = refDate ? getWeekDatesLocal(refDate).slice(0, 5) : weekDays;
     let added = 0;
@@ -4167,7 +4191,7 @@ export default function PlannerApp({
         if (meta.holiday || meta.blocked) continue;
         if (isAbsentOnWeek(personId, weekKeyOf(d))) continue;
         if (next.some((a: any) => a.personId === personId && a.date === dk && a.siteId === site.id)) continue;
-        next.push({ id: `${personId}-${site.id}-${dk}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, personId, siteId: site.id, date: dk });
+        next.push({ id: `${personId}-${site.id}-${dk}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, personId, siteId: site.id, date: dk, ...(portion && portion !== 1 ? { portion } : {}) });
         added++;
       }
       return next;
@@ -9108,9 +9132,10 @@ useEffect(() => {
           canPaste={!!cellClipboard}
           eventTypes={eventTypeOptions}
           isAbsent={(pid: string) => isAbsentOnWeek(pid, weekKeyOf(cellEditorTarget.date))}
-          onAssign={(pid: string) => assignPersonToCell(pid, cellEditorTarget.date, cellEditorTarget.site)}
-          onAssignWeek={(pid: string) => assignPersonWholeWeek(pid, cellEditorTarget.site, cellEditorTarget.date)}
+          onAssign={(pid: string, portion?: number) => assignPersonToCell(pid, cellEditorTarget.date, cellEditorTarget.site, portion)}
+          onAssignWeek={(pid: string, portion?: number) => assignPersonWholeWeek(pid, cellEditorTarget.site, cellEditorTarget.date, portion)}
           onRemove={(id: string) => setAssignments((prev) => prev.filter((a: any) => a.id !== id))}
+          onSetPortion={(id: string, portion: number) => setAssignments((prev) => prev.map((a: any) => (a.id === id ? { ...a, portion: portion === 1 ? undefined : portion } : a)))}
           onCopyDayToWeek={() => copyDayToWeek(cellEditorTarget.date, cellEditorTarget.site)}
           onSaveMeta={(patch: any) => saveCellMeta(cellEditorTarget.date, cellEditorTarget.site, patch)}
           onQuickAction={(id: string) => applyCellAction(id, cellEditorTarget.date, cellEditorTarget.site)}
