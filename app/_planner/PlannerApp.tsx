@@ -115,6 +115,8 @@ import {
   getSiteBudget,
   checkSiteAssignments,
   confirmMessageForRemovedWeeks,
+  computeSiteRentability,
+  sortByPlanningPin,
   debounce,
 } from "@/lib/planner/helpers";
 import {
@@ -1167,7 +1169,120 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, fraisFixesDefault: fraisFDefault = 0, quotes: quotesProp = [], absencesByDay: absByDayProp = {}, absencesByWeek: absByWeekProp = {}, allSites: allSitesProp = [], onGoToDate, onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
+// Résumé rentabilité d'un chantier, ouvert en cliquant sur son nom dans le planning.
+// Uniquement les chiffres qui bougent (pas nom/téléphone/adresse) ; CA et % matériaux modifiables.
+function SiteQuickPanel({ site, x, y, rent, nbAVerifier, tauxMaterielDefault, fraisFixesDefault, onClose, onUpdate, onOpenRenta, onOpenFiche }: any) {
+  const [montant, setMontant] = useState<string>("");
+  const [taux, setTaux] = useState<string>("");
+  useEffect(() => {
+    setMontant(site?.montantDevis != null ? String(site.montantDevis) : "");
+    setTaux(site?.tauxMateriel != null ? String(site.tauxMateriel) : "");
+  }, [site?.id, site?.montantDevis, site?.tauxMateriel]);
+  const commitMontant = () => {
+    const n = Number(montant);
+    const next = montant !== "" && Number.isFinite(n) && n > 0 ? n : null;
+    if (next !== (site?.montantDevis ?? null)) onUpdate({ montantDevis: next });
+  };
+  const commitTaux = () => {
+    const n = Number(taux);
+    const next = taux !== "" && Number.isFinite(n) ? n : null;
+    if (next !== (site?.tauxMateriel ?? null)) onUpdate({ tauxMateriel: next });
+  };
+  const onKey = (e: any) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onClose(); };
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const left = Math.max(8, Math.min(x, vw - 336));
+  const top = Math.max(8, Math.min(y + 12, vh - 440));
+  const pin = site?.planningPin === "top" || site?.planningPin === "bottom" ? site.planningPin : null;
+  const row = "flex items-center justify-between gap-3";
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed z-50 w-80 rounded-xl border bg-white shadow-xl p-4 text-sm space-y-3" style={{ left, top }}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={cx("w-3 h-3 rounded-full inline-block border border-black/10 shrink-0", site.color)} />
+            <span className="font-semibold text-neutral-900 truncate">{site.name}</span>
+          </div>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 leading-none text-lg">×</button>
+        </div>
+
+        <div className="space-y-1.5 text-[13px]">
+          <div className={row}>
+            <span className="text-neutral-500">CA HT</span>
+            {rent.budgetFromQuote ? (
+              <span className="text-neutral-900 font-medium" title="Montant du devis lié">{formatEUR(rent.budget)} <span className="text-[11px] text-neutral-400 font-normal">devis</span></span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <input type="number" min={0} step={100} value={montant} onChange={(e) => setMontant(e.target.value)} onBlur={commitMontant} onKeyDown={onKey}
+                  placeholder="à saisir" className="w-24 border border-neutral-200 rounded px-1.5 py-0.5 text-right text-[13px]" />
+                <span className="text-neutral-400 text-xs">€</span>
+              </span>
+            )}
+          </div>
+          <div className={row}>
+            <span className="text-neutral-500">Main d'œuvre <span className="text-neutral-400">· {Math.round(rent.jours * 10) / 10} j</span></span>
+            <span className="text-neutral-900">{formatEUR(rent.mainOeuvre)}</span>
+          </div>
+          {rent.nbSansTaux > 0 && <div className="text-[11px] text-amber-600 -mt-1">{rent.nbSansTaux} salarié{rent.nbSansTaux > 1 ? "s" : ""} sans taux journalier (compté 0 €)</div>}
+          <div className={row}>
+            <span className="text-neutral-500 flex items-center gap-1">
+              Matériaux
+              <input type="number" min={0} max={200} step={0.5} value={taux} onChange={(e) => setTaux(e.target.value)} onBlur={commitTaux} onKeyDown={onKey}
+                placeholder={String(tauxMaterielDefault)} className="w-12 border border-neutral-200 rounded px-1 py-0.5 text-right text-[13px]" />
+              <span className="text-neutral-400 text-xs">%</span>
+            </span>
+            <span className="text-neutral-900">{rent.budget > 0 ? formatEUR(rent.coutMateriel) : "—"}</span>
+          </div>
+          {rent.fraisFixes > 0 && (
+            <div className={row}><span className="text-neutral-500">Frais fixes ({fraisFixesDefault}%)</span><span className="text-neutral-900">{formatEUR(rent.fraisFixes)}</span></div>
+          )}
+          {rent.extraCouts > 0 && (
+            <div className={row}><span className="text-neutral-500">Coûts divers</span><span className="text-neutral-900">{formatEUR(rent.extraCouts)}</span></div>
+          )}
+          <div className={cx(row, "border-t pt-1.5 font-semibold")}>
+            <span>Marge</span>
+            {rent.marge != null ? (
+              <span className={rent.marge >= 0 ? "text-emerald-700" : "text-red-600"}>
+                {formatEUR(rent.marge)} <span className="text-[11px] font-normal">({Math.round(rent.margePercent)}%)</span>
+              </span>
+            ) : <span className="text-neutral-400 font-normal text-xs">CA non renseigné</span>}
+          </div>
+          {rent.totalFacture > 0 && (
+            <div className={row}>
+              <span className="text-neutral-500">Facturé</span>
+              <span className="text-sky-700">{formatEUR(rent.totalFacture)}{rent.resteAFacturer != null && <span className="text-[11px] text-neutral-400"> · reste {formatEUR(rent.resteAFacturer)}</span>}</span>
+            </div>
+          )}
+          {nbAVerifier > 0 && (
+            <button type="button" onClick={onOpenRenta} className="text-[11px] text-amber-700 hover:underline">
+              ⚠ {nbAVerifier} affectation{nbAVerifier > 1 ? "s" : ""} à vérifier
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] text-neutral-400">Position dans le planning</div>
+          <div className="flex rounded-lg border border-neutral-200 overflow-hidden text-xs">
+            {([["top", "Toujours en haut"], [null, "Normal"], ["bottom", "Toujours en bas"]] as const).map(([v, label]) => (
+              <button key={String(v)} type="button" onClick={() => onUpdate({ planningPin: v })}
+                className={cx("flex-1 py-1 transition", pin === v ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-50")}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1" onClick={onOpenRenta}>Rentabilité détaillée</Button>
+          <Button size="sm" variant="ghost" onClick={onOpenFiche}>Fiche</Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, fraisFixesDefault: fraisFDefault = 0, quotes: quotesProp = [], absencesByDay: absByDayProp = {}, absencesByWeek: absByWeekProp = {}, allSites: allSitesProp = [], onGoToDate, initialTab, onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
   const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
   const [moOpen, setMoOpen] = useState<Record<string, boolean>>({});
@@ -1204,7 +1319,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [difficulteReason, setDifficulteReason] = useState<string>("");
 
   useEffect(() => {
-    setTab("infos");
+    setTab(initialTab === "rentabilite" ? "rentabilite" : "infos");
     setName(site?.name || "");
     setStatus(site?.status || "pending");
     setClientName(site?.clientName || site?.quoteSnapshot?.client || "");
@@ -2680,6 +2795,8 @@ export default function PlannerApp({
   const [quoteWeekPickerYear, setQuoteWeekPickerYear] = useState(() => getISOWeekYear(new Date()));
   const [siteDetail, setSiteDetail] = useState<any | null>(null);
   const [siteDetailOpen, setSiteDetailOpen] = useState(false);
+  const [siteDetailTab, setSiteDetailTab] = useState<"infos" | "rentabilite">("infos");
+  const [quickSite, setQuickSite] = useState<{ siteId: string; x: number; y: number } | null>(null);
   const [personDetail, setPersonDetail] = useState<any | null>(null);
   const [personDetailOpen, setPersonDetailOpen] = useState(false);
   const timelineWindow = useMemo(() => {
@@ -2866,7 +2983,7 @@ export default function PlannerApp({
     </button>
   );
   const sitesForCurrentWeek = useMemo(() => {
-    const base = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey));
+    const base = sortByPlanningPin(plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey)));
     if (!showArchivedPlanning) return base;
     // On ajoute les chantiers archivés ayant au moins une affectation cette semaine
     const weekKeys = new Set(weekDays.map((d) => toLocalKey(d)));
@@ -4334,9 +4451,10 @@ export default function PlannerApp({
       return { ...prev, [id]: weeks };
     });
   };
-  const openSiteDetail = (id: string, statusOverride?: "planned" | "pending") => {
+  const openSiteDetail = (id: string, statusOverride?: "planned" | "pending", tab: "infos" | "rentabilite" = "infos") => {
     const site = safeSites.find((s) => s.id === id);
     if (!site) return;
+    setSiteDetailTab(tab);
     setSiteDetail(statusOverride ? { ...site, status: statusOverride } : site);
     setSiteDetailOpen(true);
   };
@@ -6290,7 +6408,7 @@ useEffect(() => {
                             )}
                             aria-hidden
                           />
-                          {site.name}
+                          <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className="text-left hover:underline decoration-neutral-300 underline-offset-2" title="Résumé rentabilité">{site.name}</button>
                           {horsPlanifBadge(site.id, currentWeekKey)}
                           {isArchivedRow && (
                             <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-500">Archivé</span>
@@ -6357,7 +6475,7 @@ useEffect(() => {
                       const wkKey = weekKeyOf(days[0]);
                       const isCur = wkKey === todayWeekKey;
                       const locked = Boolean(validatedWeeks[wkKey]);
-                      const weekSites = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey));
+                      const weekSites = sortByPlanningPin(plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey)));
                       return (
                         <div key={wkKey} className={cx("shrink-0 rounded-2xl border p-2.5 space-y-2 transition", isCur ? "border-sky-300 bg-sky-50/40 shadow-sm ring-1 ring-sky-200" : "border-neutral-200 bg-white shadow-sm")}>
                           {/* En-tête semaine */}
@@ -6392,7 +6510,7 @@ useEffect(() => {
                                 <div key={site.id} className="grid gap-1 items-stretch" style={{ gridTemplateColumns: cardCols }}>
                                   <div className="flex items-center gap-1.5 min-w-0 pr-1">
                                     <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
-                                    <span className="text-xs font-medium text-neutral-800 truncate" title={site.name}>{site.name}</span>
+                                    <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className="text-xs font-medium text-neutral-800 truncate text-left hover:underline decoration-neutral-300 underline-offset-2" title={`${site.name} — résumé rentabilité`}>{site.name}</button>
                                   </div>
                                   {days.map((d) => (
                                     <DayCell
@@ -6537,7 +6655,7 @@ useEffect(() => {
                 {monthWeeks.map((week, idx) => {
                   const wkKey = weekKeyOf(week[0]);
                   const isCurrent = wkKey === todayWeekKey;
-                  const sitesForWeek = plannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey));
+                  const sitesForWeek = sortByPlanningPin(plannedSites.filter((site) => isSiteVisibleOnWeek(site.id, wkKey)));
                   return (
                     <div
                       key={idx}
@@ -6589,7 +6707,7 @@ useEffect(() => {
                                   )}
                                   aria-hidden
                                 />
-                                {site.name}
+                                <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className="text-left hover:underline decoration-neutral-300 underline-offset-2" title="Résumé rentabilité">{site.name}</button>
                                 {horsPlanifBadge(site.id, wkKey)}
                               </div>
                               {!isCollapsed && week.slice(0, 5).map((d) => (
@@ -8282,6 +8400,7 @@ useEffect(() => {
           absencesByDay={absencesByDay}
           absencesByWeek={absencesByWeek}
           allSites={safeSites}
+          initialTab={siteDetailTab}
           onGoToDate={(dateKey: string) => {
             setSiteDetailOpen(false);
             setSiteDetail(null);
@@ -8297,6 +8416,28 @@ useEffect(() => {
           onAddSousCategorie={(name: string) => addSousCat(name)}
         />
       )}
+
+      {quickSite && (() => {
+        const s = safeSites.find((x: any) => x.id === quickSite.siteId);
+        if (!s) return null;
+        const rent = computeSiteRentability(s, { assignments, people, quotes: safeQuotes, tauxMaterielDefault, fraisFixesDefault });
+        const nbAVerifier = checkSiteAssignments(s.id, assignments, people, safeSites, absencesByDay, absencesByWeek).filter((c: any) => c.issues.length > 0).length;
+        return (
+          <SiteQuickPanel
+            site={{ ...s, color: getChantierColor(s) }}
+            x={quickSite.x}
+            y={quickSite.y}
+            rent={rent}
+            nbAVerifier={nbAVerifier}
+            tauxMaterielDefault={tauxMaterielDefault}
+            fraisFixesDefault={fraisFixesDefault}
+            onClose={() => setQuickSite(null)}
+            onUpdate={(patch: any) => updateSiteMeta(s.id, patch)}
+            onOpenRenta={() => { setQuickSite(null); openSiteDetail(s.id, undefined, "rentabilite"); }}
+            onOpenFiche={() => { setQuickSite(null); openSiteDetail(s.id); }}
+          />
+        );
+      })()}
 
       {/* Popover infos rapides chantier (clic depuis le calendrier) */}
       {calInfoSite && (() => {

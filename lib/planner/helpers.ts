@@ -652,3 +652,49 @@ export function confirmMessageForRemovedWeeks(siteId: string, newWeeks: string[]
     `Continuer ?`
   );
 }
+
+/** Chiffres de rentabilité d'un chantier (mêmes règles que la page Rentabilité). */
+export function computeSiteRentability(
+  site: any,
+  opts: { assignments?: any[]; people?: any[]; quotes?: any[]; tauxMaterielDefault?: number; fraisFixesDefault?: number } = {},
+) {
+  const { assignments = [], people = [], quotes = [], tauxMaterielDefault = 15, fraisFixesDefault = 0 } = opts;
+  const siteAss = (assignments || []).filter((a: any) => a?.siteId === site?.id);
+  const peopleById = new Map((people || []).map((p: any) => [p.id, p]));
+  let jours = 0;
+  let mainOeuvre = 0;
+  const sansTaux = new Set<string>();
+  siteAss.forEach((a: any) => {
+    const p: any = peopleById.get(a.personId);
+    if (!p) return; // salarié supprimé : non compté (comme la page Rentabilité)
+    const portion = getPortion(a.portion);
+    jours += portion;
+    const rate = Number.isFinite(Number(p.tauxJournalier)) && p.tauxJournalier != null ? Number(p.tauxJournalier) : null;
+    if (rate == null) sansTaux.add(p.id);
+    else mainOeuvre += portion * rate;
+  });
+  const budget = getSiteBudget(site, quotes);
+  const linked = site?.quoteId ? (quotes || []).find((q: any) => q.id === site.quoteId) : null;
+  const budgetFromQuote = Number(linked?.amount) > 0 || Number(site?.quoteSnapshot?.amount) > 0;
+  const tauxMat = site?.tauxMateriel != null ? Number(site.tauxMateriel) : tauxMaterielDefault;
+  const coutMateriel = budget > 0 ? budget * (tauxMat / 100) : 0;
+  const fraisFixes = budget > 0 ? budget * (fraisFixesDefault / 100) : 0;
+  const extraCouts = (site?.couts || []).reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
+  const coutTotal = mainOeuvre + coutMateriel + extraCouts + fraisFixes;
+  const marge = budget > 0 ? budget - coutTotal : null;
+  const margePercent = budget > 0 ? ((budget - coutTotal) / budget) * 100 : null;
+  const totalFacture = (site?.situations || []).reduce((s: number, x: any) => s + (Number(x.montant) || 0), 0);
+  return {
+    budget, budgetFromQuote, jours, mainOeuvre, nbSansTaux: sansTaux.size, tauxMat, coutMateriel, fraisFixes,
+    extraCouts, coutTotal, marge, margePercent, totalFacture, resteAFacturer: budget > 0 ? budget - totalFacture : null,
+  };
+}
+
+/** Ordre des lignes du planning : chantiers épinglés en haut, puis les autres, puis ceux épinglés en bas. */
+export function sortByPlanningPin<T extends { planningPin?: any }>(list: T[]): T[] {
+  const rank = (s: any) => (s?.planningPin === "top" ? 0 : s?.planningPin === "bottom" ? 2 : 1);
+  return list
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
+    .map((x) => x.s);
+}
