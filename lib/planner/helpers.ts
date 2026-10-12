@@ -612,3 +612,43 @@ export function checkSiteAssignments(
     })
     .sort((x, y) => x.date.localeCompare(y.date) || String(x.person?.name || "").localeCompare(String(y.person?.name || "")));
 }
+
+/**
+ * Message de confirmation quand on retire/décale des semaines d'un chantier alors que des
+ * gars y sont déjà affectés. Retourne null s'il n'y a rien à signaler.
+ * Les affectations ne sont jamais supprimées : elles restent à leur date (ex. le jour où
+ * on y est allé avant la pluie) et le chantier reste affiché ces semaines-là.
+ */
+export function confirmMessageForRemovedWeeks(siteId: string, newWeeks: string[], assignments: any[] = [], people: any[] = []): string | null {
+  if (!newWeeks || newWeeks.length === 0) return null; // sans semaines, le chantier est visible partout
+  const keep = new Set(newWeeks);
+  const outside = (assignments || []).filter((a: any) => a?.siteId === siteId && a?.date && !keep.has(weekKeyOf(fromLocalKey(a.date))));
+  if (!outside.length) return null;
+  const nameOf = (id: string) => (people || []).find((p: any) => p.id === id)?.name || "?";
+  const byWeek = new Map<string, Map<string, string[]>>();
+  outside
+    .slice()
+    .sort((a: any, b: any) => a.date.localeCompare(b.date))
+    .forEach((a: any) => {
+      const wk = weekKeyOf(fromLocalKey(a.date));
+      if (!byWeek.has(wk)) byWeek.set(wk, new Map());
+      const days = byWeek.get(wk)!;
+      if (!days.has(a.date)) days.set(a.date, []);
+      days.get(a.date)!.push(nameOf(a.personId));
+    });
+  const lines = Array.from(byWeek.entries()).map(([wk, days]) => {
+    const parts = Array.from(days.entries()).map(([dk, names]) => {
+      const label = fromLocalKey(dk).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+      return `${label} (${names.join(", ")})`;
+    });
+    return `• S${wk.split("-W")[1]} : ${parts.join(", ")}`;
+  });
+  const n = outside.length;
+  return (
+    `${n} affectation${n > 1 ? "s" : ""} déjà faite${n > 1 ? "s" : ""} sur les semaines retirées :\n` +
+    `${lines.join("\n")}\n\n` +
+    `Elles seront gardées à leur date : le chantier restera affiché ces semaines-là dans le planning (« Hors planif ») ` +
+    `et elles restent comptées dans la rentabilité. Pour en retirer, supprime-les dans le planning.\n\n` +
+    `Continuer ?`
+  );
+}

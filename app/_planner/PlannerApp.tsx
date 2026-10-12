@@ -114,6 +114,7 @@ import {
   getPortion,
   getSiteBudget,
   checkSiteAssignments,
+  confirmMessageForRemovedWeeks,
   debounce,
 } from "@/lib/planner/helpers";
 import {
@@ -1252,6 +1253,12 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     const parsedWeeks = selectedWeeks.length ? selectedWeeks : parseWeekList(weeks, fallbackYear);
     const derived = parsedWeeks.length ? getWeekRangeFromKeys(parsedWeeks) : null;
     const parsedTauxMat = tauxMateriel !== "" && Number.isFinite(Number(tauxMateriel)) ? Number(tauxMateriel) : null;
+    const prevWeeks: string[] = Array.isArray(site?.planningWeeks) ? site.planningWeeks : [];
+    const weeksChanged = prevWeeks.length !== parsedWeeks.length || prevWeeks.some((w) => !parsedWeeks.includes(w));
+    if (weeksChanged) {
+      const msg = confirmMessageForRemovedWeeks(site.id, parsedWeeks, assignmentsProp, peopleProp);
+      if (msg && !window.confirm(msg)) return;
+    }
     onSave({
       ...site,
       name: trimmed,
@@ -2423,7 +2430,8 @@ export default function PlannerApp({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => {
+  // Semaines prévues du chantier (sélection de semaines, sinon planningWeeks)
+  const isSitePlannedOnWeek = useCallback((siteId: string, wk: string) => {
     const selection = siteWeekVisibility[siteId];
     if (selection && selection.length > 0) return selection.includes(wk);
     const site = Array.isArray(sites) ? sites.find((s: any) => s.id === siteId) : null;
@@ -2431,6 +2439,30 @@ export default function PlannerApp({
     if (planningWeeks.length > 0) return planningWeeks.includes(wk);
     return true;
   }, [siteWeekVisibility, sites]);
+  // "siteId|weekKey" des semaines où le chantier a au moins une affectation
+  const siteWeeksWithAssignments = useMemo(() => {
+    const set = new Set<string>();
+    (Array.isArray(assignments) ? assignments : []).forEach((a: any) => {
+      if (a?.siteId && a?.date) set.add(`${a.siteId}|${weekKeyOf(fromLocalKey(a.date))}`);
+    });
+    return set;
+  }, [assignments]);
+  // Un chantier décalé reste affiché les semaines où des gars y sont déjà affectés
+  // (ex. on y est allé 1 jour puis la pluie a fait décaler la suite) : sinon ces jours
+  // deviennent invisibles dans le planning tout en restant comptés dans la rentabilité.
+  const isSiteVisibleOnWeek = useCallback((siteId: string, wk: string) => (
+    isSitePlannedOnWeek(siteId, wk) || siteWeeksWithAssignments.has(`${siteId}|${wk}`)
+  ), [isSitePlannedOnWeek, siteWeeksWithAssignments]);
+  const horsPlanifBadge = (siteId: string, wk: string) => (
+    !isSitePlannedOnWeek(siteId, wk) ? (
+      <span
+        className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-500 border border-neutral-200"
+        title="Cette semaine n'est plus prévue pour ce chantier (décalé) : il reste affiché car des jours y sont déjà affectés."
+      >
+        Hors planif
+      </span>
+    ) : null
+  );
 
   // View / navigation
   const [view, setView] = useState<
@@ -3692,6 +3724,14 @@ export default function PlannerApp({
           return toLocalKey(d);
         } catch { return dk; }
       };
+      const current = safeSites.find((s: any) => s.id === siteId);
+      const currentWeeks: string[] = siteWeekVisibility[siteId]?.length
+        ? siteWeekVisibility[siteId]
+        : (Array.isArray(current?.planningWeeks) ? current.planningWeeks : []);
+      const msg = confirmMessageForRemovedWeeks(siteId, currentWeeks.map(shiftWeekKey), assignments, people);
+      if (msg && !window.confirm(msg)) return false;
+      // Garder la sélection de semaines alignée (sinon planning et calendrier divergent)
+      setSiteWeekVisibility((prev) => (prev[siteId]?.length ? { ...prev, [siteId]: prev[siteId].map(shiftWeekKey) } : prev));
       setSites((prev: any[]) => prev.map((s: any) => {
         if (s.id !== siteId) return s;
         const newPlanningWeeks = Array.isArray(s.planningWeeks)
@@ -6218,6 +6258,7 @@ useEffect(() => {
                             aria-hidden
                           />
                           {site.name}
+                          {horsPlanifBadge(site.id, currentWeekKey)}
                           {isArchivedRow && (
                             <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-500">Archivé</span>
                           )}
@@ -6523,6 +6564,7 @@ useEffect(() => {
                                   aria-hidden
                                 />
                                 {site.name}
+                                {horsPlanifBadge(site.id, wkKey)}
                               </div>
                               {!isCollapsed && week.slice(0, 5).map((d) => (
                                 <DayCell
@@ -8507,6 +8549,8 @@ useEffect(() => {
             }
             if (weeks) {
               const unique = Array.from(new Set(weeks)).filter(Boolean);
+              const msg = confirmMessageForRemovedWeeks(renameTarget.id, unique, assignments, people);
+              if (msg && !window.confirm(msg)) return;
               setSiteWeekVisibility((prev) => {
                 if (unique.length === 0) {
                   const { [renameTarget.id]: _omit, ...rest } = prev;
