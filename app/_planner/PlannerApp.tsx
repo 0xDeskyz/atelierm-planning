@@ -113,6 +113,7 @@ import {
   formatEUR,
   getPortion,
   getSiteBudget,
+  checkSiteAssignments,
   debounce,
 } from "@/lib/planner/helpers";
 import {
@@ -1165,9 +1166,10 @@ function RenameDialog({
   );
 }
 
-function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, fraisFixesDefault: fraisFDefault = 0, quotes: quotesProp = [], onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
+function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, onDuplicate, fallbackYear, usedColors = [], assignments: assignmentsProp = [], people: peopleProp = [], tauxJournalierDefault: tauxJDefault = 350, tauxMaterielDefault: tauxMDefault = 15, fraisFixesDefault: fraisFDefault = 0, quotes: quotesProp = [], absencesByDay: absByDayProp = {}, absencesByWeek: absByWeekProp = {}, allSites: allSitesProp = [], onGoToDate, onOpenClientHistory, sousCategorieOptions: sousCatOptionsProp = DEFAULT_SOUS_CATEGORIES, onAddSousCategorie, difficulteConfig: diffCfg, categorieOptions: catOptionsProp = CATEGORIE_PRINCIPALE_OPTIONS, origineOptions: origineOptionsProp = ORIGINE_OPTIONS }: any) {
   const activeDiffFlags: { key: string; label: string }[] = diffCfg?.flags?.length ? diffCfg.flags : DEFAULT_DIFFICULTE_FLAGS;
   const [tab, setTab] = useState<"infos" | "rentabilite">("infos");
+  const [moOpen, setMoOpen] = useState<Record<string, boolean>>({});
   const [name, setName] = useState<string>("");
   const [status, setStatus] = useState<"planned" | "pending">("pending");
   const [globalNotes, setGlobalNotes] = useState<string>("");
@@ -1223,6 +1225,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewCoutLabel("");
     setNewCoutMontant("");
     setSituations(Array.isArray(site?.situations) ? site.situations : []);
+    setMoOpen({});
     setNewSitLabel("");
     setNewSitMontant("");
     setNewSitDate("");
@@ -1287,6 +1290,15 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   }, []);
   const moKnown = moByPerson.reduce((s: number, r: any) => s + (r.cout ?? 0), 0);
   const moUnknown = moByPerson.filter((r: any) => r.rate == null);
+  // Détail jour par jour + anomalies (absence, double affectation, week-end, férié…)
+  const checkedAss = site?.id ? checkSiteAssignments(site.id, assignmentsProp, peopleProp, allSitesProp, absByDayProp, absByWeekProp) : [];
+  const checkedByPerson = checkedAss.reduce((acc: Record<string, any[]>, c: any) => {
+    (acc[c.assignment.personId] = acc[c.assignment.personId] || []).push(c);
+    return acc;
+  }, {});
+  const orphanAss = checkedAss.filter((c: any) => !c.person);
+  const issueCount = checkedAss.filter((c: any) => c.issues.length > 0).length;
+  const fmtDay = (dk: string) => fromLocalKey(dk).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
   const totalCouts = couts.reduce((s: number, c: any) => s + (Number(c.montant) || 0), 0);
   const totalFacture = situations.reduce((s: number, sit: any) => s + (Number(sit.montant) || 0), 0);
   const linkedQuote = site?.quoteId ? quotesProp.find((q: any) => q.id === site.quoteId) : null;
@@ -1536,15 +1548,33 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
               {moByPerson.length === 0 && (
                 <div className="text-neutral-400 text-xs">Aucun salarié affecté à ce chantier dans le planning.</div>
               )}
-              {moByPerson.map((r: any) => (
-                <div key={r.person.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-neutral-50">
-                  <div className="flex items-center gap-2">
+              {issueCount > 0 && (
+                <div className="text-[11px] text-amber-700">
+                  ⚠ {issueCount} affectation{issueCount > 1 ? "s" : ""} à vérifier — ouvre le détail d'un salarié pour voir lesquelles.
+                </div>
+              )}
+              {moByPerson.map((r: any) => {
+                const days = checkedByPerson[r.person.id] || [];
+                const nIssues = days.filter((c: any) => c.issues.length > 0).length;
+                const isOpen = !!moOpen[r.person.id];
+                let lastWeek = "";
+                return (
+                <div key={r.person.id} className="border-b border-neutral-50">
+                <div className="flex items-center justify-between gap-2 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMoOpen((prev) => ({ ...prev, [r.person.id]: !prev[r.person.id] }))}
+                    className="flex items-center gap-2 text-left"
+                    title="Voir le détail jour par jour"
+                  >
+                    <ChevronRight className={cx("w-3.5 h-3.5 text-neutral-400 transition-transform", isOpen && "rotate-90")} />
                     <div className={cx("w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0", r.person.color || "bg-neutral-400")}>
                       {r.person.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
                     </div>
                     <span className="font-medium">{r.person.name}</span>
                     <span className="text-neutral-400 text-[11px]">{r.jours}j</span>
-                  </div>
+                    {nIssues > 0 && <span className="text-amber-600 text-[11px]">⚠ {nIssues}</span>}
+                  </button>
                   <div className="text-right">
                     {r.rate != null ? (
                       <span className="font-semibold text-neutral-800">{formatEUR(r.cout)}</span>
@@ -1554,7 +1584,43 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                     {r.rate != null && <div className="text-[10px] text-neutral-400">{r.rate} €/j</div>}
                   </div>
                 </div>
-              ))}
+                {isOpen && (
+                  <div className="ml-6 mb-2 rounded-md bg-neutral-50 px-2 py-1 text-[12px]">
+                    {days.map((c: any) => {
+                      const wk = weekKeyOf(fromLocalKey(c.date));
+                      const showWeek = wk !== lastWeek;
+                      lastWeek = wk;
+                      return (
+                        <div key={c.assignment.id || `${c.date}-${r.person.id}`} className={cx(showWeek && "mt-1")}>
+                          <button
+                            type="button"
+                            onClick={() => onGoToDate?.(c.date)}
+                            className="w-full flex items-start gap-2 py-0.5 text-left rounded hover:bg-white"
+                            title="Aller à ce jour dans le planning"
+                          >
+                            <span className="w-9 shrink-0 text-neutral-400">{showWeek ? `S${wk.split("-W")[1]}` : ""}</span>
+                            <span className="w-20 shrink-0 text-neutral-700">{fmtDay(c.date)}</span>
+                            <span className="w-8 shrink-0 text-neutral-500">{c.portion === 1 ? "1 j" : c.portion === 0.5 ? "½ j" : `${c.portion} j`}</span>
+                            {c.issues.length > 0 && (
+                              <span className="text-amber-700">⚠ {c.issues.map((i: any) => i.label).join(" · ")}</span>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
+                );
+              })}
+              {orphanAss.length > 0 && (
+                <div className="text-[11px] text-amber-700">
+                  ⚠ {orphanAss.length} affectation{orphanAss.length > 1 ? "s" : ""} d'un salarié supprimé (non comptée{orphanAss.length > 1 ? "s" : ""}) :{" "}
+                  {orphanAss.map((c: any, i: number) => (
+                    <button key={c.assignment.id || i} type="button" onClick={() => onGoToDate?.(c.date)} className="underline mr-1">{fmtDay(c.date)}</button>
+                  ))}
+                </div>
+              )}
               {moByPerson.length > 0 && (
                 <div className="flex justify-between font-semibold pt-1">
                   <span>Total MO{moUnknown.length > 0 ? ` (${moUnknown.length} sans taux)` : ""}</span>
@@ -7595,7 +7661,8 @@ useEffect(() => {
                 const totalFacture = (s.situations || []).reduce((sum: number, sit: any) => sum + (Number(sit.montant) || 0), 0);
                 const resteAFacturer = budget > 0 ? budget - totalFacture : null;
                 const nbJours = siteAss.reduce((sum: number, a: any) => sum + getPortion(a.portion), 0);
-                return { site: s, moByPerson, mainOeuvre, coutMateriel, extraCouts, fraisFixes, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer };
+                const nbAVerifier = checkSiteAssignments(s.id, assignments, people, safeSites, absencesByDay, absencesByWeek).filter((c: any) => c.issues.length > 0).length;
+                return { site: s, nbAVerifier, moByPerson, mainOeuvre, coutMateriel, extraCouts, fraisFixes, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer };
               });
 
               // KPI aggregates on all non-archived rows
@@ -7829,7 +7896,7 @@ useEffect(() => {
                           {sorted.length === 0 && (
                             <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-400 text-sm">Aucun chantier correspondant aux filtres.</td></tr>
                           )}
-                          {sorted.map(({ site: s, moByPerson, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours, totalFacture, resteAFacturer }: any) => {
+                          {sorted.map(({ site: s, moByPerson, mainOeuvre, coutTotal, budget, marge, margePercent, tauxMat, nbJours, nbAVerifier, totalFacture, resteAFacturer }: any) => {
                             const isExpanded = expandedRentaRows.has(s.id);
                             return (
                               <>
@@ -7858,7 +7925,7 @@ useEffect(() => {
                                   <td className="px-3 py-2.5 text-neutral-600">{s.clientName ? <button onClick={() => openClientHistory(s.clientName)} className="hover:underline hover:text-sky-700 text-left">{s.clientName}</button> : <span className="text-neutral-300">—</span>}</td>
                                   <td className="px-3 py-2.5">{(() => { const opt = origineOptions.find((o: any) => o.value === s.origine); return opt ? <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold border", opt.badge)}>{opt.label}</span> : <span className="text-neutral-300 text-[11px]">—</span>; })()}</td>
                                   <td className="px-3 py-2.5">{budget > 0 ? <span className="text-neutral-800">{formatEUR(budget)}</span> : <span className="text-neutral-300">Non défini</span>}</td>
-                                  <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span></td>
+                                  <td className="px-3 py-2.5 text-neutral-700">{formatEUR(mainOeuvre)}<span className="text-[11px] text-neutral-400 ml-1">({nbJours}j)</span>{nbAVerifier > 0 && <span className="text-[11px] text-amber-600 ml-1" title={`${nbAVerifier} affectation(s) à vérifier : absence, double affectation, week-end ou férié. Ouvre le chantier → Rentabilité pour le détail.`}>⚠ {nbAVerifier}</span>}</td>
                                   <td className="px-3 py-2 w-24">
                                     <div className="flex items-center gap-1">
                                       <input
@@ -8144,6 +8211,16 @@ useEffect(() => {
           tauxMaterielDefault={tauxMaterielDefault}
           fraisFixesDefault={fraisFixesDefault}
           quotes={quotes}
+          absencesByDay={absencesByDay}
+          absencesByWeek={absencesByWeek}
+          allSites={safeSites}
+          onGoToDate={(dateKey: string) => {
+            setSiteDetailOpen(false);
+            setSiteDetail(null);
+            setAnchor(fromLocalKey(dateKey));
+            setView("planning");
+            setPlanningView("week");
+          }}
           onOpenClientHistory={openClientHistory}
           difficulteConfig={difficulteConfig}
           categorieOptions={categorieOptions}

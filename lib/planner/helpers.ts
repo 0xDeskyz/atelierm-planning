@@ -551,3 +551,64 @@ export function getSiteBudget(site: any, quotes: any[] = [], montantOverride?: n
     pos(montantOverride !== undefined ? montantOverride : site?.montantDevis)
   );
 }
+
+export type AssignmentIssue = { kind: "absence" | "double" | "weekend" | "ferie" | "orphan"; label: string };
+export type CheckedAssignment = { assignment: any; person: any | null; date: string; portion: number; issues: AssignmentIssue[] };
+
+const ABSENCE_LABELS: Record<string, string> = { CP: "congé", MAL: "maladie", OFF: "repos" };
+
+/**
+ * Liste les affectations d'un chantier (triées par date) avec les anomalies qui
+ * peuvent fausser la rentabilité : salarié absent ce jour-là, salarié compté plus
+ * d'une journée le même jour (plusieurs chantiers ou doublon), week-end, jour férié,
+ * salarié supprimé (non compté dans la main d'œuvre).
+ */
+export function checkSiteAssignments(
+  siteId: string,
+  assignments: any[] = [],
+  people: any[] = [],
+  sites: any[] = [],
+  absencesByDay: Record<string, Record<string, string>> = {},
+  absencesByWeek: Record<string, Record<string, boolean>> = {},
+): CheckedAssignment[] {
+  const peopleById = new Map((people || []).map((p: any) => [p.id, p]));
+  const siteName = (id: string) => (sites || []).find((s: any) => s.id === id)?.name || "un autre chantier";
+  const byPersonDay = new Map<string, any[]>();
+  (assignments || []).forEach((a: any) => {
+    if (!a?.date || !a?.personId) return;
+    const k = `${a.personId}|${a.date}`;
+    const list = byPersonDay.get(k);
+    if (list) list.push(a); else byPersonDay.set(k, [a]);
+  });
+  const holidayCache = new Map<number, Map<string, string>>();
+  const holidayName = (dateKey: string) => {
+    const y = Number(dateKey.slice(0, 4));
+    if (!holidayCache.has(y)) holidayCache.set(y, getFrenchHolidays(y));
+    return holidayCache.get(y)!.get(dateKey) || null;
+  };
+
+  return (assignments || [])
+    .filter((a: any) => a?.siteId === siteId && a?.date)
+    .map((a: any) => {
+      const person = peopleById.get(a.personId) || null;
+      const issues: AssignmentIssue[] = [];
+      if (!person) issues.push({ kind: "orphan", label: "Salarié supprimé — non compté" });
+      const abs = absencesByDay?.[a.date]?.[a.personId];
+      const d = fromLocalKey(a.date);
+      if (abs) issues.push({ kind: "absence", label: `Absent ce jour (${ABSENCE_LABELS[abs] || abs})` });
+      else if (absencesByWeek?.[weekKeyOf(d)]?.[a.personId]) issues.push({ kind: "absence", label: "Absent cette semaine" });
+      const sameDay = byPersonDay.get(`${a.personId}|${a.date}`) || [];
+      const totalPortion = sameDay.reduce((s: number, x: any) => s + getPortion(x.portion), 0);
+      if (sameDay.length > 1 && totalPortion > 1) {
+        const others = sameDay.filter((x: any) => x !== a);
+        const names = Array.from(new Set(others.map((x: any) => (x.siteId === siteId ? "ce chantier (doublon)" : siteName(x.siteId)))));
+        issues.push({ kind: "double", label: `Compté ${totalPortion} j ce jour — aussi sur ${names.join(", ")}` });
+      }
+      const dow = d.getDay();
+      if (dow === 0 || dow === 6) issues.push({ kind: "weekend", label: dow === 0 ? "Dimanche" : "Samedi" });
+      const ferie = holidayName(a.date);
+      if (ferie) issues.push({ kind: "ferie", label: `Férié (${ferie})` });
+      return { assignment: a, person, date: a.date, portion: getPortion(a.portion), issues };
+    })
+    .sort((x, y) => x.date.localeCompare(y.date) || String(x.person?.name || "").localeCompare(String(y.person?.name || "")));
+}
