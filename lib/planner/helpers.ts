@@ -366,6 +366,11 @@ export const normalizeSiteRecord = (site: any) => {
       (base as any)?.tauxMateriel != null && (base as any).tauxMateriel !== "" && Number.isFinite(Number((base as any).tauxMateriel))
         ? Number((base as any).tauxMateriel)
         : null,
+    // Lignes « hors rentabilité » (disponibilités, com, interne…) : pas comptées dans la marge.
+    // Par défaut Z DISPO et ZICOM, modifiable par chantier.
+    horsCompta: typeof (base as any)?.horsCompta === "boolean"
+      ? (base as any).horsCompta
+      : /^\s*z\s*-?\s*dispo\b|^\s*zicom\b/i.test(String((base as any)?.name || "")),
     montantDevis: Number.isFinite(Number((base as any)?.montantDevis)) && Number((base as any).montantDevis) > 0 ? Number((base as any).montantDevis) : null,
     couts: Array.isArray((base as any)?.couts) ? (base as any).couts.map((c: any) => ({
       id: c?.id || (typeof crypto !== "undefined" && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `cout-${Date.now()}-${Math.random()}`),
@@ -573,9 +578,11 @@ export function checkSiteAssignments(
 ): CheckedAssignment[] {
   const peopleById = new Map((people || []).map((p: any) => [p.id, p]));
   const siteName = (id: string) => (sites || []).find((s: any) => s.id === id)?.name || "un autre chantier";
+  const internalIds = new Set((sites || []).filter((s: any) => s?.horsCompta === true).map((s: any) => s.id));
   const byPersonDay = new Map<string, any[]>();
   (assignments || []).forEach((a: any) => {
     if (!a?.date || !a?.personId) return;
+    if (internalIds.has(a.siteId)) return; // dispo / com : pas une journée de chantier
     const k = `${a.personId}|${a.date}`;
     const list = byPersonDay.get(k);
     if (list) list.push(a); else byPersonDay.set(k, [a]);
@@ -692,7 +699,8 @@ export function computeSiteRentability(
 
 /** Ordre des lignes du planning : chantiers épinglés en haut, puis les autres, puis ceux épinglés en bas. */
 export function sortByPlanningPin<T extends { planningPin?: any }>(list: T[]): T[] {
-  const rank = (s: any) => (s?.planningPin === "top" ? 0 : s?.planningPin === "bottom" ? 2 : 1);
+  // Les lignes hors rentabilité (disponibilités, com…) forment une section à part, tout en bas.
+  const rank = (s: any) => (s?.horsCompta === true ? 3 : s?.planningPin === "top" ? 0 : s?.planningPin === "bottom" ? 2 : 1);
   return list
     .map((s, i) => ({ s, i }))
     .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)

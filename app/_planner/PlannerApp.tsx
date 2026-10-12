@@ -1226,6 +1226,11 @@ function SiteQuickPanel({ site, x, y, rent, nbAVerifier, tauxMaterielDefault, fr
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 leading-none text-lg">×</button>
         </div>
 
+        {site.horsCompta === true ? (
+          <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-[12px] text-neutral-600">
+            Ligne <strong>hors rentabilité</strong> (disponibilités, com, interne) : pas comptée dans la marge.
+          </div>
+        ) : (
         <div className="space-y-1.5 text-[13px]">
           <div className={row}>
             <span className="text-neutral-500">CA HT</span>
@@ -1279,7 +1284,14 @@ function SiteQuickPanel({ site, x, y, rent, nbAVerifier, tauxMaterielDefault, fr
             </button>
           )}
         </div>
+        )}
 
+        <label className="flex items-center gap-2 text-[12px] text-neutral-600 cursor-pointer">
+          <input type="checkbox" checked={site.horsCompta === true} onChange={(e) => onUpdate({ horsCompta: e.target.checked })} className="accent-neutral-900" />
+          Hors rentabilité (disponibilités, com, interne)
+        </label>
+
+        {site.horsCompta !== true && (
         <div className="space-y-1">
           <div className="text-[11px] text-neutral-400">Position dans le planning</div>
           <div className="flex rounded-lg border border-neutral-200 overflow-hidden text-xs">
@@ -1291,6 +1303,7 @@ function SiteQuickPanel({ site, x, y, rent, nbAVerifier, tauxMaterielDefault, fr
             ))}
           </div>
         </div>
+        )}
 
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="flex-1" onClick={onOpenRenta}>Rentabilité détaillée</Button>
@@ -1329,6 +1342,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
   const [newSitMontant, setNewSitMontant] = useState("");
   const [newSitDate, setNewSitDate] = useState("");
   const [origine, setOrigine] = useState<string>("");
+  const [horsCompta, setHorsCompta] = useState<boolean>(false);
   const [categoriePrincipale, setCategoriePrincipale] = useState<string>("");
   const [sousCategorie, setSousCategorie] = useState<string>("");
   const [newSousCatInput, setNewSousCatInput] = useState<string>("");
@@ -1365,6 +1379,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
     setNewSitMontant("");
     setNewSitDate("");
     setOrigine(site?.origine || "");
+    setHorsCompta(site?.horsCompta === true);
     setCategoriePrincipale(site?.categoriePrincipale || "");
     setSousCategorie(site?.sousCategorie || "");
     setNewSousCatInput("");
@@ -1415,6 +1430,7 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
       categoriePrincipale: categoriePrincipale || null,
       sousCategorie: sousCategorie || null,
       difficulte: diffFlags,
+      horsCompta,
       difficulteLevel,
       difficulteReason: difficulteReason.trim(),
     });
@@ -1554,6 +1570,13 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
                   }}>Ajouter</Button>
                 </div>
               </label>
+              <label className="md:col-span-2 flex items-start gap-2 rounded-lg border border-neutral-200 px-3 py-2 cursor-pointer">
+                <input type="checkbox" checked={horsCompta} onChange={(e) => setHorsCompta(e.target.checked)} className="mt-0.5 accent-neutral-900" />
+                <span className="text-sm">
+                  <span className="font-medium text-neutral-800">Hors rentabilité</span>
+                  <span className="block text-[11px] text-neutral-500">Disponibilités, com, interne… : affiché en bas du planning, pas compté dans la marge ni dans les conflits.</span>
+                </span>
+              </label>
               <div className="space-y-1.5 md:col-span-2">
                 <span className="text-[11px] text-neutral-600 font-semibold">Difficulté du chantier</span>
                 <div className="flex flex-wrap gap-2">
@@ -1653,6 +1676,11 @@ function SiteDetailDialog({ open, site, onClose, onSave, onArchive, onDelete, on
         {/* ── Rentabilité tab ── */}
         {tab === "rentabilite" && (
           <div className="space-y-4 text-sm">
+            {horsCompta && (
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-[12px] text-neutral-600">
+                Ligne <strong>hors rentabilité</strong> : elle n'est pas comptée dans la page Rentabilité ni dans la marge globale. Les chiffres ci-dessous sont indicatifs.
+              </div>
+            )}
 
             {/* Budget */}
             <div className="rounded-lg border border-neutral-200 p-3 space-y-2">
@@ -3065,14 +3093,16 @@ export default function PlannerApp({
   const conflictMap = useMemo(() => {
     const counts: Record<string, number> = {};
     const totals: Record<string, number> = {};
+    const internalIds = new Set((Array.isArray(sites) ? sites : []).filter((s: any) => s.horsCompta === true).map((s: any) => s.id));
     assignments.forEach((a) => {
+      if (internalIds.has(a.siteId)) return; // dispo / com : pas un conflit de chantier
       const key = `${a.personId}|${a.date}`;
       counts[key] = (counts[key] || 0) + 1;
       totals[key] = (totals[key] || 0) + getPortion((a as any).portion);
     });
     Object.keys(counts).forEach((key) => { if (totals[key] <= 1) counts[key] = 1; });
     return counts;
-  }, [assignments]);
+  }, [assignments, sites]);
 
   const weekConflictCount = useMemo(() => {
     const dateSet = new Set(weekDateKeys);
@@ -5768,7 +5798,7 @@ useEffect(() => {
         });
         const accueilWeekDateSet = new Set(accueilWeekDateKeys);
         const accueilActiveSites = plannedSites.filter((s: any) =>
-          isSiteVisibleOnWeek(s.id, accueilWeekKey)
+          s.horsCompta !== true && isSiteVisibleOnWeek(s.id, accueilWeekKey)
         );
         const accueilWeekAssignments = assignments.filter((a: any) =>
           accueilWeekDateSet.has(a.date)
@@ -6412,11 +6442,13 @@ useEffect(() => {
                   })}
                 </div>
                 <div className="space-y-2">
-                  {sitesForCurrentWeek.map((site) => {
+                  {sitesForCurrentWeek.map((site, rowIdx, rowArr) => {
                     const isCollapsed = collapsedSites.has(site.id);
                     const isArchivedRow = site.status === "archived";
+                    const startsInternal = site.horsCompta === true && rowArr[rowIdx - 1]?.horsCompta !== true;
                     return (
-                      <div key={site.id} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6", isArchivedRow && "opacity-60")}>
+                      <div key={site.id} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6", isArchivedRow && "opacity-60", startsInternal && "relative pt-12")}>
+                        {startsInternal && <div className="absolute top-3 left-0 right-0 border-t border-dashed border-neutral-300 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Disponibilités &amp; interne · hors rentabilité</div>}
                         <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
                           <button
                             onClick={() => toggleSiteCollapsed(site.id)}
@@ -6530,8 +6562,8 @@ useEffect(() => {
                             <p className="px-1 py-6 text-xs text-neutral-400 italic text-center">Aucun chantier cette semaine.</p>
                           ) : (
                             <div className="space-y-1">
-                              {weekSites.map((site) => (
-                                <div key={site.id} className="grid gap-1 items-stretch" style={{ gridTemplateColumns: cardCols }}>
+                              {weekSites.map((site, rowIdx, rowArr) => (
+                                <div key={site.id} className={cx("grid gap-1 items-stretch", site.horsCompta === true && rowArr[rowIdx - 1]?.horsCompta !== true && "mt-3 pt-2 border-t border-dashed border-neutral-300")} style={{ gridTemplateColumns: cardCols }}>
                                   <div className="flex items-center gap-1.5 min-w-0 pr-1">
                                     <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
                                     <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className="text-xs font-medium text-neutral-800 truncate text-left hover:underline decoration-neutral-300 underline-offset-2" title={`${site.name} — résumé rentabilité`}>{site.name}</button>
@@ -6711,10 +6743,12 @@ useEffect(() => {
                             );
                           })}
                         </div>
-                        {sitesForWeek.map((site) => {
+                        {sitesForWeek.map((site, rowIdx, rowArr) => {
                           const isCollapsed = collapsedSites.has(site.id);
+                          const startsInternal = site.horsCompta === true && rowArr[rowIdx - 1]?.horsCompta !== true;
                           return (
-                            <div key={`${idx}-${site.id}`} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6")}>
+                            <div key={`${idx}-${site.id}`} className={cx("grid gap-2 items-stretch", isCollapsed ? "grid-cols-1" : "grid-cols-6", startsInternal && "relative pt-12")}>
+                              {startsInternal && <div className="absolute top-3 left-0 right-0 border-t border-dashed border-neutral-300 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Disponibilités &amp; interne · hors rentabilité</div>}
                               <div className="text-base flex items-center gap-2 font-semibold text-neutral-900">
                                 <button
                                   onClick={() => toggleSiteCollapsed(site.id)}
@@ -7376,7 +7410,7 @@ useEffect(() => {
             )}
 
             {view === "sites" && (() => {
-              const totalCA = [...plannedSites, ...pendingSites].reduce((s: number, site: any) => s + getSiteBudget(site, safeQuotes), 0);
+              const totalCA = [...plannedSites, ...pendingSites].filter((site: any) => site.horsCompta !== true).reduce((s: number, site: any) => s + getSiteBudget(site, safeQuotes), 0);
 
               const parseBatappliCSV = (text: string) => {
                 const rows = text.trim().split(/\r?\n/);
@@ -7848,7 +7882,8 @@ useEffect(() => {
               const noTauxWarning = safePeople.filter((p: any) => p.status !== "archived" && p.tauxJournalier == null).length;
 
               // Build all rows (unfiltered for KPIs/spotlights)
-              const allRentaRows = safeSites.map((s: any) => {
+              const internalSites = safeSites.filter((s: any) => s.horsCompta === true && s.status !== "archived");
+              const allRentaRows = safeSites.filter((s: any) => s.horsCompta !== true).map((s: any) => {
                 const siteAss = assignments.filter((a: any) => a.siteId === s.id);
                 const moByPerson = people
                   .map((p: any) => {
@@ -8047,6 +8082,12 @@ useEffect(() => {
                       </div>
                     )}
                   </div>
+
+                  {internalSites.length > 0 && (
+                    <div className="text-[11px] text-neutral-400">
+                      Hors rentabilité (non comptés) : {internalSites.map((s: any) => s.name).join(", ")} — réglable dans la fiche du chantier.
+                    </div>
+                  )}
 
                   {/* Filter bar */}
                   <div className="flex flex-wrap items-center gap-2">
