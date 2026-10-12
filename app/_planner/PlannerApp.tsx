@@ -6470,76 +6470,104 @@ useEffect(() => {
                   </div>
 
                   <div className="overflow-x-auto pb-2">
-                    <div className="flex gap-3 min-w-max items-start">
-                    {weeksV3.map((days) => {
-                      const wkKey = weekKeyOf(days[0]);
-                      const isCur = wkKey === todayWeekKey;
-                      const locked = Boolean(validatedWeeks[wkKey]);
-                      const weekSites = sortByPlanningPin(plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, wkKey)));
+                    {(() => {
+                      // Rendu « par lignes » : chaque chantier occupe la même ligne dans toutes les
+                      // semaines affichées (alignement horizontal + même hauteur), en gardant l'aspect
+                      // d'une carte par semaine (segments empilés).
+                      const weeksInfo = weeksV3.map((days) => {
+                        const wkKey = weekKeyOf(days[0]);
+                        return { days, wkKey, isCur: wkKey === todayWeekKey, locked: Boolean(validatedWeeks[wkKey]) };
+                      });
+                      const rowSites = sortByPlanningPin(plannedSites.filter((s) => weeksInfo.some((w) => isSiteVisibleOnWeek(s.id, w.wkKey))));
+                      const segCls = (isCur: boolean, pos: "top" | "mid" | "bottom") => cx(
+                        "shrink-0 flex flex-col border-x px-2.5 transition",
+                        isCur ? "border-sky-300 bg-sky-50/40" : "border-neutral-200 bg-white",
+                        pos === "top" && "rounded-t-2xl border-t pt-2.5",
+                        pos === "bottom" && "rounded-b-2xl border-b pb-2.5",
+                      );
                       return (
-                        <div key={wkKey} className={cx("shrink-0 rounded-2xl border p-2.5 space-y-2 transition", isCur ? "border-sky-300 bg-sky-50/40 shadow-sm ring-1 ring-sky-200" : "border-neutral-200 bg-white shadow-sm")}>
-                          {/* En-tête semaine */}
-                          <div className="flex items-center justify-between gap-2 px-0.5">
-                            <div className="flex items-baseline gap-1.5">
-                              <span className={cx("text-sm font-bold", isCur ? "text-sky-700" : "text-neutral-800")}>S{getISOWeek(days[0])}</span>
-                              <span className="text-[11px] text-neutral-400">{formatFR(days[0])} → {formatFR(days[4])}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              {isCur && <span className="rounded-full bg-sky-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">En cours</span>}
-                              {locked && <span title="Semaine verrouillée">🔒</span>}
-                            </div>
-                          </div>
-                          {/* En-tête jours */}
-                          <div className="grid text-[10px] font-semibold text-neutral-400 border-b border-neutral-100 pb-1" style={{ gridTemplateColumns: cardCols }}>
-                            <div />
-                            {days.map((d, i) => {
-                              const holiday = publicHolidays.get(toLocalKey(d));
-                              return (
-                                <div key={i} className={cx("text-center", holiday && "text-red-500")} title={holiday || ""}>
-                                  <span className="uppercase">{dayNames[i]}</span> <span className="text-neutral-500">{d.getDate()}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {/* Chantiers de la semaine */}
-                          {weekSites.length === 0 ? (
-                            <p className="px-1 py-6 text-xs text-neutral-400 italic text-center">Aucun chantier cette semaine.</p>
-                          ) : (
-                            <div className="space-y-1">
-                              {weekSites.map((site) => (
-                                <div key={site.id} className="grid gap-1 items-stretch" style={{ gridTemplateColumns: cardCols }}>
-                                  <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                                    <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site))} aria-hidden />
-                                    <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className="text-xs font-medium text-neutral-800 truncate text-left hover:underline decoration-neutral-300 underline-offset-2" title={`${site.name} — résumé rentabilité`}>{site.name}</button>
+                        <div className="min-w-max">
+                          {/* En-têtes des semaines */}
+                          <div className="flex gap-3">
+                            {weeksInfo.map(({ days, wkKey, isCur, locked }) => (
+                              <div key={wkKey} className={cx(segCls(isCur, "top"), "space-y-2 pb-1")}>
+                                <div className="flex items-center justify-between gap-2 px-0.5">
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className={cx("text-sm font-bold", isCur ? "text-sky-700" : "text-neutral-800")}>S{getISOWeek(days[0])}</span>
+                                    <span className="text-[11px] text-neutral-400">{formatFR(days[0])} → {formatFR(days[4])}</span>
                                   </div>
-                                  {days.map((d) => (
-                                    <DayCell
-                                      key={toLocalKey(d)}
-                                      date={d}
-                                      site={site}
-                                      people={people}
-                                      assignments={assignments}
-                                      onEditNote={openNote}
-                                      notes={notes}
-                                      hoursPerDay={hoursPerDay}
-                                      conflictMap={conflictMap}
-                                      onRemoveAssignment={(id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id))}
-                                      publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
-                                      absencesByDay={absencesByDay}
-                                      onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
-                                      eventTypes={eventTypeOptions}
-                                      compact
-                                      locked={locked}
-                                    />
-                                  ))}
+                                  <div className="flex items-center gap-1">
+                                    {isCur && <span className="rounded-full bg-sky-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">En cours</span>}
+                                    {locked && <span title="Semaine verrouillée">🔒</span>}
+                                  </div>
+                                </div>
+                                <div className="grid gap-1 text-[10px] font-semibold text-neutral-400 border-b border-neutral-100 pb-1" style={{ gridTemplateColumns: cardCols }}>
+                                  <div />
+                                  {days.map((d, i) => {
+                                    const holiday = publicHolidays.get(toLocalKey(d));
+                                    return (
+                                      <div key={i} className={cx("text-center", holiday && "text-red-500")} title={holiday || ""}>
+                                        <span className="uppercase">{dayNames[i]}</span> <span className="text-neutral-500">{d.getDate()}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {rowSites.length === 0 ? (
+                            <div className="flex gap-3">
+                              {weeksInfo.map(({ wkKey, isCur }) => (
+                                <div key={wkKey} className={segCls(isCur, "bottom")}>
+                                  <div className="grid gap-1" style={{ gridTemplateColumns: cardCols }}>
+                                    <p className="col-span-6 px-1 py-6 text-xs text-neutral-400 italic text-center">Aucun chantier cette semaine.</p>
+                                  </div>
                                 </div>
                               ))}
                             </div>
-                          )}
+                          ) : rowSites.map((site, rowIdx) => (
+                            <div key={site.id} className="flex gap-3">
+                              {weeksInfo.map(({ days, wkKey, isCur, locked }) => {
+                                const plannedHere = isSiteVisibleOnWeek(site.id, wkKey);
+                                return (
+                                  <div key={wkKey} className={cx(segCls(isCur, rowIdx === rowSites.length - 1 ? "bottom" : "mid"), "pt-1")}>
+                                    <div className="flex-1 grid gap-1 items-stretch" style={{ gridTemplateColumns: cardCols }}>
+                                      <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                                        <span className={cx("w-2.5 h-2.5 rounded-full border border-black/10 shrink-0", getChantierColor(site), !plannedHere && "opacity-30")} aria-hidden />
+                                        <button type="button" onClick={(e) => setQuickSite({ siteId: site.id, x: e.clientX, y: e.clientY })} className={cx("text-xs font-medium truncate text-left hover:underline decoration-neutral-300 underline-offset-2", plannedHere ? "text-neutral-800" : "text-neutral-300")} title={`${site.name} — résumé rentabilité`}>{site.name}</button>
+                                        {plannedHere && horsPlanifBadge(site.id, wkKey)}
+                                      </div>
+                                      {plannedHere ? days.map((d) => (
+                                          <DayCell
+                                            key={toLocalKey(d)}
+                                            date={d}
+                                            site={site}
+                                            people={people}
+                                            assignments={assignments}
+                                            onEditNote={openNote}
+                                            notes={notes}
+                                            hoursPerDay={hoursPerDay}
+                                            conflictMap={conflictMap}
+                                            onRemoveAssignment={(id: string) => setAssignments((prev) => prev.filter((a) => a.id !== id))}
+                                            publicHoliday={publicHolidays.get(toLocalKey(d)) ?? null}
+                                            absencesByDay={absencesByDay}
+                                            onCellOpen={(dt: Date, st: any, pos: any) => setCellEditorTarget({ date: dt, site: st, pos })}
+                                            eventTypes={eventTypeOptions}
+                                            compact
+                                            locked={locked}
+                                          />
+                                      )) : (
+                                        <div className="col-span-5 rounded-xl border border-dashed border-neutral-100" title="Chantier pas prévu cette semaine" />
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
                         </div>
                       );
-                    })}
-                    </div>
+                    })()}
                   </div>
                 </div>
               );
