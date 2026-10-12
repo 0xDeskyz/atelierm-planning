@@ -2821,6 +2821,50 @@ export default function PlannerApp({
   const todayWeekKey = useMemo(() => weekKeyOf(today), [today]);
   const todayWeekNumber = useMemo(() => getISOWeek(today), [today]);
   const isViewingCurrentWeek = useMemo(() => currentWeekKey === todayWeekKey, [currentWeekKey, todayWeekKey]);
+  // Bouton « Aujourd'hui » : la période affichée contient-elle aujourd'hui, et à quelle distance est-on ?
+  const todayNav = useMemo(() => {
+    const sameMonth = anchor.getFullYear() === today.getFullYear() && anchor.getMonth() === today.getMonth();
+    const monthDiff = (anchor.getFullYear() - today.getFullYear()) * 12 + (anchor.getMonth() - today.getMonth());
+    const weekDiff = Math.round((startOfISOWeekLocal(anchor).getTime() - startOfISOWeekLocal(today).getTime()) / (7 * 86400000));
+    const fmt = (n: number, unit: string) => (n === 0 ? "" : `${n > 0 ? "+" : "−"}${Math.abs(n)} ${unit}`);
+    if (view === "testv3") {
+      return { here: weeksV3.some((days) => weekKeyOf(days[0]) === todayWeekKey), label: "Semaines en cours", offset: fmt(weekDiff, "sem.") };
+    }
+    if ((view === "planning" && planningView === "month") || view === "calendar") {
+      return { here: sameMonth, label: "Mois en cours", offset: fmt(monthDiff, "mois") };
+    }
+    if (view === "timeline") {
+      if (timelineScope === "year") return { here: anchor.getFullYear() === today.getFullYear(), label: "Année en cours", offset: fmt(anchor.getFullYear() - today.getFullYear(), "an") };
+      if (timelineScope === "quarter") return { here: anchor.getFullYear() === today.getFullYear() && Math.floor(anchor.getMonth() / 3) === Math.floor(today.getMonth() / 3), label: "Trimestre en cours", offset: fmt(monthDiff, "mois") };
+      return { here: sameMonth, label: "Mois en cours", offset: fmt(monthDiff, "mois") };
+    }
+    return { here: isViewingCurrentWeek, label: "Semaine en cours", offset: fmt(weekDiff, "sem.") };
+  }, [view, planningView, timelineScope, anchor, today, weeksV3, todayWeekKey, isViewingCurrentWeek]);
+  const renderTodayButton = (small = false) => todayNav.here ? (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-700 font-medium cursor-default select-none",
+        small ? "h-8 px-2.5 text-xs" : "h-9 px-3 text-sm"
+      )}
+      title="Tu es sur la période en cours"
+    >
+      <span className="w-2 h-2 rounded-full bg-sky-500" />
+      {todayNav.label}
+    </span>
+  ) : (
+    <button
+      onClick={() => jumpToCurrentWeek()}
+      className={cx(
+        "inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white text-neutral-800 font-semibold hover:bg-neutral-50 hover:border-neutral-400 transition",
+        small ? "h-8 px-2.5 text-xs" : "h-9 px-3 text-sm"
+      )}
+      title="Revenir à aujourd'hui (raccourci : T)"
+    >
+      <RotateCcw className={small ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      Revenir à aujourd'hui
+      {todayNav.offset && <span className="text-[11px] font-normal text-neutral-400">({todayNav.offset})</span>}
+    </button>
+  );
   const sitesForCurrentWeek = useMemo(() => {
     const base = plannedSites.filter((s) => isSiteVisibleOnWeek(s.id, currentWeekKey));
     if (!showArchivedPlanning) return base;
@@ -5238,18 +5282,7 @@ useEffect(() => {
                       title="Avancer d'un mois (4 semaines)"
                     >Mois »</button>
                   )}
-                  <button
-                    onClick={() => setAnchor(new Date())}
-                    className={cx(
-                      "h-9 px-3 rounded-lg text-sm font-semibold border transition",
-                      isViewingCurrentWeek
-                        ? "bg-sky-50 border-sky-200 text-sky-700"
-                        : "bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-700"
-                    )}
-                    title="Revenir à la semaine en cours (raccourci : T)"
-                  >
-                    Aujourd'hui
-                  </button>
+                  {renderTodayButton()}
                   {(view === "planning" || view === "hours") && (
                     <button
                       onClick={() => {
@@ -6315,14 +6348,7 @@ useEffect(() => {
                       <span className="font-semibold text-neutral-800">S{firstWk} <span className="text-neutral-300">→</span> S{lastWk}</span>
                       <span className="text-neutral-400 hidden sm:inline">· {formatFR(weeksV3[0][0])} → {formatFR(weeksV3[weeksV3.length - 1][4])}</span>
                     </div>
-                    <button
-                      onClick={() => setAnchor(new Date())}
-                      className={cx(
-                        "h-8 px-3 rounded-lg text-xs font-semibold border transition",
-                        isViewingCurrentWeek ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-700"
-                      )}
-                      title="Revenir à aujourd'hui (T)"
-                    >Aujourd'hui</button>
+                    {renderTodayButton(true)}
                   </div>
 
                   <div className="overflow-x-auto pb-2">
